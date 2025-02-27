@@ -92,9 +92,9 @@ bpLoadFile PROTO :BPPtr, :BPPtr
 
 bpCheckFileInvalid MACRO
 	.IF (pax == INVALID_HANDLE_VALUE)
-		print "File "
-		print FilePath
-		print " not found!", 13, 10
+		;print "File "
+		;print FilePath
+		;print " not found!", 13, 10
 		xor pax, pax
 		ret
 	.ENDIF
@@ -156,6 +156,19 @@ bpDrawMesh PROC BPMeshPTR:BPPtr
 	ASSUME pcx:nothing
 	ret
 bpDrawMesh ENDP
+
+bpFreeBPM PROC BPMeshPTR:BPPtr
+	push pbx
+	ASSUME pbx:PTR BPMesh
+	mov pbx, BPMeshPTR
+	
+	invoke bpFree, rv(GetProcessHeap), 0, [pbx].Vertices
+	invoke bpFree, rv(GetProcessHeap), 0, [pbx].TexCoords
+	invoke bpFree, rv(GetProcessHeap), 0, [pbx].Normals
+	ASSUME pbx:nothing
+	pop pbx
+	ret
+bpFreeBPM ENDP
 
 bpLoadBPA PROC BPAnimPTR:BPPtr, FilePath:BPPtr
 	LOCAL hFile:HANDLE, dwHighSize:DWORD, dwFileSize:DWORD, dwArraySize:DWORD
@@ -238,7 +251,7 @@ bpLoadBPL PROC GLListPTR:BPPtr, FilePath:BPPtr
 	invoke glEnd
 	invoke glEndList
 	
-    invoke HeapFree, rv(GetProcessHeap), 0, buffer
+    invoke bpFree, rv(GetProcessHeap), 0, buffer
 	
 	mov pax, GLListPTR
 	mov ecx, listIndex
@@ -325,14 +338,14 @@ bpLoadBPT PROC TexturePTR:BPPtr, FilePath:BPPtr
 	mov eax, DWORD PTR [pax]
 	mov texH, eax
 	
-	print "Texture "
-	print FilePath
-	print " type: "
-	print sbyte$(texType),
-	print ", size: "
-	print str$(texW)
-	print "x"
-	print str$(texH), 13, 10
+	;print "Texture "
+	;print FilePath
+	;print " type: "
+	;print sbyte$(texType),
+	;print ", size: "
+	;print str$(texW)
+	;print "x"
+	;print str$(texH), 13, 10
 	
 	add buffer, 4
 	
@@ -341,31 +354,65 @@ bpLoadBPT PROC TexturePTR:BPPtr, FilePath:BPPtr
 	invoke glTexParameteri, GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR
 	invoke glTexParameteri, GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST
 	
+	; On some devices the OpenGL implementation behaves weirdly with mipmaps and
+	; tries to build its own, even when it's not specified in code. This may
+	; result in a lot of lag whenever there are many instances of a texture 
+	; being used. On other devices, however, gluBuild#DMipmaps may not recognize
+	; the extended texture color formats and will result in a GLU_INVALID_ENUM
+	; error. Best-case approach is to parse formats to RGB(A)8, but I'm lazy.
 	.IF (texType == BPT_RGB8)
-		invoke glTexImage2D, GL_TEXTURE_2D, 0, GL_RGB, texW, texH, 0, GL_RGB, \
+		invoke gluBuild2DMipmaps, GL_TEXTURE_2D, 3, texW, texH, GL_RGB, \
 		GL_UNSIGNED_BYTE, buffer
+		.IF (eax)	; Shouldn't really happen as it's within support
+			invoke glTexImage2D, GL_TEXTURE_2D, 0, GL_RGB, texW, texH, 0, \
+			GL_RGB, GL_UNSIGNED_BYTE, buffer
+		.ENDIF
 	.ELSEIF (texType == BPT_RGBA8)
-		invoke glTexImage2D, GL_TEXTURE_2D, 0, GL_RGBA, texW, texH, 0, GL_RGBA,\
+		invoke gluBuild2DMipmaps, GL_TEXTURE_2D, 4, texW, texH, GL_RGBA, \
 		GL_UNSIGNED_BYTE, buffer
+		.IF (eax)	; Shouldn't really happen either
+			invoke glTexImage2D, GL_TEXTURE_2D, 0, GL_RGBA, texW, texH, 0, \
+			GL_RGBA, GL_UNSIGNED_BYTE, buffer
+		.ENDIF
 	.ELSEIF (texType == BPT_RGB565)
-		invoke glTexImage2D, GL_TEXTURE_2D, 0, GL_RGB, texW, texH, 0, GL_RGB, \
+		invoke gluBuild2DMipmaps, GL_TEXTURE_2D, 3, texW, texH, GL_RGB, \
 		8363h, buffer	; GL_UNSIGNED_SHORT_5_6_5
+		.IF (eax)
+			invoke glTexImage2D, GL_TEXTURE_2D, 0, GL_RGB, texW, texH, 0, \
+			GL_RGB, 8363h, buffer	; GL_UNSIGNED_SHORT_5_6_5
+		.ENDIF
 	.ELSEIF (texType == BPT_RGB5A1)
-		invoke glTexImage2D, GL_TEXTURE_2D, 0, GL_RGBA, texW, texH, 0, \
-		GL_RGBA, 8034h, buffer	; GL_UNSIGNED_SHORT_5_5_5_1
+		invoke gluBuild2DMipmaps, GL_TEXTURE_2D, 4, texW, texH, GL_RGBA, 8034h,\
+		buffer	; GL_UNSIGNED_SHORT_5_5_5_1
+		.IF (eax)
+			invoke glTexImage2D, GL_TEXTURE_2D, 0, GL_RGBA, texW, texH, 0, \
+			GL_RGBA, 8034h, buffer	; GL_UNSIGNED_SHORT_5_5_5_1
+		.ENDIF
 	.ELSEIF (texType == BPT_RGBA4)
-		invoke glTexImage2D, GL_TEXTURE_2D, 0, GL_RGBA, texW, texH, 0, \
-		GL_RGBA, 8033h, buffer	; GL_UNSIGNED_SHORT_4_4_4_4
+		invoke gluBuild2DMipmaps, GL_TEXTURE_2D, 4, texW, texH, GL_RGBA, 8033h,\
+		buffer	; GL_UNSIGNED_SHORT_4_4_4_4
+		.IF (eax)
+			invoke glTexImage2D, GL_TEXTURE_2D, 0, GL_RGBA, texW, texH, 0, \
+			GL_RGBA, 8033h, buffer	; GL_UNSIGNED_SHORT_4_4_4_4
+		.ENDIF
 	.ELSEIF (texType == BPT_RGB332)
-		invoke glTexImage2D, GL_TEXTURE_2D, 0, GL_RGB, texW, texH, 0, GL_RGB, \
+		invoke gluBuild2DMipmaps, GL_TEXTURE_2D, 3, texW, texH, GL_RGB, \
 		8032h, buffer	; GL_UNSIGNED_BYTE_3_3_2
+		.IF (eax)
+			invoke glTexImage2D, GL_TEXTURE_2D, 0, GL_RGB, texW, texH, 0, \
+			GL_RGB, 8032h, buffer	; GL_UNSIGNED_BYTE_3_3_2
+		.ENDIF
 	.ELSEIF (texType == BPT_L8)
-		invoke glTexImage2D, GL_TEXTURE_2D, 0, GL_LUMINANCE, texW, texH, 0, \
-		GL_LUMINANCE, GL_UNSIGNED_BYTE, buffer
+		invoke gluBuild2DMipmaps, GL_TEXTURE_2D, 1, texW, texH, GL_LUMINANCE, \
+		GL_UNSIGNED_BYTE, buffer
+		.IF (eax) ; Shouldn't really happen too
+			invoke glTexImage2D, GL_TEXTURE_2D, 0, GL_LUMINANCE, texW, texH, 0,\
+			GL_LUMINANCE, GL_UNSIGNED_BYTE, buffer
+		.ENDIF
 	.ENDIF
 	
 	sub buffer, 9
-    invoke HeapFree, rv(GetProcessHeap), 0, buffer
+    invoke bpFree, rv(GetProcessHeap), 0, buffer
 	
 	mov pax, TexturePTR
 	mov ecx, texIndex

@@ -351,7 +351,7 @@ bpLoadBPT PROC TexturePTR:BPPtr, FilePath:BPPtr
 	
 	invoke glGenTextures, 1, ADDR texIndex
 	invoke glBindTexture, GL_TEXTURE_2D, texIndex
-	invoke glTexParameteri, GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR
+	invoke glTexParameteri, GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST
 	invoke glTexParameteri, GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST
 	
 	; On some devices the OpenGL implementation behaves weirdly with mipmaps and

@@ -169,6 +169,27 @@ VectorNormalize MACRO Cnt:REQ, A:REQ
 	add esp, 4
 ENDM
 
+VectorRound MACRO Cnt:REQ, A:REQ
+	mov pax, A
+	PosOff = 0
+	REPEAT Cnt
+		fld DWORD PTR [pax+PosOff]
+		frndint
+		fstp REAL4 PTR [pax+PosOff]
+		PosOff = PosOff + SIZEOF REAL4
+	ENDM
+ENDM
+
+VectorRoundInt MACRO Cnt:REQ, A:REQ
+	mov pax, A
+	PosOff = 0
+	REPEAT Cnt
+		fld DWORD PTR [pax+PosOff]
+		fistp REAL4 PTR [pax+PosOff]
+		PosOff = PosOff + SIZEOF REAL4
+	ENDM
+ENDM
+
 VectorSet MACRO A:REQ, Coords:VARARG
 	mov pax, A
 	PosOff = 0
@@ -283,6 +304,11 @@ Vector2Normalize PROC A:BPPtr
 	VectorNormalize 2, A
 	ret
 Vector2Normalize ENDP
+
+Vector2RoundInt PROC A:BPPtr
+	VectorRoundInt 2, A
+	ret
+Vector2RoundInt ENDP
 
 Vector2Set PROC A:BPPtr, X:REAL4, Y:REAL4
 	VectorSet A, X, Y
@@ -425,6 +451,16 @@ Vector3Normalize PROC A:BPPtr
 	ret
 Vector3Normalize ENDP
 
+Vector3Round PROC A:BPPtr
+	VectorRound 3, A
+	ret
+Vector3Round ENDP
+
+Vector3RoundInt PROC A:BPPtr
+	VectorRoundInt 3, A
+	ret
+Vector3RoundInt ENDP
+
 Vector3Set PROC A:BPPtr, X:REAL4, Y:REAL4, Z:REAL4
 	VectorSet A, X, Y, Z
 	ret
@@ -468,6 +504,11 @@ Vector4MulF PROC A:BPPtr, B:REAL4
 	VectorMulF 4, A, B
 	ret
 Vector4MulF ENDP
+
+Vector4RoundInt PROC A:BPPtr
+	VectorRoundInt 4, A
+	ret
+Vector4RoundInt ENDP
 
 Vector4Set PROC A:BPPtr, X:REAL4, Y:REAL4, Z:REAL4, W:REAL4
 	VectorSet A, X, Y, Z, W

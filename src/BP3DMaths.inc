@@ -64,6 +64,7 @@ fl12	REAL4	12.0
 fl12N	REAL4	-12.0
 fl13	REAL4	13.0
 fl13N	REAL4	-13.0
+fl14	REAL4	14.0
 fl15	REAL4	15.0
 fl16	REAL4	16.0
 fl20	REAL4	20.0
@@ -175,6 +176,24 @@ flEuler PROC Val:REAL4
 	ret
 flEuler ENDP
 
+flFrac PROC Val:REAL4
+	fstcw FPUCW
+	or FPUCW, FPU_FLOOR
+	fldcw FPUCW
+	
+	fld Val
+	fld st
+	frndint
+	fsub
+	fstp Val
+	
+	xor FPUCW, FPU_FLOOR
+	fldcw FPUCW
+	
+	mov eax, Val
+	ret
+flFrac ENDP
+
 flLerp PROC A:REAL4, B:REAL4, T:REAL4
 	fld B
 	fsub A
@@ -264,6 +283,25 @@ flRandRange PROC Min:REAL4, Max:REAL4
 	mov eax, _Val
 	ret
 flRandRange ENDP
+
+flRepeat PROC Val:REAL4, Max:REAL4
+	fstcw FPUCW
+	or FPUCW, FPU_FLOOR
+	fldcw FPUCW
+	
+	fld Val
+	fdiv Max
+	frndint
+	fsubr Val
+	fmul Max
+	fstp Val
+	
+	xor FPUCW, FPU_FLOOR
+	fldcw FPUCW
+	
+	invoke flClamp, Val, 0, Max
+	ret
+flRepeat ENDP
 
 flSign PROC Val:REAL4
 	fcmp Val

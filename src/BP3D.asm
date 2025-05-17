@@ -58,6 +58,56 @@ BPWINMODE_FULLSCREEN	EQU 3
 BPWINMODE_FULLSCREEN_EX	EQU 4
 
 ; ----- TYPES -----
+RAWINPUTHEADER  struct 
+	dwType      DWORD   ?
+	dwSize      DWORD   ?
+	hDevice     HANDLE  ?
+	wParam      WPARAM  ?
+RAWINPUTHEADER  ends
+PRAWINPUTHEADER typedef ptr RAWINPUTHEADER
+
+RAWMOUSE struct 
+	usFlags WORD    ?
+	union
+		ulButtons       DWORD   ?
+		struct
+			usButtonFlags   WORD    ?
+			usButtonData    WORD    ?
+		ends
+	ends
+	ulRawButtons        DWORD   ?
+	lLastX              SDWORD  ?
+	lLastY              SDWORD  ?
+	ulExtraInformation  DWORD   ?
+RAWMOUSE ends
+PRAWMOUSE typedef ptr RAWMOUSE
+
+RAWKEYBOARD struct 
+	MakeCode            WORD    ?
+	Flags               WORD    ?
+	Reserved            WORD    ?
+	VKey                WORD    ?
+	Message             DWORD   ?
+	ExtraInformation    DWORD   ?
+RAWKEYBOARD ends
+PRAWKEYBOARD typedef ptr RAWKEYBOARD
+
+RAWHID struct 
+	dwSizeHid           DWORD ?
+	dwCount             DWORD ?
+	bRawData            BYTE 1 dup (?)
+RAWHID ends
+PRAWHID typedef ptr RAWHID
+
+RAWINPUT struct 
+	header  RAWINPUTHEADER <>
+	union data
+		mouse           RAWMOUSE    <>
+		keyboard        RAWKEYBOARD <>
+		hid             RAWHID      <>
+	ends
+RAWINPUT ends
+
 IFDEF rax
 	ECHO BP3D: Compiling in 64-bit mode.
 	BPPtr TYPEDEF QWORD
@@ -149,8 +199,8 @@ ELSE
 	bpPerfFreq DWORD 0
 	bpTick DWORD 0
 ENDIF
-bpMousePos SDWORD 0, 0
-bpMousePrevPos SDWORD 0, 0
+bpMouseClient SDWORD 0, 0
+bpMouseScreen SDWORD 0, 0
 
 deltaTime 		REAL4	0.0
 deltaScale 		REAL4	1.0
@@ -164,9 +214,11 @@ timeStart		REAL4	0.0
 .CODE
 
 bpInitContext PROTO :HWND
+bpInMouseButton PROTO :BPPtr, :BPPtr, :BPBool
 bpSetScreenCenter PROTO :BPPtr
 bpDefTimeProc PROTO :UINT, :UINT, :DWORD, :DWORD, :DWORD
 bpDefWndProc PROTO :HWND, :UINT, :WPARAM, :LPARAM
+bpMallocProc PROTO :HANDLE, :DWORD, :DWORD
 
 ;   32-bit m2m macro implementation that uses 64-bit values.
 ;   dst:REQ - mov destination.
@@ -259,7 +311,8 @@ bpCalculateDelta ENDP
 ;   Initialize form and createa window based on its parameters.
 ;   BPFormPtr:BPPtr - pointer to a form structure.
 bpCreateForm PROC BPFormPtr:BPPtr
-	LOCAL wc:WNDCLASSEX, msg:MSG, testFreq:LARGE_INTEGER, quitFlag:BYTE
+	LOCAL wc:WNDCLASSEX, msg:MSG, testFreq:LARGE_INTEGER, quitFlag:BPBool
+	LOCAL rid:RAWINPUTDEVICE 
 	ASSUME pcx:PTR BPForm
 	
 	mov wc.cbSize, SIZEOF WNDCLASSEX
@@ -315,14 +368,23 @@ bpCreateForm PROC BPFormPtr:BPPtr
 		call [pcx].OnCreate
 	.ENDIF
 	.IF (bpDefaultFlag)
+		; Register raw mouse input (for best mouse control with lag and vsync)
+		mov rid.usUsagePage, 01h	; Generic desktop
+		mov rid.usUsage, 02h		; Mouse
+		mov rid.dwFlags, RIDEV_INPUTSINK
 		mov pcx, BPFormPtr
-		.IF ([pcx].OnFixed)
-			;invoke SetTimer, [pcx].Handle, IDT_MOUSETRAP, BP3D_FIXED_INTERVAL, \
-			;NULL	THIS FUCKING COCKSUCKER NEVER WORKED I FUCKING HATE IT
-			invoke timeSetEvent, BP3D_FIXED_INTERVAL, 0, OFFSET bpDefTimeProc, \
-			BPFormPtr, TIME_PERIODIC
-		.ENDIF
-		;invoke SetCapture, [pcx].Handle
+		m2m rid.hwndTarget, [pcx].Handle
+		
+		invoke RegisterRawInputDevices, ADDR rid, 1, SIZEOF RAWINPUTDEVICE
+	.ENDIF
+	
+	; OnFixed
+	mov pcx, BPFormPtr
+	.IF ([pcx].OnFixed)
+		;invoke SetTimer, [pcx].Handle, IDT_MOUSETRAP, BP3D_FIXED_INTERVAL, \
+		;NULL	THIS FUCKING COCKSUCKER NEVER WORKED I FUCKING HATE IT
+		invoke timeSetEvent, BP3D_FIXED_INTERVAL, 0, OFFSET bpDefTimeProc, \
+		BPFormPtr, TIME_PERIODIC
 	.ENDIF
 	
 	mov pcx, BPFormPtr
@@ -336,7 +398,7 @@ bpCreateForm PROC BPFormPtr:BPPtr
 		SWITCH eax
 			CASE WAIT_OBJECT_0
 				.WHILE TRUE
-					invoke PeekMessage, ADDR msg, 0, 0, 0, PM_REMOVE
+					invoke PeekMessage, ADDR msg, NULL, 0, 0, PM_REMOVE
 					.IF (msg.message == WM_QUIT)
 						mov quitFlag, 1
 					.ENDIF
@@ -439,6 +501,96 @@ bpInKey PROC BPFormPtr:BPPtr, Keycode:WPARAM, Pressed:BOOL
 	ret
 bpInKey ENDP
 
+;   Send mouse input to form OnInput event as a struct.
+;   BPFormPtr:BPPtr - pointer to a form structure.
+bpInMouse PROC BPFormPtr:BPPtr, lParam:LPARAM
+	LOCAL bpInStruct:BPInMouseMove, dwSize:DWORD, lpb:BPPtr
+	
+	invoke GetRawInputData, lParam, RID_INPUT, NULL, ADDR dwSize, \
+	SIZEOF RAWINPUTHEADER
+	invoke bpMalloc, rv(GetProcessHeap), 0, dwSize
+	mov lpb, pax
+	
+	invoke GetRawInputData, lParam, RID_INPUT, lpb, ADDR dwSize, \
+	SIZEOF RAWINPUTHEADER
+	
+	.IF (pax == dwSize)
+		mov pcx, lpb
+		ASSUME pcx:PTR RAWINPUT
+		.IF ([pcx].header.dwType != RIM_TYPEMOUSE)
+			; This should always fail because we set to capture only raw mouse
+			invoke bpFree, rv(GetProcessHeap), 0, lpb
+			ret
+		.ENDIF
+		;.IF ([pcx].data.mouse.usFlags & MOUSE_MOVE_ABSOLUTE)
+			;TODO?
+		;.ELSE
+			mov eax, [pcx].data.mouse.lLastX
+			mov ecx, 65536
+			cdq
+			idiv ecx
+			mov bpInStruct.Relative.x, eax
+			mov pcx, lpb
+			mov eax, [pcx].data.mouse.lLastY
+			mov ecx, 65536
+			cdq
+			idiv ecx
+			mov bpInStruct.Relative.y, eax
+		;.ENDIF
+		
+		mov pcx, lpb
+		xor pax, pax
+		mov ax, [pcx].data.mouse.usButtonData
+		.IF (ax)
+			SWITCH pax
+				CASE RI_MOUSE_BUTTON_1_DOWN
+					invoke bpInMouseButton, BPFormPtr, VK_LBUTTON, TRUE
+				CASE RI_MOUSE_BUTTON_1_UP
+					invoke bpInMouseButton, BPFormPtr, VK_LBUTTON, FALSE
+				CASE RI_MOUSE_BUTTON_2_DOWN
+					invoke bpInMouseButton, BPFormPtr, VK_RBUTTON, TRUE
+				CASE RI_MOUSE_BUTTON_2_UP
+					invoke bpInMouseButton, BPFormPtr, VK_RBUTTON, FALSE
+				CASE RI_MOUSE_BUTTON_3_DOWN
+					invoke bpInMouseButton, BPFormPtr, VK_MBUTTON, TRUE
+				CASE RI_MOUSE_BUTTON_3_UP
+					invoke bpInMouseButton, BPFormPtr, VK_MBUTTON, FALSE
+				CASE RI_MOUSE_BUTTON_4_DOWN
+					invoke bpInMouseButton, BPFormPtr, VK_XBUTTON1, TRUE
+				CASE RI_MOUSE_BUTTON_4_UP
+					invoke bpInMouseButton, BPFormPtr, VK_XBUTTON1, FALSE
+				CASE RI_MOUSE_BUTTON_5_DOWN
+					invoke bpInMouseButton, BPFormPtr, VK_XBUTTON2, TRUE
+				CASE RI_MOUSE_BUTTON_5_UP
+					invoke bpInMouseButton, BPFormPtr, VK_XBUTTON2, FALSE
+			ENDSW
+		.ENDIF
+		ASSUME pcx:nothing
+	.ENDIF
+	invoke bpFree, rv(GetProcessHeap), 0, lpb
+	
+	; Get global cursor coords
+	invoke GetCursorPos, ADDR bpMouseScreen
+	m2m bpInStruct.Position.x, bpMouseScreen
+	m2m bpInStruct.Position.y, bpMouseScreen[4]
+	
+	ASSUME pcx:PTR BPForm
+	mov pcx, BPFormPtr
+	
+	m2m bpMouseClient[0], bpMouseScreen[0]
+	m2m bpMouseClient[4], bpMouseScreen[4]
+	invoke ScreenToClient, [pcx].Handle, ADDR bpMouseClient
+	
+	mov pcx, BPFormPtr
+	lea pax, bpInStruct
+	push pax
+	push BPIN_MOUSEMOVE
+	call [pcx].OnInput
+	
+	ASSUME pcx:nothing
+	ret
+bpInMouse ENDP
+
 bpInMouseButton PROC BPFormPtr:BPPtr, Button:BPPtr, Pressed:BPBool
 	LOCAL bpInStruct:BPInMouseButton
 	
@@ -457,36 +609,6 @@ bpInMouseButton PROC BPFormPtr:BPPtr, Button:BPPtr, Pressed:BPBool
 	ASSUME pcx:nothing
 	ret
 bpInMouseButton ENDP
-
-;   Send mouse movement input to form OnInput event as a struct.
-;   BPFormPtr:BPPtr - pointer to a form structure.
-bpInMouseMove PROC BPFormPtr:BPPtr
-	LOCAL bpInStruct:BPInMouseMove
-	
-	m2m bpInStruct.Position.x, bpMousePos
-	m2m bpInStruct.Position.y, bpMousePos[4]
-	
-	ASSUME pcx:PTR BPForm
-	mov pcx, BPFormPtr
-	
-	mov eax, bpMousePos
-	sub eax, bpMousePrevPos
-	mov bpInStruct.Relative.x, eax
-	mov eax, bpMousePos[4]
-	sub eax, bpMousePrevPos[4]
-	mov bpInStruct.Relative.y, eax
-	
-	m2m bpMousePrevPos, bpMousePos
-	m2m bpMousePrevPos[4], bpMousePos[4]
-	
-	lea pax, bpInStruct
-	push pax
-	push BPIN_MOUSEMOVE
-	call [pcx].OnInput
-	
-	ASSUME pcx:nothing
-	ret
-bpInMouseMove ENDP
 
 bpMallocProc PROC hHeap:HANDLE, dwFlags:DWORD, dwBytes:DWORD
 	mov eax, dwBytes
@@ -660,8 +782,13 @@ bpDefWndProc PROC hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
 				call [pcx].OnDestroy
 			.ENDIF
 			.IF (bpDefaultFlag)
-				;invoke ReleaseCapture
 				invoke PostQuitMessage, 0
+			.ENDIF
+		
+		CASE WM_INPUT
+			mov pcx, dwRefData
+			.IF ([pcx].OnInput && [pcx].Focused)				
+				invoke bpInMouse, dwRefData, lParam
 			.ENDIF
 		
 		CASE WM_KEYDOWN
@@ -697,79 +824,11 @@ bpDefWndProc PROC hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
 				invoke bpSetScreenCenter, dwRefData
 			.ENDIF
 			
-		CASE WM_MOUSEMOVE
-			mov pcx, dwRefData
-			.IF ([pcx].OnInput && [pcx].Focused)
-				mov eax, lParam
-				movsx eax, ax
-				mov bpMousePos, eax
-				mov eax, lParam
-				shr eax, 16
-				movsx eax, ax
-				mov bpMousePos[4], eax
-				; Dubious, the docs say lpParameter is 32-bit
-				;invoke CreateThread, NULL, 0, OFFSET bpInMouseMove, dwRefData,\
-				;0, NULL
-				invoke bpInMouseMove, dwRefData
-			.ENDIF
-		; This down here is fucking rancid
-		CASE WM_LBUTTONDOWN
-			mov pcx, dwRefData
-			.IF ([pcx].OnInput)
-				invoke bpInMouseButton, dwRefData, VK_LBUTTON, TRUE
-			.ENDIF
-		CASE WM_LBUTTONUP
-			mov pcx, dwRefData
-			.IF ([pcx].OnInput)
-				invoke bpInMouseButton, dwRefData, VK_LBUTTON, FALSE
-			.ENDIF
-		CASE WM_RBUTTONDOWN
-			mov pcx, dwRefData
-			.IF ([pcx].OnInput)
-				invoke bpInMouseButton, dwRefData, VK_RBUTTON, TRUE
-			.ENDIF
-		CASE WM_RBUTTONUP
-			mov pcx, dwRefData
-			.IF ([pcx].OnInput)
-				invoke bpInMouseButton, dwRefData, VK_RBUTTON, FALSE
-			.ENDIF
-		CASE WM_MBUTTONDOWN
-			mov pcx, dwRefData
-			.IF ([pcx].OnInput)
-				invoke bpInMouseButton, dwRefData, VK_MBUTTON, TRUE
-			.ENDIF
-		CASE WM_MBUTTONUP
-			mov pcx, dwRefData
-			.IF ([pcx].OnInput)
-				invoke bpInMouseButton, dwRefData, VK_MBUTTON, FALSE
-			.ENDIF
-		CASE WM_XBUTTONDOWN
-			mov pcx, dwRefData
-			.IF ([pcx].OnInput)
-				mov eax, wParam
-				shr eax, 16
-				movsx eax, ax
-				add eax, 4
-				invoke bpInMouseButton, dwRefData, eax, TRUE
-			.ENDIF
-		CASE WM_XBUTTONUP
-			mov pcx, dwRefData
-			.IF ([pcx].OnInput)
-				mov eax, wParam
-				shr eax, 16
-				movsx eax, ax
-				add eax, 4
-				invoke bpInMouseButton, dwRefData, eax, FALSE
-			.ENDIF
-			
 		CASE WM_PAINT
 			mov pcx, dwRefData
 			.IF (([pcx].MouseMode == BPMSMODE_LOCKED) && [pcx].Focused)
 				invoke SetCursorPos, [pcx].ScreenCnt.x, [pcx].ScreenCnt.y
 				mov pcx, dwRefData
-				m2m bpMousePrevPos, [pcx].ScreenCnt.x
-				m2m bpMousePrevPos[4], [pcx].ScreenCnt.y
-				invoke ScreenToClient, [pcx].Handle, ADDR bpMousePrevPos
 			.ENDIF
 			
 			invoke bpCalculateDelta, ADDR bpLastTick, ADDR deltaUnscaled

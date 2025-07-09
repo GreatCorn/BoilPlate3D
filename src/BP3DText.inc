@@ -33,7 +33,7 @@ HorizontalAlign:=<BPTEXTALIGN_LEFT>, VerticalAlign:=<BPTEXTALIGN_TOP>
 ENDM
 
 
-bpBuildFontQuad PROC
+bpBuildFontQuad PROC EXPORT
 	mov bpFontQuad, rv(glGenLists, 1)
 	invoke glNewList, bpFontQuad, GL_COMPILE_AND_EXECUTE
 	invoke glBegin, GL_QUADS
@@ -50,7 +50,7 @@ bpBuildFontQuad PROC
 	ret
 bpBuildFontQuad ENDP
 
-bpRenderText PROC TextString:DWORD, X:SDWORD, Y:SDWORD, HorizontalAlign:BPEnum,\
+bpRenderText PROC EXPORT TextString:DWORD, X:SDWORD, Y:SDWORD, HorizontalAlign:BPEnum,\
 VerticalAlign:BPEnum
 	LOCAL strLength:BPPtr
 	
@@ -104,13 +104,16 @@ VerticalAlign:BPEnum
 	ret
 bpRenderText ENDP
 
-bpLoadFont PROC DirPath:BPPtr, FontPTR:BPPtr
+bpLoadFont PROC EXPORT DirPath:BPPtr, FontPTR:BPPtr
 	LOCAL dirLen:BPPtr, stringBuf:BPPtr
+	
+	print "Loading font from "
+	print DirPath, 13, 10
 	
 	invoke StrLen, DirPath
 	mov dirLen, pax
 	add pax, 7
-	invoke bpMalloc, rv(GetProcessHeap), 0, pax
+	invoke bpMalloc, rv(GetProcessHeap), HEAP_ZERO_MEMORY, pax
 	mov stringBuf, pax
 	
 	push pbx
@@ -127,8 +130,11 @@ bpLoadFont PROC DirPath:BPPtr, FontPTR:BPPtr
 	mov BYTE PTR [pax+pbx+4], "p"
 	mov BYTE PTR [pax+pbx+5], "t"
 	
+	print stringBuf, 13, 10
+	
 	xor pbx, pbx
 	.WHILE (pbx < 128)
+		; Convert pbx to string
 		mov pax, dirLen
 		add pax, stringBuf
 		.IF (pbx >= 100)
@@ -170,7 +176,7 @@ bpLoadFont PROC DirPath:BPPtr, FontPTR:BPPtr
 	.ENDW
 	pop pbx
 	
-	invoke HeapFree, rv(GetProcessHeap), 0, stringBuf
+	invoke bpFree, rv(GetProcessHeap), 0, stringBuf
 	
 	.IF (!bpFontQuad)
 		call bpBuildFontQuad

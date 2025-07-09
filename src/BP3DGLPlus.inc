@@ -33,7 +33,7 @@ piad MACRO Integer:REQ
 	push DWORD PTR bp3DDbl
 ENDM
 
-glClearDepthf PROC depth:REAL4
+glClearDepthf PROC EXPORT depth:REAL4
 	IFDEF rax
 	
 	ELSE
@@ -43,7 +43,7 @@ glClearDepthf PROC depth:REAL4
 	ret
 glClearDepthf ENDP
 
-glClearColor3fv PROC v:BPPtr
+glClearColor3fv PROC EXPORT v:BPPtr
 	mov pax, v
 	push clWhite[12]
 	push REAL4 PTR [pax+8]
@@ -53,7 +53,7 @@ glClearColor3fv PROC v:BPPtr
 	ret
 glClearColor3fv ENDP
 
-glClearColor4fv PROC v:BPPtr
+glClearColor4fv PROC EXPORT v:BPPtr
 	mov pax, v
 	push REAL4 PTR [pax+12]
 	push REAL4 PTR [pax+8]
@@ -63,7 +63,7 @@ glClearColor4fv PROC v:BPPtr
 	ret
 glClearColor4fv ENDP
 
-glOrthof PROC left:REAL4, right:REAL4, bottom:REAL4, top:REAL4, nearVal:REAL4,\
+glOrthof PROC EXPORT left:REAL4, right:REAL4, bottom:REAL4, top:REAL4, nearVal:REAL4,\
 farVal:REAL4
 	IFDEF rax
 	
@@ -79,7 +79,7 @@ farVal:REAL4
 	ret
 glOrthof ENDP
 
-glScalei PROC x:SDWORD, y:SDWORD, z:SDWORD
+glScalei PROC EXPORT x:SDWORD, y:SDWORD, z:SDWORD
 	sub esp, 12
 	fild z
 	fstp REAL4 PTR [esp+8]
@@ -91,7 +91,7 @@ glScalei PROC x:SDWORD, y:SDWORD, z:SDWORD
 	ret
 glScalei ENDP
 
-glTranslatei PROC x:SDWORD, y:SDWORD, z:SDWORD
+glTranslatei PROC EXPORT x:SDWORD, y:SDWORD, z:SDWORD
 	sub esp, 12
 	fild z
 	fstp REAL4 PTR [esp+8]
@@ -103,7 +103,7 @@ glTranslatei PROC x:SDWORD, y:SDWORD, z:SDWORD
 	ret
 glTranslatei ENDP
 
-gluLookAtf PROC eyeX:REAL4, eyeY:REAL4, eyeZ:REAL4, centerX:REAL4, \
+gluLookAtf PROC EXPORT eyeX:REAL4, eyeY:REAL4, eyeZ:REAL4, centerX:REAL4, \
 centerY:REAL4, centerZ:REAL4, upX:REAL4, upY:REAL4, upZ:REAL4
 	IFDEF rax
 		
@@ -121,7 +121,7 @@ centerY:REAL4, centerZ:REAL4, upX:REAL4, upY:REAL4, upZ:REAL4
 	ENDIF
 gluLookAtf ENDP
 
-gluPerspectivef PROC fovy:REAL4, aspect:REAL4, zNear:REAL4, zFar:REAL4
+gluPerspectivef PROC EXPORT fovy:REAL4, aspect:REAL4, zNear:REAL4, zFar:REAL4
 	IFDEF rax
 	
 	ELSE
@@ -134,7 +134,7 @@ gluPerspectivef PROC fovy:REAL4, aspect:REAL4, zNear:REAL4, zFar:REAL4
 	ret
 gluPerspectivef ENDP
 
-gluOrtho2Df PROC left:REAL4, right:REAL4, bottom:REAL4, top:REAL4
+gluOrtho2Df PROC EXPORT left:REAL4, right:REAL4, bottom:REAL4, top:REAL4
 	IFDEF rax
 	
 	ELSE
@@ -147,7 +147,7 @@ gluOrtho2Df PROC left:REAL4, right:REAL4, bottom:REAL4, top:REAL4
 	ret
 gluOrtho2Df ENDP
 
-gluOrtho2Dui PROC left:DWORD, right:DWORD, bottom:DWORD, top:DWORD
+gluOrtho2Dui PROC EXPORT left:DWORD, right:DWORD, bottom:DWORD, top:DWORD
 	IFDEF rax
 	
 	ELSE
@@ -161,7 +161,7 @@ gluOrtho2Dui PROC left:DWORD, right:DWORD, bottom:DWORD, top:DWORD
 gluOrtho2Dui ENDP
 
 IFDEF BP3DMATHS_INC
-glRotatefr PROC angle:REAL4, x:REAL4, y:REAL4, z:REAL4
+glRotatefr PROC EXPORT angle:REAL4, x:REAL4, y:REAL4, z:REAL4
 	fld angle
 	fmul R2D
 	fstp angle
@@ -171,7 +171,7 @@ glRotatefr ENDP
 ENDIF
 
 IFDEF BP3DVECTORS_INC
-glRotate2fv PROC v:BPPtr
+glRotate2fv PROC EXPORT v:BPPtr
 	mov pax, v
 	invoke glRotatef, REAL4 PTR [pax], 1065353216, 0, 0
 	mov pax, v
@@ -179,7 +179,7 @@ glRotate2fv PROC v:BPPtr
 	ret
 glRotate2fv ENDP
 
-glRotate3fv PROC v:BPPtr
+glRotate3fv PROC EXPORT v:BPPtr
 	mov pax, v
 	invoke glRotatef, REAL4 PTR [pax+8], 0, 0, 1065353216
 	mov pax, v
@@ -190,7 +190,22 @@ glRotate3fv PROC v:BPPtr
 glRotate3fv ENDP
 
 IFDEF BP3DMATHS_INC
-glRotate3fvr PROC v:BPPtr
+glRotate2fvr PROC EXPORT v:BPPtr
+	LOCAL _Val:REAL4
+	mov pax, v
+	fld REAL4 PTR [pax]
+	fmul R2D
+	fstp _Val
+	invoke glRotatef, _Val, 1065353216, 0, 0
+	mov pax, v
+	fld REAL4 PTR [pax+4]
+	fmul R2D
+	fstp _Val
+	invoke glRotatef, _Val, 0, 1065353216, 0
+	ret
+glRotate2fvr ENDP
+
+glRotate3fvr PROC EXPORT v:BPPtr
 	LOCAL _Val:REAL4
 	mov pax, v
 	fld REAL4 PTR [pax+8]
@@ -211,7 +226,7 @@ glRotate3fvr PROC v:BPPtr
 glRotate3fvr ENDP
 ENDIF
 
-glTranslate3fv PROC v:BPPtr
+glTranslate3fv PROC EXPORT v:BPPtr
 	mov pax, v
 	invoke glTranslatef, REAL4 PTR [pax], REAL4 PTR [pax+4], REAL4 PTR [pax+8]
 	ret

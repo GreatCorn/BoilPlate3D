@@ -91,7 +91,7 @@ fl32768	REAL4	32768.0
 .DATA?
 nRandSeed DWORD ?
 
-; Floating point comparison macro and PROC by jj2007
+; Floating point comparison macro and PROC EXPORT by jj2007
 fcmp MACRO cmp1:REQ, cmp2
 	LOCAL oa
 	ffree st(7)
@@ -116,7 +116,7 @@ ENDM
 flSign PROTO :REAL4
 nRand PROTO :DWORD
 
-fcmpP PROC
+fcmpP PROC EXPORT
 	push edx
 	xor edx, edx	; Clear the flag register
 	fcompp			; Compare ST(0) with ST(1) and pop twice
@@ -132,7 +132,7 @@ fcmpP PROC
 		ret
 fcmpP ENDP
 
-flClamp PROC Val:REAL4, Min:REAL4, Max:REAL4
+flClamp PROC EXPORT Val:REAL4, Min:REAL4, Max:REAL4
 	fcmp Val, Max
 	.IF !Sign? && !Zero?		; X > X1
 		fld Max
@@ -149,7 +149,7 @@ flClamp PROC Val:REAL4, Min:REAL4, Max:REAL4
 	ret
 flClamp ENDP
 
-flDistance PROC From:REAL4, To:REAL4
+flDistance PROC EXPORT From:REAL4, To:REAL4
 	fld From
 	fsub To
 	fabs
@@ -158,7 +158,7 @@ flDistance PROC From:REAL4, To:REAL4
 	ret
 flDistance ENDP
 
-flEuler PROC Val:REAL4
+flEuler PROC EXPORT Val:REAL4
 	fcmp Val, PI
 	.IF !Sign? && !Zero?	; Val > PI
 		fld Val
@@ -176,7 +176,7 @@ flEuler PROC Val:REAL4
 	ret
 flEuler ENDP
 
-flFrac PROC Val:REAL4
+flFrac PROC EXPORT Val:REAL4
 	fstcw FPUCW
 	or FPUCW, FPU_FLOOR
 	fldcw FPUCW
@@ -194,7 +194,20 @@ flFrac PROC Val:REAL4
 	ret
 flFrac ENDP
 
-flLerp PROC A:REAL4, B:REAL4, T:REAL4
+flInRange PROC EXPORT Val:REAL4, Min:REAL4, Max:REAL4
+	fcmp Val, Min
+	.IF (!Sign?)
+		fcmp Val, Max
+		.IF (Sign?)
+			mov al, TRUE
+			ret
+		.ENDIF
+	.ENDIF
+	mov al, FALSE
+	ret
+flInRange ENDP
+
+flLerp PROC EXPORT A:REAL4, B:REAL4, T:REAL4
 	fld B
 	fsub A
 	fmul T
@@ -205,7 +218,7 @@ flLerp PROC A:REAL4, B:REAL4, T:REAL4
 	ret
 flLerp ENDP
 
-flLerpAngle PROC A:REAL4, B:REAL4, T:REAL4
+flLerpAngle PROC EXPORT A:REAL4, B:REAL4, T:REAL4
 	LOCAL _Ang:REAL4
 	fld B
 	fsub A
@@ -221,7 +234,7 @@ flLerpAngle PROC A:REAL4, B:REAL4, T:REAL4
 	ret
 flLerpAngle ENDP
 
-flMove PROC From:REAL4, To:REAL4, T:REAL4
+flMove PROC EXPORT From:REAL4, To:REAL4, T:REAL4
 	LOCAL Dist:REAL4	
 	invoke flDistance, From, To
 	mov Dist, eax
@@ -245,7 +258,7 @@ flMove PROC From:REAL4, To:REAL4, T:REAL4
 	ret
 flMove ENDP
 
-flMin PROC A:REAL4, B:REAL4
+flMin PROC EXPORT A:REAL4, B:REAL4
 	fcmp A, B
 	.IF (Sign?)
 		mov eax, A
@@ -256,7 +269,7 @@ flMin PROC A:REAL4, B:REAL4
 flMin ENDP
 
 ; Returns a random REAL4 in range [0.0, 1.0]
-flRand PROC
+flRand PROC EXPORT
 	LOCAL _Val:REAL4
 	
 	invoke nRand, 100
@@ -268,7 +281,7 @@ flRand PROC
 	ret
 flRand ENDP
 
-flRandRange PROC Min:REAL4, Max:REAL4
+flRandRange PROC EXPORT Min:REAL4, Max:REAL4
 	LOCAL _Val:REAL4
 	
 	invoke nRand, 1000
@@ -284,7 +297,7 @@ flRandRange PROC Min:REAL4, Max:REAL4
 	ret
 flRandRange ENDP
 
-flRepeat PROC Val:REAL4, Max:REAL4
+flRepeat PROC EXPORT Val:REAL4, Max:REAL4
 	fstcw FPUCW
 	or FPUCW, FPU_FLOOR
 	fldcw FPUCW
@@ -303,7 +316,7 @@ flRepeat PROC Val:REAL4, Max:REAL4
 	ret
 flRepeat ENDP
 
-flSign PROC Val:REAL4
+flSign PROC EXPORT Val:REAL4
 	fcmp Val
 	.IF (Sign? && !Zero?)
 		mov eax, fl1N	; -1.0
@@ -319,7 +332,7 @@ flSign PROC Val:REAL4
 	ret
 flSign ENDP
 
-intAbs PROC Val:SDWORD
+intAbs PROC EXPORT Val:SDWORD
 	mov eax, Val
 	cmp eax, 0
 	jge intAbsNeg
@@ -328,7 +341,7 @@ intAbs PROC Val:SDWORD
 	ret
 intAbs ENDP
 
-intClamp PROC Val:SDWORD, Min:SDWORD, Max:SDWORD
+intClamp PROC EXPORT Val:SDWORD, Min:SDWORD, Max:SDWORD
 	mov eax, Val
 	cmp eax, Min
 	jge intClampSetMin
@@ -341,14 +354,14 @@ intClamp PROC Val:SDWORD, Min:SDWORD, Max:SDWORD
 	ret
 intClamp ENDP
 
-intDistance PROC From:SDWORD, To:SDWORD
+intDistance PROC EXPORT From:SDWORD, To:SDWORD
 	mov eax, From
 	sub eax, To
 	invoke intAbs, eax
 	ret
 intDistance ENDP
 
-intInRange PROC Val:SDWORD, Min:SDWORD, Max:SDWORD
+intInRange PROC EXPORT Val:SDWORD, Min:SDWORD, Max:SDWORD
 	mov eax, Val
 	cmp eax, Min
 	jl intInRangeFalse
@@ -361,7 +374,7 @@ intInRange PROC Val:SDWORD, Min:SDWORD, Max:SDWORD
 	ret
 intInRange ENDP
 
-intRandRange PROC Min:SDWORD, Max:SDWORD
+intRandRange PROC EXPORT Min:SDWORD, Max:SDWORD
 	mov eax, Max
 	sub eax, Min
 	invoke nRand, eax
@@ -371,7 +384,7 @@ intRandRange ENDP
 
 ;   MASM32 Park Miller random number algorithm implementation (nrandom), written
 ; by Jaymeson Trudgen (NaN), optimized by Rickey Bowers Jr. (bitRAKE).
-nRand PROC Base:DWORD
+nRand PROC EXPORT Base:DWORD
 	mov eax, nRandSeed
 
 	test eax, 80000000h

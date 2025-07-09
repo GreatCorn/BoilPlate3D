@@ -1,7 +1,7 @@
 ;   Create 1D array of length ArrayLength, for elements of size DataSize.
 ;   DataSize:BPPtr - SIZEOF the data type in the array.
 ;   ArrayLength:BPPtr - length of the array to create.
-bpCreate1DArray PROC DataSize:BPPtr, ArrayLength:BPPtr
+bpCreate1DArray PROC EXPORT DataSize:BPPtr, ArrayLength:BPPtr
 	call GetProcessHeap
 	push pax
 	mov pax, ArrayLength
@@ -17,7 +17,7 @@ bpCreate1DArray ENDP
 ;   DataSize:BPPtr - SIZEOF the data type in the array.
 ;   ArrayWidth:BPPtr - width of the array to create.
 ;   ArrayHeight:BPPtr - height of the array to create.
-bpCreate2DArray PROC DataSize:BPPtr, ArrayWidth:BPPtr, ArrayHeight:BPPtr
+bpCreate2DArray PROC EXPORT DataSize:BPPtr, ArrayWidth:BPPtr, ArrayHeight:BPPtr
 	call GetProcessHeap
 	push pax
 	mov pax, ArrayWidth
@@ -34,7 +34,7 @@ bpCreate2DArray ENDP
 ; it in pax.
 ;   X:BPPtr - position in 1D array.
 ;   DataSize - SIZEOF the data type in the array.
-bp1DArrayGetOffset PROC X:BPPtr, DataSize:BPPtr
+bp1DArrayGetOffset PROC EXPORT X:BPPtr, DataSize:BPPtr
 	mov pax, X
 	mov pcx, DataSize
 	mul pcx
@@ -47,7 +47,7 @@ bp1DArrayGetOffset ENDP
 ;   Y:BPPtr - Y position in 2D array.
 ;   ArrayWidth - the width of the array to calculate offset with Y.
 ;   DataSize - SIZEOF the data type in the array.
-bp2DArrayGetOffset PROC X:BPPtr, Y:BPPtr, ArrayWidth:BPPtr, DataSize:BPPtr
+bp2DArrayGetOffset PROC EXPORT X:BPPtr, Y:BPPtr, ArrayWidth:BPPtr, DataSize:BPPtr
 	mov pax, Y
 	mov pcx, ArrayWidth
 	mul pcx
@@ -62,7 +62,7 @@ bp2DArrayGetOffset ENDP
 ;   ArrayOffset:BPPtr - the array data block offset to calculate position from.
 ;   ArrayWidth - the width of the array to calculate Y position.
 ;   DataSize - SIZEOF the data type in the array.
-bp2DArrayGetPosition PROC ArrayOffset:BPPtr, ArrayWidth:BPPtr, DataSize:BPPtr
+bp2DArrayGetPosition PROC EXPORT ArrayOffset:BPPtr, ArrayWidth:BPPtr, DataSize:BPPtr
 	mov pax, ArrayOffset
 	mov pcx, DataSize
 	xor pdx, pdx

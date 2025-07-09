@@ -28,15 +28,15 @@ include macros\macros.asm
 ; -----	INTERFACE -----
 
 BP3D_CLAMP_INTERPOLATION	EQU <1>
-BP3D_FIXED_INTERVAL			EQU 1000 / 60
-IFDEF BP3D_TRACEABLE_MALLOC
+BP3D_FIXED_INTERVAL			EQU 1000 / 60	; OnFixed signal interval (ms)
+IFDEF BP3D_TRACEABLE_HEAP					; Malloc macros for memory tracing
 	bpFree		TEXTEQU <bpFreeProc>
 	bpMalloc	TEXTEQU <bpMallocProc>
-	bpRealloc	TEXTEQU <bpReallocProc>
+	bpReAlloc	TEXTEQU <bpReAllocProc>
 ELSE
 	bpFree		TEXTEQU <HeapFree>
 	bpMalloc	TEXTEQU <HeapAlloc>
-	bpRealloc	TEXTEQU <HeapReAlloc>
+	bpReAlloc	TEXTEQU <HeapReAlloc>
 ENDIF
 
 ; ----- CONSTANTS -----
@@ -207,6 +207,8 @@ deltaScale 		REAL4	1.0
 deltaUnscaled 	REAL4	0.0
 
 heapAllocated	DWORD	0
+heapList		BPPtr	0
+heapListSize	DWORD	0
 
 timeStart		REAL4	0.0
 
@@ -219,6 +221,8 @@ bpSetScreenCenter PROTO :BPPtr
 bpDefTimeProc PROTO :UINT, :UINT, :DWORD, :DWORD, :DWORD
 bpDefWndProc PROTO :HWND, :UINT, :WPARAM, :LPARAM
 bpMallocProc PROTO :HANDLE, :DWORD, :DWORD
+bpSetWindowMode PROTO :BPPtr, :BPEnum
+bpUpdateWindowPos PROTO :BPPtr
 
 ;   32-bit m2m macro implementation that uses 64-bit values.
 ;   dst:REQ - mov destination.
@@ -235,9 +239,166 @@ bpm2m64 MACRO dst:REQ, src:REQ
 	ENDIF
 ENDM
 
+IFDEF BP3D_TRACEABLE_HEAP
+;   Traceable memory free macro (maps to Win32 HeapFree).
+bpFreeProc PROC EXPORT hHeap:HANDLE, dwFlags:DWORD, lpMem:LPVOID
+	invoke HeapSize, hHeap, dwFlags, lpMem
+	sub heapAllocated, eax
+	invoke HeapFree, hHeap, dwFlags, lpMem
+	
+	IFDEF BP3D_TRACEABLE_HEAP_LIST
+		push pbx
+		xor pbx, pbx
+		.WHILE (pbx < heapListSize)
+			mov pcx, heapList
+			mov pdx, lpMem
+			.IF (BPPtr PTR [pcx+pbx] == pdx)
+				add pcx, pbx
+				mov pdx, pcx
+				add pdx, SIZEOF BPPtr
+				sub heapListSize, SIZEOF BPPtr
+				.IF (pbx < heapListSize)
+					push heapListSize
+					sub heapListSize, pbx
+					invoke RtlMoveMemory, pcx, pdx, heapListSize
+					pop heapListSize
+				.ENDIF
+				mov heapList, rv(HeapReAlloc, hHeap, 0, heapList, heapListSize)
+				.BREAK
+			.ENDIF
+			add pbx, SIZEOF BPPtr
+		.ENDW
+		pop pbx
+	ENDIF
+	
+	IFDEF BP3D_TRACEABLE_HEAP_VERBOSE
+		print "Freeing address "
+		print uhex$(lpMem), 13, 10
+	ENDIF
+	ret
+bpFreeProc ENDP
+
+;   Traceable memory reallocation macro (maps to Win32 HeapReAlloc).
+bpReAllocProc PROC EXPORT hHeap:HANDLE, dwFlags:DWORD, lpMem:LPVOID, dwBytes:DWORD
+	invoke HeapSize, hHeap, dwFlags, lpMem
+	sub heapAllocated, eax
+	mov eax, dwBytes
+	add heapAllocated, eax
+	
+	IFDEF BP3D_TRACEABLE_HEAP_VERBOSE
+		print "Reallocating ", 9
+		print udword$(dwBytes), 9
+		print "from "
+		print uhex$(lpMem), 32
+	ENDIF
+	
+	invoke HeapReAlloc, hHeap, dwFlags, lpMem, dwBytes
+	
+	IFDEF BP3D_TRACEABLE_HEAP_LIST
+		push pax
+		push pbx
+		xor pbx, pbx
+		.WHILE (pbx < heapListSize)
+			mov pcx, heapList
+			mov pdx, lpMem
+			.IF (BPPtr PTR [pcx+pbx] == pdx)
+				mov BPPtr PTR [pcx+pbx], pax
+				.BREAK
+			.ENDIF
+			add pbx, SIZEOF BPPtr
+		.ENDW
+		pop pbx
+		pop pax
+	ENDIF
+	IFDEF BP3D_TRACEABLE_HEAP_VERBOSE
+		push pax
+		print "to "
+		pop pax
+		push pax
+		print uhex$(pax), 13, 10
+		pop pax
+	ENDIF
+	ret
+bpReAllocProc ENDP
+
+;   Traceable memory allocation macro (maps to Win32 HeapAlloc).
+bpMallocProc PROC EXPORT hHeap:HANDLE, dwFlags:DWORD, dwBytes:DWORD
+	mov eax, dwBytes
+	add heapAllocated, eax
+	
+	IFDEF BP3D_TRACEABLE_HEAP_LIST
+		add heapListSize, SIZEOF BPPtr
+		.IF (heapList)
+			pusha
+			print "REALLOCATING...", 9
+			popa
+			mov heapList, rv(HeapReAlloc, hHeap, 0, heapList, heapListSize)
+			pusha
+			print "...DONE", 13, 10
+			popa
+		.ELSE
+			mov heapList, rv(HeapAlloc, hHeap, 0, heapListSize)
+		.ENDIF
+	ENDIF
+	IFDEF BP3D_TRACEABLE_HEAP_VERBOSE
+		print "Allocating ", 9
+		print udword$(dwBytes), 9
+	ENDIF
+	
+	invoke HeapAlloc, hHeap, dwFlags, dwBytes
+	
+	IFDEF BP3D_TRACEABLE_HEAP_LIST
+		mov pcx, heapList
+		mov pdx, heapListSize
+		sub pdx, SIZEOF BPPtr
+		mov BPPtr PTR [pcx+pdx], pax
+	ENDIF
+	IFDEF BP3D_TRACEABLE_HEAP_VERBOSE
+		push pax
+		print "on address "
+		pop pax
+		push pax
+		print uhex$(pax), 13, 10
+		pop pax
+	ENDIF
+	ret
+bpMallocProc ENDP
+
+IFDEF BP3D_TRACEABLE_HEAP_LIST
+bpPrintHeapList PROC EXPORT
+	print "Allocated heap block count: "
+	mov eax, heapListSize
+	xor edx, edx
+	mov ecx, SIZEOF BPPtr
+	div ecx
+	print str$(eax), 32, 40
+	print udword$(heapAllocated)
+	print " bytes", 41, 13, 10
+	
+	push pbx
+	xor pbx, pbx
+	.WHILE (pbx < heapListSize)
+		push pbx
+		add pbx, heapList
+		print " ", 9
+		print uhex$(BPPtr PTR [pbx]), 32
+		print "size: "
+		invoke HeapSize, rv(GetProcessHeap), 0, BPPtr PTR [pbx]
+		print udword$(eax), 13, 10
+		pop pbx
+		add pbx, SIZEOF BPPtr
+	.ENDW
+	pop pbx
+	ret
+bpPrintHeapList ENDP
+ENDIF
+
+ENDIF
+
+
 ;   Calculate deltaTime. Done automatically in the message loop in bpCreateForm,
 ; if bpDefaultFlag is TRUE (after OnRender callback).
-bpCalculateDelta PROC LastTick:BPPtr, DeltaPtr:BPPtr
+bpCalculateDelta PROC EXPORT LastTick:BPPtr, DeltaPtr:BPPtr
 	IFDEF BP3D_USELARGEINTEGER
 		LOCAL diff:LARGE_INTEGER
 		
@@ -310,7 +471,7 @@ bpCalculateDelta ENDP
 
 ;   Initialize form and createa window based on its parameters.
 ;   BPFormPtr:BPPtr - pointer to a form structure.
-bpCreateForm PROC BPFormPtr:BPPtr
+bpCreateForm PROC EXPORT BPFormPtr:BPPtr
 	LOCAL wc:WNDCLASSEX, msg:MSG, testFreq:LARGE_INTEGER, quitFlag:BPBool
 	LOCAL rid:RAWINPUTDEVICE 
 	ASSUME pcx:PTR BPForm
@@ -374,8 +535,14 @@ bpCreateForm PROC BPFormPtr:BPPtr
 		mov rid.dwFlags, RIDEV_INPUTSINK
 		mov pcx, BPFormPtr
 		m2m rid.hwndTarget, [pcx].Handle
+		print str$(rid.hwndTarget), 13, 10
 		
 		invoke RegisterRawInputDevices, ADDR rid, 1, SIZEOF RAWINPUTDEVICE
+		
+		mov pcx, BPFormPtr
+		.IF ([pcx].WindowMode)
+			invoke bpSetWindowMode, pcx, [pcx].WindowMode
+		.ENDIF
 	.ENDIF
 	
 	; OnFixed
@@ -421,16 +588,9 @@ bpCreateForm PROC BPFormPtr:BPPtr
 	ret
 bpCreateForm ENDP
 
-bpFreeProc PROC hHeap:HANDLE, dwFlags:DWORD, lpMem:LPVOID
-	invoke HeapSize, hHeap, dwFlags, lpMem
-	sub heapAllocated, eax
-	invoke HeapFree, hHeap, dwFlags, lpMem
-	ret
-bpFreeProc ENDP
-
 ;   Initialize OpenGL context in an existing form.
 ;   BPFormPtr:BPPtr - pointer to a form structure.
-bpInitGLContext PROC BPFormPtr:BPPtr
+bpInitGLContext PROC EXPORT BPFormPtr:BPPtr
 	LOCAL pfd:PIXELFORMATDESCRIPTOR, pixelFormat:DWORD
 	ASSUME pcx:PTR BPForm
 	
@@ -482,7 +642,7 @@ bpInitGLContext ENDP
 ;   BPFormPtr:BPPtr - pointer to a form structure.
 ;   Keycode:WPARAM - virtual-key code of the keyboard button.
 ;   Pressed:BOOL - if the key has been pressed or released.
-bpInKey PROC BPFormPtr:BPPtr, Keycode:WPARAM, Pressed:BOOL
+bpInKey PROC EXPORT BPFormPtr:BPPtr, Keycode:WPARAM, Pressed:BOOL
 	LOCAL bpInStruct:BPInKey
 	
 	m2m bpInStruct.Keycode, Keycode
@@ -503,15 +663,16 @@ bpInKey ENDP
 
 ;   Send mouse input to form OnInput event as a struct.
 ;   BPFormPtr:BPPtr - pointer to a form structure.
-bpInMouse PROC BPFormPtr:BPPtr, lParam:LPARAM
+;   RawHandle:LPARAM - handle to RAWINPUT structure (lParam in WM_INPUT)
+bpInMouse PROC EXPORT BPFormPtr:BPPtr, RawHandle:LPARAM
 	LOCAL bpInStruct:BPInMouseMove, dwSize:DWORD, lpb:BPPtr
 	
-	invoke GetRawInputData, lParam, RID_INPUT, NULL, ADDR dwSize, \
+	invoke GetRawInputData, RawHandle, RID_INPUT, NULL, ADDR dwSize, \
 	SIZEOF RAWINPUTHEADER
 	invoke bpMalloc, rv(GetProcessHeap), 0, dwSize
 	mov lpb, pax
 	
-	invoke GetRawInputData, lParam, RID_INPUT, lpb, ADDR dwSize, \
+	invoke GetRawInputData, RawHandle, RID_INPUT, lpb, ADDR dwSize, \
 	SIZEOF RAWINPUTHEADER
 	
 	.IF (pax == dwSize)
@@ -591,7 +752,12 @@ bpInMouse PROC BPFormPtr:BPPtr, lParam:LPARAM
 	ret
 bpInMouse ENDP
 
-bpInMouseButton PROC BPFormPtr:BPPtr, Button:BPPtr, Pressed:BPBool
+;   Send mouse button input to form OnInput event as a struct. Used to be sent
+; from bpDefWndProc, but after switching to raw input, is sent from bpInMouse.
+;   BPFormPtr:BPPtr - pointer to a form structure.
+;   Button:BPPtr - virtual-key code of the mouse button.
+;   Pressed:BOOL - if the button has been pressed or released.
+bpInMouseButton PROC EXPORT BPFormPtr:BPPtr, Button:BPPtr, Pressed:BPBool
 	LOCAL bpInStruct:BPInMouseButton
 	
 	m2m bpInStruct.Button, Button
@@ -610,26 +776,10 @@ bpInMouseButton PROC BPFormPtr:BPPtr, Button:BPPtr, Pressed:BPBool
 	ret
 bpInMouseButton ENDP
 
-bpMallocProc PROC hHeap:HANDLE, dwFlags:DWORD, dwBytes:DWORD
-	mov eax, dwBytes
-	add heapAllocated, eax
-	invoke HeapAlloc, hHeap, dwFlags, dwBytes
-	ret
-bpMallocProc ENDP
-
-bpReallocProc PROC hHeap:HANDLE, dwFlags:DWORD, lpMem:LPVOID, dwBytes:DWORD
-	invoke HeapSize, hHeap, dwFlags, lpMem
-	sub heapAllocated, eax
-	mov eax, dwBytes
-	add heapAllocated, eax
-	invoke HeapReAlloc, hHeap, dwFlags, lpMem, dwBytes
-	ret
-bpReallocProc ENDP
-
 ;   Sets form's mouse mode.
 ;   BPFormPtr:BPPtr - pointer to a form structure.
 ;   MouseMode:BPEnum - mouse mode, represented as a BPMSMODE constant.
-bpSetMouseMode PROC BPFormPtr:BPPtr, MouseMode:BPEnum
+bpSetMouseMode PROC EXPORT BPFormPtr:BPPtr, MouseMode:BPEnum
 	LOCAL curInfo:CURSORINFO
 	
 	ASSUME pcx:PTR BPForm
@@ -659,7 +809,7 @@ bpSetMouseMode ENDP
 ; Done automatically in bpDefSubclassProc - WM_MOVE & WM_SIZE, if bpDefaultFlag
 ; is TRUE.
 ;   BPFormPtr:BPPtr - pointer to a form structure.
-bpSetScreenCenter PROC BPFormPtr:BPPtr
+bpSetScreenCenter PROC EXPORT BPFormPtr:BPPtr
 	LOCAL winW, winH:DWORD
 	ASSUME pcx:PTR BPForm
 	mov pcx, BPFormPtr
@@ -692,29 +842,39 @@ bpSetScreenCenter ENDP
 ;   Set form size and mode to fullscreen or windowed.
 ;   BPFormPtr:BPPtr - pointer to a form structure.
 ;   WindowMode:BPEnum - window mode, represented as a BPWINMODE constant.
-bpSetWindowMode PROC BPFormPtr:BPPtr, WindowMode:BPEnum
-	LOCAL winRect:RECT
+bpSetWindowMode PROC EXPORT BPFormPtr:BPPtr, WindowMode:BPEnum
+	LOCAL devMode:DEVMODE
 	ASSUME pcx:PTR BPForm
 	mov pcx, BPFormPtr
 	
-	mov al, WindowMode
-	mov [pcx].WindowMode, al
+	.IF ([pcx].WindowMode == BPWINMODE_FULLSCREEN)
+		; Dubiously necessary
+		; I stole the modes from Godot but didn't even check how they work smh
+		.IF (WindowMode == BPWINMODE_MINIMIZED) || \
+		(WindowMode == BPWINMODE_MAXIMIZED)
+			invoke bpSetWindowMode, pcx, BPWINMODE_WINDOWED
+			mov pcx, BPFormPtr
+		.ENDIF
+	.ELSEIF ([pcx].WindowMode == BPWINMODE_FULLSCREEN_EX)
+		invoke SetWindowLongA, [pcx].Handle, GWL_STYLE, WS_OVERLAPPEDWINDOW
+		invoke ChangeDisplaySettingsA, NULL, 0
+		mov pcx, BPFormPtr
+	.ENDIF
 	
-	.IF (WindowMode == BPWINMODE_FULLSCREEN)
-		invoke GetWindowRect, [pcx].Handle, ADDR winRect
-		mov eax, winRect.right
-		mov ecx, winRect.left
-		sub eax, ecx
+	.IF (WindowMode == BPWINMODE_WINDOWED)
+		invoke SetWindowLongA, [pcx].Handle, GWL_STYLE, WS_OVERLAPPEDWINDOW
 		mov pcx, BPFormPtr
-		mov [pcx].WindowSize.x, eax
-		mov eax, winRect.bottom
-		mov ecx, winRect.top
-		sub eax, ecx
-		mov pcx, BPFormPtr
-		mov [pcx].WindowSize.y, eax
-		
-		m2m [pcx].WindowPos.x, winRect.left
-		m2m [pcx].WindowPos.y, winRect.top
+		invoke SetWindowPos, [pcx].Handle, HWND_TOPMOST, [pcx].WindowPos.x, \
+		[pcx].WindowPos.y, [pcx].WindowSize.x, [pcx].WindowSize.y, \
+		SWP_NOZORDER or SWP_FRAMECHANGED or SWP_SHOWWINDOW
+	.ELSEIF (WindowMode == BPWINMODE_MINIMIZED)
+		invoke ShowWindow, [pcx].Handle, SW_MINIMIZE
+	.ELSEIF (WindowMode == BPWINMODE_MAXIMIZED)
+		invoke ShowWindow, [pcx].Handle, SW_MAXIMIZE
+	.ELSEIF (WindowMode == BPWINMODE_FULLSCREEN)
+		.IF ([pcx].WindowMode != BPWINMODE_MAXIMIZED)
+			invoke bpUpdateWindowPos, BPFormPtr
+		.ENDIF
 	
 		invoke SetWindowLongA, [pcx].Handle, GWL_STYLE, WS_POPUP
 		invoke GetSystemMetrics, SM_CXSCREEN
@@ -725,39 +885,63 @@ bpSetWindowMode PROC BPFormPtr:BPPtr, WindowMode:BPEnum
 		mov pcx, BPFormPtr
 		invoke SetWindowPos, [pcx].Handle, HWND_TOPMOST, 0, 0, eax, edx, \
 		SWP_NOZORDER or SWP_FRAMECHANGED or SWP_SHOWWINDOW
-	.ELSEIF (WindowMode == BPWINMODE_WINDOWED)
-		invoke SetWindowLongA, [pcx].Handle, GWL_STYLE, WS_OVERLAPPEDWINDOW
+	.ELSEIF (WindowMode == BPWINMODE_FULLSCREEN_EX)
+		.IF ([pcx].WindowMode != BPWINMODE_MAXIMIZED)
+			invoke bpUpdateWindowPos, BPFormPtr
+		.ENDIF
+		
+		mov devMode.dmSize, SIZEOF DEVMODE
+		invoke EnumDisplaySettingsA, NULL, ENUM_CURRENT_SETTINGS, ADDR devMode
 		mov pcx, BPFormPtr
-		invoke SetWindowPos, [pcx].Handle, HWND_TOPMOST, [pcx].WindowPos.x, \
-		[pcx].WindowPos.y, [pcx].WindowSize.x, [pcx].WindowSize.y, \
+		m2m devMode.dmPelsWidth, [pcx].ScreenSize.x
+		m2m devMode.dmPelsHeight, [pcx].ScreenSize.y
+		print str$(devMode.dmPelsWidth), 9
+		print str$(devMode.dmPelsHeight), 13, 10
+		invoke ChangeDisplaySettingsA, ADDR devMode, CDS_FULLSCREEN
+		mov pcx, BPFormPtr
+		invoke SetWindowLongA, [pcx].Handle, GWL_STYLE, WS_POPUP
+		mov pcx, BPFormPtr
+		invoke SetWindowPos, [pcx].Handle, HWND_TOPMOST, 0, 0, \
+		devMode.dmPelsWidth, devMode.dmPelsHeight, \
 		SWP_NOZORDER or SWP_FRAMECHANGED or SWP_SHOWWINDOW
 	.ENDIF
 	
-	;mov pcx, BPFormPtr MAYBE THIS HAS TO BE DONE EVERYTIME SO I HAVE TO MAKE IT A GENERIC PROC
-	;.IF ([pcx].LockCursor && [pcx].Focused)
-	;	invoke bpSetScreenCenter, BPFormPtr
-	;	invoke SetCursorPos, [pcx].ScreenCnt.x, [pcx].ScreenCnt.y
-	;.ENDIF
+	mov pcx, BPFormPtr
 	
+	mov al, WindowMode
+	mov [pcx].WindowMode, al
 	ASSUME pcx:nothing
 	ret
 bpSetWindowMode ENDP
 
-;   Updates the window display according to the form's parameters (position,
-; size).
+;   Updates the BPForm window size and position parameters.
 ;   BPFormPtr:BPPtr - pointer to a form structure.
-bpUpdateForm PROC BPFormPtr: BPPtr
+bpUpdateWindowPos PROC EXPORT BPFormPtr: BPPtr
+	LOCAL winRect:RECT
 	ASSUME pcx:PTR BPForm
 	mov pcx, BPFormPtr
 	
-	;invoke SetWindowPos, [pcx].Handle, NULL, HWND_TOPMOST, [pcx].ScreenPos.x, \
-	;[pcx].ScreenPos.y, [pcx].ScreenSize.x, [pcx].ScreenSize.y,
+	invoke GetWindowRect, [pcx].Handle, ADDR winRect
+	mov eax, winRect.right
+	mov ecx, winRect.left
+	sub eax, ecx
+	mov pcx, BPFormPtr
+	mov [pcx].WindowSize.x, eax
+	mov eax, winRect.bottom
+	mov ecx, winRect.top
+	sub eax, ecx
+	mov pcx, BPFormPtr
+	mov [pcx].WindowSize.y, eax
 	
+	m2m [pcx].WindowPos.x, winRect.left
+	m2m [pcx].WindowPos.y, winRect.top
+
 	ASSUME pcx:nothing
 	ret
-bpUpdateForm ENDP
+bpUpdateWindowPos ENDP
 
-bpDefTimeProc PROC uID:UINT, uMsg:UINT, dwUser:DWORD, dw1:DWORD, dw2:DWORD
+;   The default fixed timer callback procedure (TimeProc).
+bpDefTimeProc PROC EXPORT uID:UINT, uMsg:UINT, dwUser:DWORD, dw1:DWORD, dw2:DWORD
 	ASSUME pcx:PTR BPForm
 	mov pcx, dwUser
 	call [pcx].OnFixed
@@ -766,7 +950,7 @@ bpDefTimeProc PROC uID:UINT, uMsg:UINT, dwUser:DWORD, dw1:DWORD, dw2:DWORD
 bpDefTimeProc ENDP
 
 ;   The default callback subclass procedure for processing form messages.
-bpDefWndProc PROC hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
+bpDefWndProc PROC EXPORT hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
 	LOCAL dwRefData:BPPtr
 	
 	invoke GetWindowLong, hWnd, GWLP_USERDATA
@@ -856,6 +1040,14 @@ bpDefWndProc PROC hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
 			
 		CASE WM_SIZE
 			mov pcx, dwRefData
+			SWITCH wParam
+				CASE SIZE_RESTORED
+					mov [pcx].WindowMode, BPWINMODE_WINDOWED
+				CASE SIZE_MINIMIZED
+					mov [pcx].WindowMode, BPWINMODE_MINIMIZED
+				CASE SIZE_MAXIMIZED
+					mov [pcx].WindowMode, BPWINMODE_MAXIMIZED
+			ENDSW
 			mov eax, lParam
 			movsx eax, ax
 			mov [pcx].ScreenSize.x, eax

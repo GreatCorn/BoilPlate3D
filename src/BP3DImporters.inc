@@ -92,9 +92,9 @@ bpLoadFile PROTO :BPPtr, :BPPtr
 
 bpCheckFileInvalid MACRO
 	.IF (pax == INVALID_HANDLE_VALUE)
-		;print "File "
-		;print FilePath
-		;print " not found!", 13, 10
+		print "File "
+		print FilePath
+		print " not found!", 13, 10
 		xor pax, pax
 		ret
 	.ENDIF
@@ -140,7 +140,7 @@ ENDM
 
 ;   Unified vertex, texcoord and normal drawing procedure for BPMesh structure.
 ;   BPMeshPTR - pointer to a BPMesh structure.
-bpDrawMesh PROC BPMeshPTR:BPPtr
+bpDrawMesh PROC EXPORT BPMeshPTR:BPPtr
 	ASSUME pcx:PTR BPMesh
 	
 	mov pcx, BPMeshPTR
@@ -157,7 +157,18 @@ bpDrawMesh PROC BPMeshPTR:BPPtr
 	ret
 bpDrawMesh ENDP
 
-bpFreeBPM PROC BPMeshPTR:BPPtr
+bpFreeBPA PROC EXPORT BPAnimPTR:BPPtr
+	ASSUME pcx:PTR BPAnimTrack
+	
+	call GetProcessHeap
+	mov pcx, BPAnimPTR
+	invoke bpFree, pax, 0, [pcx].Frames
+	
+	ASSUME pcx:nothing
+	ret
+bpFreeBPA ENDP
+
+bpFreeBPM PROC EXPORT BPMeshPTR:BPPtr
 	push pbx
 	ASSUME pbx:PTR BPMesh
 	mov pbx, BPMeshPTR
@@ -170,7 +181,7 @@ bpFreeBPM PROC BPMeshPTR:BPPtr
 	ret
 bpFreeBPM ENDP
 
-bpLoadBPA PROC BPAnimPTR:BPPtr, FilePath:BPPtr
+bpLoadBPA PROC EXPORT BPAnimPTR:BPPtr, FilePath:BPPtr
 	LOCAL hFile:HANDLE, dwHighSize:DWORD, dwFileSize:DWORD, dwArraySize:DWORD
 	LOCAL dwBytesRead:DWORD
 	ASSUME pcx:PTR BPAnimTrack
@@ -187,24 +198,29 @@ bpLoadBPA PROC BPAnimPTR:BPPtr, FilePath:BPPtr
 	mov pcx, BPAnimPTR
 	mov [pcx].Frames, pax
 	m2m [pcx].ByteSize, dwFileSize
-
+	
 	invoke ReadFile, hFile, [pcx].Frames, dwFileSize, ADDR dwBytesRead, 0
-	pusha
-	print FilePath, 9
-	print "ReadFile value:", 32
-	popa
-	pusha
-	print str$(eax), 9
-	popa
+		
+	IFDEF BP3D_IMPORTERS_VERBOSE
+		push pax
+		print FilePath, 9
+		print "ReadFile value:", 32
+		pop pax
+		push pax
+		print str$(eax), 9
+		pop pax
+		push pax
+		print "bytes read:", 32
+		print str$(dwBytesRead), 9
+		print "file size:", 32
+		print str$(dwFileSize), 13, 10
+		pop pax
+	ENDIF
 	.IF !(eax)
 		print "ERROR:"
 		invoke GetLastError
 		print str$(eax), 9
 	.ENDIF
-	print "bytes read:", 32
-	print str$(dwBytesRead), 9
-	print "file size:", 32
-	print str$(dwFileSize), 13, 10
 	
     invoke CloseHandle, hFile
 	
@@ -212,7 +228,7 @@ bpLoadBPA PROC BPAnimPTR:BPPtr, FilePath:BPPtr
 	ret
 bpLoadBPA ENDP
 
-bpLoadBPL PROC GLListPTR:BPPtr, FilePath:BPPtr
+bpLoadBPL PROC EXPORT GLListPTR:BPPtr, FilePath:BPPtr
 	LOCAL buffer:BPPtr, listIndex:DWORD, dwFileSize: DWORD
 	
 	invoke bpLoadFile, FilePath, ADDR dwFileSize
@@ -259,7 +275,7 @@ bpLoadBPL PROC GLListPTR:BPPtr, FilePath:BPPtr
 	ret
 bpLoadBPL ENDP
 
-bpLoadBPM PROC BPMeshPTR:BPPtr, FilePath:BPPtr
+bpLoadBPM PROC EXPORT BPMeshPTR:BPPtr, FilePath:BPPtr
 	LOCAL hFile:HANDLE, dwHighSize:DWORD, dwFileSize:DWORD, dwArraySize:DWORD
 	LOCAL v3Size:DWORD, v2Size:DWORD, dwBytesRead:DWORD
 	ASSUME pcx:PTR BPMesh
@@ -289,7 +305,7 @@ bpLoadBPM PROC BPMeshPTR:BPPtr, FilePath:BPPtr
 	mov ecx, 3				; Allocate the Vertices array
 	mul ecx
 	mov v3Size, eax
-	invoke bpMalloc, rv(GetProcessHeap), 0, eax
+	invoke bpMalloc, rv(GetProcessHeap), 0, v3Size
 	mov pcx, BPMeshPTR
 	mov [pcx].Vertices, pax
 	
@@ -297,7 +313,7 @@ bpLoadBPM PROC BPMeshPTR:BPPtr, FilePath:BPPtr
 	mov ecx, 2
 	mul ecx
 	mov v2Size, eax
-	invoke bpMalloc, rv(GetProcessHeap), 0, eax
+	invoke bpMalloc, rv(GetProcessHeap), 0, v2Size
 	mov pcx, BPMeshPTR
 	mov [pcx].TexCoords, pax
 	
@@ -310,13 +326,29 @@ bpLoadBPM PROC BPMeshPTR:BPPtr, FilePath:BPPtr
     invoke ReadFile, hFile, [pcx].TexCoords, v2Size, ADDR dwBytesRead, 0
 	mov pcx, BPMeshPTR
     invoke ReadFile, hFile, [pcx].Normals, v3Size, ADDR dwBytesRead, 0
+	
+	
+	IFDEF BP3D_IMPORTERS_VERBOSE
+		pusha
+		print FilePath, 9
+		print "ReadFile value:", 32
+		popa
+		pusha
+		print str$(eax), 9
+		popa
+		print "bytes read:", 32
+		print str$(dwBytesRead), 9
+		print "file size:", 32
+		print str$(dwFileSize), 13, 10
+	ENDIF
+	
     invoke CloseHandle, hFile
 	
 	ASSUME pcx:nothing
 	ret
 bpLoadBPM ENDP
 
-bpLoadBPT PROC TexturePTR:BPPtr, FilePath:BPPtr
+bpLoadBPT PROC EXPORT TexturePTR:BPPtr, FilePath:BPPtr
 	LOCAL buffer:BPPtr, texIndex:DWORD, texType:BYTE, texW:DWORD, texH:DWORD
 	
 	invoke bpLoadFile, FilePath, 0
@@ -420,7 +452,7 @@ bpLoadBPT PROC TexturePTR:BPPtr, FilePath:BPPtr
 	ret
 bpLoadBPT ENDP
 
-bpLoadFile PROC FilePath:BPPtr, FileSizePtr:BPPtr
+bpLoadFile PROC EXPORT FilePath:BPPtr, FileSizePtr:BPPtr
 	LOCAL hFile:HANDLE, dwFileSize:DWORD, dwBytesRead:DWORD, dwHighSize:DWORD
 	LOCAL buffer:BPPtr
 	
@@ -440,6 +472,21 @@ bpLoadFile PROC FilePath:BPPtr, FileSizePtr:BPPtr
 	mov buffer, pax
 
     invoke ReadFile, hFile, buffer, dwFileSize, ADDR dwBytesRead, 0
+	
+	IFDEF BP3D_IMPORTERS_VERBOSE
+		pusha
+		print FilePath, 9
+		print "ReadFile value:", 32
+		popa
+		pusha
+		print str$(eax), 9
+		popa
+		print "bytes read:", 32
+		print str$(dwBytesRead), 9
+		print "file size:", 32
+		print str$(dwFileSize), 13, 10
+	ENDIF
+	
     invoke CloseHandle, hFile
 	
 	mov pax, buffer
@@ -447,7 +494,7 @@ bpLoadFile PROC FilePath:BPPtr, FileSizePtr:BPPtr
 bpLoadFile ENDP
 
 IFDEF BP3DMATHS_INC AND BP3DVECTORS_INC
-bpProcessAnimPlayer PROC BPAnimPlrPTR:BPPtr
+bpProcessAnimPlayer PROC EXPORT BPAnimPlrPTR:BPPtr
 	LOCAL floatVal:REAL4, animSpd:REAL4, fact:REAL4
 	LOCAL frameAddr:BPPtr
 	LOCAL timeOffset:BPPtr, intFrameSize:BPPtr, intStructSize:BPPtr
@@ -567,7 +614,7 @@ bpProcessAnimPlayer PROC BPAnimPlrPTR:BPPtr
 				.ENDIF
 			.ENDIF
 		.ELSEIF ([pcx].FrameType == BPFRAME_MATRIX)
-			pop pbx
+			mov pbx, frameAddr
 			add pbx, 4
 			
 			.IF ([pcx].Matrix)
@@ -591,7 +638,7 @@ bpProcessAnimPlayer PROC BPAnimPlrPTR:BPPtr
 				.ENDIF
 			.ENDIF
 		.ELSEIF ([pcx].FrameType == BPFRAME_VERTEX)
-			pop pbx
+			mov pbx, frameAddr
 			add pbx, 4
 			
 			.IF ([pcx].Mesh)

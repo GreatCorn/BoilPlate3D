@@ -229,20 +229,20 @@ Vector2Push MACRO A:REQ
 	push A.X
 ENDM
 
-Vector2Add PROC A:BPPtr, B:BPPtr
+Vector2Add PROC EXPORT A:BPPtr, B:BPPtr
 	VectorAdd 2, A, B
 	ret
 Vector2Add ENDP
 
-Vector2Angle PROC From:BPPtr, To:BPPtr
+Vector2Angle PROC EXPORT From:BPPtr, To:BPPtr
 	LOCAL Val:REAL4
 	mov pax, From
 	mov pcx, To
 	
-	fld REAL4 PTR [pax+4]
-	fsub REAL4 PTR [pcx+4]
-	fld REAL4 PTR [pax]
-	fsub REAL4 PTR [pcx]
+	fld REAL4 PTR [pcx+4]
+	fsub REAL4 PTR [pax+4]
+	fld REAL4 PTR [pcx]
+	fsub REAL4 PTR [pax]
 	fpatan
 	fstp Val
 	
@@ -250,12 +250,27 @@ Vector2Angle PROC From:BPPtr, To:BPPtr
 	ret
 Vector2Angle ENDP
 
-Vector2Copy PROC To:BPPtr, From:BPPtr
+Vector2Copy PROC EXPORT To:BPPtr, From:BPPtr
 	VectorCopy 2, To, From
 	ret
 Vector2Copy ENDP
 
-Vector2Dot PROC A:BPPtr, B:BPPtr
+Vector2Cross PROC EXPORT A:BPPtr, B:BPPtr
+	LOCAL Val:REAL4
+	mov pax, A
+	mov pcx, B
+	
+	fld REAL4 PTR [pax]
+	fmul REAL4 PTR [pcx+4]
+	fld REAL4 PTR [pax+4]
+	fmul REAL4 PTR [pcx]
+	fsub
+	fstp Val
+	mov eax, Val
+	ret
+Vector2Cross ENDP
+
+Vector2Dot PROC EXPORT A:BPPtr, B:BPPtr
 	LOCAL Val:REAL4
 	mov pax, A
 	mov pcx, B
@@ -270,52 +285,52 @@ Vector2Dot PROC A:BPPtr, B:BPPtr
 	ret
 Vector2Dot ENDP
 
-Vector2DistanceSqr PROC A:BPPtr, B:BPPtr
+Vector2DistanceSqr PROC EXPORT A:BPPtr, B:BPPtr
 	VectorDistanceSqr 2, A, B
 	ret
 Vector2DistanceSqr ENDP
 
-Vector2F PROC A:BPPtr
+Vector2F PROC EXPORT A:BPPtr
 	VectorF 2, A
 	ret
 Vector2F ENDP
 
-Vector2LengthSqr PROC A:BPPtr
+Vector2LengthSqr PROC EXPORT A:BPPtr
 	VectorLengthSqr 2, A
 	ret
 Vector2LengthSqr ENDP
 
-Vector2Lerp PROC A:BPPtr, B:BPPtr, T:REAL4
+Vector2Lerp PROC EXPORT A:BPPtr, B:BPPtr, T:REAL4
 	VectorLerp 2, A, B, T
 	ret
 Vector2Lerp ENDP
 
-Vector2Mul PROC A:BPPtr, B:BPPtr
+Vector2Mul PROC EXPORT A:BPPtr, B:BPPtr
 	VectorMul 2, A, B
 	ret
 Vector2Mul ENDP
 
-Vector2MulF PROC A:BPPtr, B:REAL4
+Vector2MulF PROC EXPORT A:BPPtr, B:REAL4
 	VectorMulF 2, A, B
 	ret
 Vector2MulF ENDP
 
-Vector2Normalize PROC A:BPPtr
+Vector2Normalize PROC EXPORT A:BPPtr
 	VectorNormalize 2, A
 	ret
 Vector2Normalize ENDP
 
-Vector2RoundInt PROC A:BPPtr
+Vector2RoundInt PROC EXPORT A:BPPtr
 	VectorRoundInt 2, A
 	ret
 Vector2RoundInt ENDP
 
-Vector2Set PROC A:BPPtr, X:REAL4, Y:REAL4
+Vector2Set PROC EXPORT A:BPPtr, X:REAL4, Y:REAL4
 	VectorSet A, X, Y
 	ret
 Vector2Set ENDP
 
-Vector2Sub PROC A:BPPtr, B:BPPtr
+Vector2Sub PROC EXPORT A:BPPtr, B:BPPtr
 	VectorSub 2, A, B
 	ret
 Vector2Sub ENDP
@@ -340,38 +355,38 @@ Vector3Push MACRO A:REQ
 	push A.X
 ENDM
 
-Vector3Add PROC A:BPPtr, B:BPPtr
+Vector3Add PROC EXPORT A:BPPtr, B:BPPtr
 	VectorAdd 3, A, B
 	ret
 Vector3Add ENDP
 
-Vector3Angle PROC From:BPPtr, To:BPPtr, Angle:BPPtr
+Vector3Angle PROC EXPORT From:BPPtr, To:BPPtr, Angle:BPPtr
 	mov pax, From
 	mov pcx, To
 	mov pdx, Angle
 	
-	fld REAL4 PTR [pax+8]
-	fsub REAL4 PTR [pcx+8]
-	fld REAL4 PTR [pax]
-	fsub REAL4 PTR [pcx]
+	fld REAL4 PTR [pcx+8]
+	fsub REAL4 PTR [pax+8]
+	fld REAL4 PTR [pcx]
+	fsub REAL4 PTR [pax]
 	fpatan
 	fstp REAL4 PTR [pdx+4]
 	
-	fld REAL4 PTR [pax+8]
-	fsub REAL4 PTR [pcx+8]
-	fld REAL4 PTR [pax+4]
-	fsub REAL4 PTR [pcx+4]
+	fld REAL4 PTR [pcx+8]
+	fsub REAL4 PTR [pax+8]
+	fld REAL4 PTR [pcx+4]
+	fsub REAL4 PTR [pax+4]
 	fpatan
 	fstp REAL4 PTR [pdx]
 	ret
 Vector3Angle ENDP
 
-Vector3Copy PROC To:BPPtr, From:BPPtr
+Vector3Copy PROC EXPORT To:BPPtr, From:BPPtr
 	VectorCopy 3, To, From
 	ret
 Vector3Copy ENDP
 
-Vector3Cross PROC A:BPPtr, B:BPPtr, Product:BPPtr
+Vector3Cross PROC EXPORT A:BPPtr, B:BPPtr, Product:BPPtr
 	mov pax, A
 	mov pcx, B
 	mov pdx, Product
@@ -400,37 +415,37 @@ Vector3Cross PROC A:BPPtr, B:BPPtr, Product:BPPtr
 	ret
 Vector3Cross ENDP
 
-Vector3DistanceSqr PROC A:BPPtr, B:BPPtr
+Vector3DistanceSqr PROC EXPORT A:BPPtr, B:BPPtr
 	VectorDistanceSqr 3, A, B
 	ret
 Vector3DistanceSqr ENDP
 
-Vector3F PROC A:BPPtr
+Vector3F PROC EXPORT A:BPPtr
 	VectorF 3, A
 	ret
 Vector3F ENDP
 
-Vector3LengthSqr PROC A:BPPtr
+Vector3LengthSqr PROC EXPORT A:BPPtr
 	VectorLengthSqr 3, A
 	ret
 Vector3LengthSqr ENDP
 
-Vector3Lerp PROC A:BPPtr, B:BPPtr, T:REAL4
+Vector3Lerp PROC EXPORT A:BPPtr, B:BPPtr, T:REAL4
 	VectorLerp 3, A, B, T
 	ret
 Vector3Lerp ENDP
 
-Vector3Mul PROC A:BPPtr, B:BPPtr
+Vector3Mul PROC EXPORT A:BPPtr, B:BPPtr
 	VectorMul 3, A, B
 	ret
 Vector3Mul ENDP
 
-Vector3MulF PROC A:BPPtr, B:REAL4
+Vector3MulF PROC EXPORT A:BPPtr, B:REAL4
 	VectorMulF 3, A, B
 	ret
 Vector3MulF ENDP
 
-Vector3Negate PROC A:BPPtr
+Vector3Negate PROC EXPORT A:BPPtr
 	mov pax, A
 	
 	fld REAL4 PTR [pax]
@@ -446,27 +461,27 @@ Vector3Negate PROC A:BPPtr
 	ret
 Vector3Negate ENDP
 
-Vector3Normalize PROC A:BPPtr
+Vector3Normalize PROC EXPORT A:BPPtr
 	VectorNormalize 3, A
 	ret
 Vector3Normalize ENDP
 
-Vector3Round PROC A:BPPtr
+Vector3Round PROC EXPORT A:BPPtr
 	VectorRound 3, A
 	ret
 Vector3Round ENDP
 
-Vector3RoundInt PROC A:BPPtr
+Vector3RoundInt PROC EXPORT A:BPPtr
 	VectorRoundInt 3, A
 	ret
 Vector3RoundInt ENDP
 
-Vector3Set PROC A:BPPtr, X:REAL4, Y:REAL4, Z:REAL4
+Vector3Set PROC EXPORT A:BPPtr, X:REAL4, Y:REAL4, Z:REAL4
 	VectorSet A, X, Y, Z
 	ret
 Vector3Set ENDP
 
-Vector3Sub PROC A:BPPtr, B:BPPtr
+Vector3Sub PROC EXPORT A:BPPtr, B:BPPtr
 	VectorSub 3, A, B
 	ret
 Vector3Sub ENDP
@@ -480,48 +495,48 @@ Vector4Print MACRO A:REQ
 	print real4$(A.W), 13, 10
 ENDM
 
-Vector4Add PROC A:BPPtr, B:BPPtr
+Vector4Add PROC EXPORT A:BPPtr, B:BPPtr
 	VectorAdd 4, A, B
 	ret
 Vector4Add ENDP
 
-Vector4Copy PROC To:BPPtr, From:BPPtr
+Vector4Copy PROC EXPORT To:BPPtr, From:BPPtr
 	VectorCopy 4, To, From
 	ret
 Vector4Copy ENDP
 
-Vector4F PROC A:BPPtr
+Vector4F PROC EXPORT A:BPPtr
 	VectorF 4, A
 	ret
 Vector4F ENDP
 
-Vector4Lerp PROC A:BPPtr, B:BPPtr, T:REAL4
+Vector4Lerp PROC EXPORT A:BPPtr, B:BPPtr, T:REAL4
 	VectorLerp 4, A, B, T
 	ret
 Vector4Lerp ENDP
 
-Vector4MulF PROC A:BPPtr, B:REAL4
+Vector4MulF PROC EXPORT A:BPPtr, B:REAL4
 	VectorMulF 4, A, B
 	ret
 Vector4MulF ENDP
 
-Vector4RoundInt PROC A:BPPtr
+Vector4RoundInt PROC EXPORT A:BPPtr
 	VectorRoundInt 4, A
 	ret
 Vector4RoundInt ENDP
 
-Vector4Set PROC A:BPPtr, X:REAL4, Y:REAL4, Z:REAL4, W:REAL4
+Vector4Set PROC EXPORT A:BPPtr, X:REAL4, Y:REAL4, Z:REAL4, W:REAL4
 	VectorSet A, X, Y, Z, W
 	ret
 Vector4Set ENDP
 
-Vector4Sub PROC A:BPPtr, B:BPPtr
+Vector4Sub PROC EXPORT A:BPPtr, B:BPPtr
 	VectorSub 4, A, B
 	ret
 Vector4Sub ENDP
 
 IFDEF BP3DMATHS_INC
-Vector3Euler PROC A:BPPtr
+Vector3Euler PROC EXPORT A:BPPtr
 	mov pcx, A
 	invoke flEuler, REAL4 PTR [pcx]
 	mov REAL4 PTR [pcx], pax
@@ -532,7 +547,7 @@ Vector3Euler PROC A:BPPtr
 	ret
 Vector3Euler ENDP
 
-Vector3LerpAngle PROC A:BPPtr, B:BPPtr, T:REAL4	;REDO WITH flLerpAngle
+Vector3LerpAngle PROC EXPORT A:BPPtr, B:BPPtr, T:REAL4	;REDO WITH flLerpAngle
 	LOCAL _Ang:REAL4
 	mov pdx, A
 	mov pcx, B
@@ -570,7 +585,7 @@ Vector3LerpAngle PROC A:BPPtr, B:BPPtr, T:REAL4	;REDO WITH flLerpAngle
 	ret
 Vector3LerpAngle ENDP
 
-Vector3Move PROC From:BPPtr, To:BPPtr, T:REAL4
+Vector3Move PROC EXPORT From:BPPtr, To:BPPtr, T:REAL4
 	mov pdx, From
 	mov pcx, To
 	invoke flMove, REAL4 PTR [pdx], REAL4 PTR [pcx], T

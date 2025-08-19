@@ -26,6 +26,7 @@ Vector4 ENDS
 Vector2One	Vector2 <1.0, 1.0>
 Vector2Zero	Vector2 <0.0, 0.0>
 Vector3One	Vector3 <1.0, 1.0, 1.0>
+Vector3Up	Vector3 <0.0, 1.0, 0.0>
 Vector3Zero	Vector3 <0.0, 0.0, 0.0>
 
 .CODE
@@ -184,8 +185,8 @@ VectorRoundInt MACRO Cnt:REQ, A:REQ
 	mov pax, A
 	PosOff = 0
 	REPEAT Cnt
-		fld DWORD PTR [pax+PosOff]
-		fistp REAL4 PTR [pax+PosOff]
+		fld REAL4 PTR [pax+PosOff]
+		fistp DWORD PTR [pax+PosOff]
 		PosOff = PosOff + SIZEOF REAL4
 	ENDM
 ENDM

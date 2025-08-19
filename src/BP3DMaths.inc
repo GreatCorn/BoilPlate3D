@@ -7,16 +7,23 @@ FPU_TRUNC	EQU 0000110000000000b
 FPU_CEIL	EQU 0000100000000000b
 FPU_FLOOR	EQU 0000010000000000b
 FPU_ROUND	EQU 0000000000000000b
+FLT_INF		EQU 7F800000h
+FLT_INFN	EQU 0FF800000h
+FLT_NEG		EQU 80000000h
 
 .CONST
 D2R		REAL4	0.0174532	; Degrees to radians multiplier
 R2D		REAL4	57.29578	; Radians to degrees multiplier
 R2I		REAL4	0.6366197	; Radians to integer
-PI		REAL4	3.1415927
-PIN		REAL4	-3.1415927
-PIHalf	REAL4	1.5707
-PIHalfN	REAL4	-1.5707
-PI2		REAL4	6.2831
+PI		REAL4	3.141592653
+PIN		REAL4	-3.141592653
+PIHalf	REAL4	1.570796326
+PIHalfN	REAL4	-1.570796326
+PIQuarter	REAL4	0.765398163
+PIQuarterN	REAL4	-0.765398163
+PI2		REAL4	6.283185307
+flInf	DWORD	FLT_INF
+flInfN	DWORD	FLT_INFN
 
 fl0 REAL4 0.0			; Generic floats (REAL4) to use with FPU and other
 flThousandth	REAL4	0.001
@@ -88,10 +95,13 @@ fl2000	REAL4	2000.0
 fl10000	REAL4	10000.0
 fl32768	REAL4	32768.0
 
+flFastATan_1 REAL4 0.2447
+flFastATan_2 REAL4 0.0663
+
 .DATA?
 nRandSeed DWORD ?
 
-; Floating point comparison macro and PROC EXPORT by jj2007
+; Floating point comparison macro and PROC by jj2007
 fcmp MACRO cmp1:REQ, cmp2
 	LOCAL oa
 	ffree st(7)
@@ -175,6 +185,130 @@ flEuler PROC EXPORT Val:REAL4
 	mov eax, Val
 	ret
 flEuler ENDP
+
+flFastATan PROC EXPORT Val:REAL4
+	fld Val
+	fabs
+	fld st
+	fsub fl1
+	fxch
+	fmul flFastATan_2
+	fadd flFastATan_1
+	fmul
+	fmul Val
+	fld Val
+	fmul PIQuarter
+	fsubr
+	fstp Val
+	mov eax, Val
+	ret
+flFastATan ENDP
+
+flFastATan2 PROC EXPORT Y:REAL4, X:REAL4
+	.IF (X & FLT_NEG)		; x <= 0
+		.IF (Y & FLT_NEG)	; y <= 0
+			xor Y, FLT_NEG
+			fcmp Y, X
+			.IF (Sign?)		; -y < x ; -PI/4 .. 0
+				xor Y, FLT_NEG
+				fld Y
+				fdiv X
+				fstp X
+				invoke flFastATan, X
+				ret
+			.ELSE
+				xor Y, FLT_NEG
+				fld X
+				fdiv Y
+				fstp X
+				mov X, rv(flFastATan, X)
+				fld X
+				fsubr PIHalfN
+				fstp X
+				mov eax, X
+				ret
+			.ENDIF
+		.ELSE
+			fcmp Y, X
+			.IF (Sign?)		; y < x ; -PI/4 .. 0
+				fld Y
+				fdiv X
+				fstp X
+				invoke flFastATan, X
+				ret
+			.ELSE
+				fld X
+				fdiv Y
+				fstp X
+				mov X, rv(flFastATan, X)
+				fld X
+				fsubr PIHalf
+				fstp X
+				mov eax, X
+				ret
+			.ENDIF
+		.ENDIF
+	.ELSE
+		.IF (Y & FLT_NEG)	; y <= 0
+			xor X, FLT_NEG
+			xor Y, FLT_NEG
+			fcmp Y, X
+			.IF (Sign?)		; -y < -x
+				xor X, FLT_NEG
+				xor Y, FLT_NEG
+				fld Y
+				fdiv X
+				fstp X
+				mov X, rv(flFastATan, X)
+				fld X
+				fsub PI
+				fstp X
+				mov eax, X
+				ret
+			.ELSE
+				xor X, FLT_NEG
+				xor Y, FLT_NEG
+				fld X
+				fdiv Y
+				fstp X
+				mov X, rv(flFastATan, X)
+				fld X
+				fsubr PIHalfN
+				fstp X
+				mov eax, X
+				ret
+			.ENDIF
+		.ELSE
+			xor X, FLT_NEG
+			fcmp Y, X
+			.IF (Sign?)		; y < -x 
+				xor X, FLT_NEG
+				fld Y
+				fdiv X
+				fstp X
+				mov X, rv(flFastATan, X)
+				fld X
+				fadd PI
+				fstp X
+				mov eax, X
+				ret
+			.ELSE
+				xor X, FLT_NEG
+				fld X
+				fdiv Y
+				fstp X
+				mov X, rv(flFastATan, X)
+				fld X
+				fsubr PIHalf
+				fstp X
+				mov eax, X
+				ret
+			.ENDIF
+		.ENDIF
+	
+	.ENDIF
+	ret
+flFastATan2 ENDP
 
 flFrac PROC EXPORT Val:REAL4
 	fstcw FPUCW
@@ -317,6 +451,13 @@ flRepeat PROC EXPORT Val:REAL4, Max:REAL4
 flRepeat ENDP
 
 flSign PROC EXPORT Val:REAL4
+	.IF (Val & 80000000h)
+		mov eax, fl1N
+		ret
+	.ELSE
+		mov eax, fl1
+	.ENDIF
+	ret
 	fcmp Val
 	.IF (Sign? && !Zero?)
 		mov eax, fl1N	; -1.0

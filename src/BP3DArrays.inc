@@ -72,3 +72,24 @@ bp2DArrayGetPosition PROC EXPORT ArrayOffset:BPPtr, ArrayWidth:BPPtr, DataSize:B
 	div pcx
 	ret
 bp2DArrayGetPosition ENDP
+
+bpArrayAppend PROC EXPORT ArrayPtr:BPPtr, DataPtr:BPPtr, DataSize:BPPtr
+	LOCAL procHeap:BPPtr, retVal:BPPtr
+	mov procHeap, rv(GetProcessHeap)
+	
+	.IF (ArrayPtr)
+		invoke HeapSize, procHeap, 0, ArrayPtr
+		push pax
+		add pax, DataSize
+		invoke bpReAlloc, procHeap, HEAP_ZERO_MEMORY, ArrayPtr, pax
+		mov retVal, pax
+		pop pax
+		add pax, retVal
+	.ELSE
+		mov retVal, rv(bpMalloc, procHeap, 0, DataSize)
+	.ENDIF
+	invoke RtlMoveMemory, pax, DataPtr, DataSize
+	mov pax, retVal
+	
+	ret
+bpArrayAppend ENDP

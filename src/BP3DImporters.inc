@@ -28,10 +28,12 @@ BPMESH_INTERPOLATE_NORMAL EQU 4
 ; ----- TYPES -----
 
 BPMesh STRUCT
-	Count		DWORD 0
+	Count		DWORD 0	; How many vertex objects are there
 	Vertices	BPPtr 0
 	TexCoords	BPPtr 0
 	Normals		BPPtr 0
+	V2Size		BPPtr 0
+	V3Size		BPPtr 0
 BPMesh ENDS
 
 BPAnimTrack STRUCT
@@ -139,23 +141,71 @@ LoadFile MACRO FilePath:REQ
 ENDM
 
 ;   Unified vertex, texcoord and normal drawing procedure for BPMesh structure.
-;   BPMeshPTR - pointer to a BPMesh structure.
-bpDrawMesh PROC EXPORT BPMeshPTR:BPPtr
+;   BPMeshPtr - pointer to a BPMesh structure.
+bpDrawMesh PROC EXPORT BPMeshPtr:BPPtr
 	ASSUME pcx:PTR BPMesh
 	
-	mov pcx, BPMeshPTR
+	mov pcx, BPMeshPtr
 	invoke glVertexPointer, 3, GL_FLOAT, 0, [pcx].Vertices
-	mov pcx, BPMeshPTR
+	mov pcx, BPMeshPtr
 	invoke glTexCoordPointer, 2, GL_FLOAT, 0, [pcx].TexCoords
-	mov pcx, BPMeshPTR
+	mov pcx, BPMeshPtr
 	invoke glNormalPointer, GL_FLOAT, 0, [pcx].Normals
-	mov pcx, BPMeshPTR
+	mov pcx, BPMeshPtr
 	invoke glDrawArrays, GL_TRIANGLES, 0, [pcx].Count
-	mov pcx, BPMeshPTR
+	mov pcx, BPMeshPtr
+	
+	;push BPMeshPtr
+	;call bpDrawNormals
 	
 	ASSUME pcx:nothing
 	ret
 bpDrawMesh ENDP
+
+;   Debug utility to draw normal vector lines of a mesh.
+bpDrawNormals PROC EXPORT BPMeshPtr:BPPtr
+	LOCAL lighting:BPBool, col:Vector4, tex:DWORD, vertex:Vector3
+	
+	invoke glGetBooleanv, GL_LIGHTING, ADDR lighting
+	invoke glGetFloatv, GL_CURRENT_COLOR, ADDR col
+	invoke glGetIntegerv, GL_TEXTURE_BINDING_2D, ADDR tex
+	
+	invoke glDisable, GL_LIGHTING
+	invoke glColor3f, fl1, 0, 0
+	invoke glBindTexture, GL_TEXTURE_2D, 0
+	
+	invoke glBegin, GL_LINES
+	
+	push pbx
+	xor pbx, pbx
+	ASSUME pdx:PTR BPMesh
+	mov pdx, BPMeshPtr
+	.WHILE (pbx < [pdx].V3Size)
+		mov pax, pbx
+		add pax, [pdx].Vertices
+		invoke Vector3Copy, ADDR vertex, pax
+		invoke glVertex3fv, ADDR vertex
+		mov pax, pbx
+		mov pdx, BPMeshPtr
+		add pax, [pdx].Normals
+		invoke Vector3Add, ADDR vertex, pax
+		invoke glVertex3fv, ADDR vertex
+		
+		mov pdx, BPMeshPtr
+		add pbx, SIZEOF Vector3
+	.ENDW
+	ASSUME pdx:nothing
+	pop pbx
+	invoke glEnd
+	
+	invoke glColor3fv, ADDR col
+	.IF (lighting)
+		invoke glEnable, GL_LIGHTING
+	.ENDIF
+	invoke glBindTexture, GL_TEXTURE_2D, tex
+	
+	ret
+bpDrawNormals ENDP
 
 bpFreeBPA PROC EXPORT BPAnimPTR:BPPtr
 	ASSUME pcx:PTR BPAnimTrack
@@ -308,6 +358,7 @@ bpLoadBPM PROC EXPORT BPMeshPTR:BPPtr, FilePath:BPPtr
 	invoke bpMalloc, rv(GetProcessHeap), 0, v3Size
 	mov pcx, BPMeshPTR
 	mov [pcx].Vertices, pax
+	m2m [pcx].V3Size, v3Size
 	
 	mov eax, dwArraySize	; Allocate the TexCoords array
 	mov ecx, 2
@@ -316,6 +367,7 @@ bpLoadBPM PROC EXPORT BPMeshPTR:BPPtr, FilePath:BPPtr
 	invoke bpMalloc, rv(GetProcessHeap), 0, v2Size
 	mov pcx, BPMeshPTR
 	mov [pcx].TexCoords, pax
+	m2m [pcx].V2Size, v2Size
 	
 	invoke bpMalloc, rv(GetProcessHeap), 0, v3Size	; Allocate the Normals array
 	mov pcx, BPMeshPTR
@@ -329,13 +381,13 @@ bpLoadBPM PROC EXPORT BPMeshPTR:BPPtr, FilePath:BPPtr
 	
 	
 	IFDEF BP3D_IMPORTERS_VERBOSE
-		pusha
+		pushad
 		print FilePath, 9
 		print "ReadFile value:", 32
-		popa
-		pusha
+		popad
+		pushad
 		print str$(eax), 9
-		popa
+		popad
 		print "bytes read:", 32
 		print str$(dwBytesRead), 9
 		print "file size:", 32
@@ -370,15 +422,6 @@ bpLoadBPT PROC EXPORT TexturePTR:BPPtr, FilePath:BPPtr
 	mov eax, DWORD PTR [pax]
 	mov texH, eax
 	
-	;print "Texture "
-	;print FilePath
-	;print " type: "
-	;print sbyte$(texType),
-	;print ", size: "
-	;print str$(texW)
-	;print "x"
-	;print str$(texH), 13, 10
-	
 	add buffer, 4
 	
 	invoke glGenTextures, 1, ADDR texIndex
@@ -386,8 +429,8 @@ bpLoadBPT PROC EXPORT TexturePTR:BPPtr, FilePath:BPPtr
 	invoke glTexParameteri, GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST
 	invoke glTexParameteri, GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST
 	
-	; On some devices the OpenGL implementation behaves weirdly with mipmaps and
-	; tries to build its own, even when it's not specified in code. This may
+	;   On some devices the OpenGL implementation behaves weirdly with mipmaps
+	; and tries to build its own, even when it's not specified in code. This may
 	; result in a lot of lag whenever there are many instances of a texture 
 	; being used. On other devices, however, gluBuild#DMipmaps may not recognize
 	; the extended texture color formats and will result in a GLU_INVALID_ENUM
@@ -474,13 +517,13 @@ bpLoadFile PROC EXPORT FilePath:BPPtr, FileSizePtr:BPPtr
     invoke ReadFile, hFile, buffer, dwFileSize, ADDR dwBytesRead, 0
 	
 	IFDEF BP3D_IMPORTERS_VERBOSE
-		pusha
+		pushad
 		print FilePath, 9
 		print "ReadFile value:", 32
-		popa
-		pusha
+		popad
+		pushad
 		print str$(eax), 9
-		popa
+		popad
 		print "bytes read:", 32
 		print str$(dwBytesRead), 9
 		print "file size:", 32

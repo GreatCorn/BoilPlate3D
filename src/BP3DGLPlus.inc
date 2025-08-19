@@ -15,6 +15,8 @@ clRed		REAL4	1.0,  0.0,  0.0,  1.0
 clYellow	REAL4	1.0,  1.0,  0.0,  1.0
 clWhite		REAL4	1.0,  1.0,  1.0,  1.0
 
+clHalf		REAL4	1.0,  1.0,  1.0,  0.5		; Alpha colors
+
 .DATA?
 bp3DDbl REAL8 ?
 
@@ -63,8 +65,8 @@ glClearColor4fv PROC EXPORT v:BPPtr
 	ret
 glClearColor4fv ENDP
 
-glOrthof PROC EXPORT left:REAL4, right:REAL4, bottom:REAL4, top:REAL4, nearVal:REAL4,\
-farVal:REAL4
+glOrthof PROC EXPORT left:REAL4, right:REAL4, bottom:REAL4, top:REAL4, \
+nearVal:REAL4, farVal:REAL4
 	IFDEF rax
 	
 	ELSE

@@ -6,13 +6,13 @@ BPTEXTALIGN_BOTTOM EQU BPTEXTALIGN_RIGHT
 
 .DATA
 bpCurrentFont BPPtr OFFSET bpDefaultFont
+bpDefaultFont DWORD 127 dup (0) 
 
 bpFontHeight REAL4 16.0
 bpFontSpacing REAL4 1.25
 bpFontWidth REAL4 8.0
 
 .DATA?
-bpDefaultFont DWORD 127 dup (?) 
 bpFontQuad DWORD ?
 
 .CODE
@@ -49,60 +49,6 @@ bpBuildFontQuad PROC EXPORT
 	invoke glEndList
 	ret
 bpBuildFontQuad ENDP
-
-bpRenderText PROC EXPORT TextString:DWORD, X:SDWORD, Y:SDWORD, HorizontalAlign:BPEnum,\
-VerticalAlign:BPEnum
-	LOCAL strLength:BPPtr
-	
-	mov strLength, rv(StrLen, TextString)
-
-	call glPushMatrix
-	fild X
-	fstp X
-	fild Y
-	fstp Y
-	invoke glTranslatef, X, Y, 0
-	invoke glScalef, bpFontWidth, bpFontHeight, fl1
-	.IF (HorizontalAlign)
-		fild strLength
-		fmul bpFontSpacing
-		.IF (HorizontalAlign == BPTEXTALIGN_CENTER)
-			fmul flHalf
-		.ENDIF
-		fchs
-		fstp X
-		invoke glTranslatef, X, 0, 0
-	.ENDIF
-	.IF (VerticalAlign == BPTEXTALIGN_CENTER)
-		invoke glTranslatef, 0, flHalfN, 0
-	.ELSEIF (VerticalAlign == BPTEXTALIGN_BOTTOM)
-		invoke glTranslatef, 0, fl1N, 0
-	.ENDIF
-	
-	push pbx
-	xor pbx, pbx
-	.WHILE (pbx < strLength)
-		mov pcx, TextString
-		xor pax, pax
-		mov al, BYTE PTR [pcx+pbx]
-		
-		mov pcx, 4
-		mul pcx
-		
-		mov pcx, bpCurrentFont
-		.IF (DWORD PTR [pcx+pax])
-			invoke glBindTexture, GL_TEXTURE_2D, DWORD PTR [pcx+pax]
-			invoke glCallList, bpFontQuad
-		.ENDIF
-		
-		invoke glTranslatef, bpFontSpacing, 0, 0
-		inc pbx
-	.ENDW
-	pop pbx
-	
-	call glPopMatrix
-	ret
-bpRenderText ENDP
 
 bpLoadFont PROC EXPORT DirPath:BPPtr, FontPTR:BPPtr
 	LOCAL dirLen:BPPtr, stringBuf:BPPtr
@@ -183,4 +129,58 @@ bpLoadFont PROC EXPORT DirPath:BPPtr, FontPTR:BPPtr
 	.ENDIF
 	ret
 bpLoadFont ENDP
+
+bpRenderText PROC EXPORT TextString:DWORD, X:SDWORD, Y:SDWORD, HorizontalAlign:BPEnum,\
+VerticalAlign:BPEnum
+	LOCAL strLength:BPPtr
+	
+	mov strLength, rv(StrLen, TextString)
+
+	call glPushMatrix
+	fild X
+	fstp X
+	fild Y
+	fstp Y
+	invoke glTranslatef, X, Y, 0
+	invoke glScalef, bpFontWidth, bpFontHeight, fl1
+	.IF (HorizontalAlign)
+		fild strLength
+		fmul bpFontSpacing
+		.IF (HorizontalAlign == BPTEXTALIGN_CENTER)
+			fmul flHalf
+		.ENDIF
+		fchs
+		fstp X
+		invoke glTranslatef, X, 0, 0
+	.ENDIF
+	.IF (VerticalAlign == BPTEXTALIGN_CENTER)
+		invoke glTranslatef, 0, flHalfN, 0
+	.ELSEIF (VerticalAlign == BPTEXTALIGN_BOTTOM)
+		invoke glTranslatef, 0, fl1N, 0
+	.ENDIF
+	
+	push pbx
+	xor pbx, pbx
+	.WHILE (pbx < strLength)
+		mov pcx, TextString
+		xor pax, pax
+		mov al, BYTE PTR [pcx+pbx]
+		
+		mov pcx, 4
+		mul pcx
+		
+		mov pcx, bpCurrentFont
+		.IF (DWORD PTR [pcx+pax])
+			invoke glBindTexture, GL_TEXTURE_2D, DWORD PTR [pcx+pax]
+			invoke glCallList, bpFontQuad
+		.ENDIF
+		
+		invoke glTranslatef, bpFontSpacing, 0, 0
+		inc pbx
+	.ENDW
+	pop pbx
+	
+	call glPopMatrix
+	ret
+bpRenderText ENDP
 ENDIF

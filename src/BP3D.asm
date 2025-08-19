@@ -114,6 +114,7 @@ IFDEF rax
 	BPSPtr TYPEDEF SQWORD
 	BPPtrWord TYPEDEF QWORD
 	BPPtrInt TYPEDEF SQWORD
+	BPPtrShl EQU 3
 	pax EQU rax
 	pbx EQU rbx
 	pcx EQU rcx
@@ -124,6 +125,7 @@ ELSE
 	BPSPtr TYPEDEF SDWORD
 	BPPtrWord TYPEDEF DWORD
 	BPPtrInt TYPEDEF SDWORD
+	BPPtrShl EQU 2
 	pax EQU eax
 	pbx EQU ebx
 	pcx EQU ecx
@@ -329,13 +331,7 @@ bpMallocProc PROC EXPORT hHeap:HANDLE, dwFlags:DWORD, dwBytes:DWORD
 	IFDEF BP3D_TRACEABLE_HEAP_LIST
 		add heapListSize, SIZEOF BPPtr
 		.IF (heapList)
-			pusha
-			print "REALLOCATING...", 9
-			popa
 			mov heapList, rv(HeapReAlloc, hHeap, 0, heapList, heapListSize)
-			pusha
-			print "...DONE", 13, 10
-			popa
 		.ELSE
 			mov heapList, rv(HeapAlloc, hHeap, 0, heapListSize)
 		.ENDIF
@@ -368,9 +364,7 @@ IFDEF BP3D_TRACEABLE_HEAP_LIST
 bpPrintHeapList PROC EXPORT
 	print "Allocated heap block count: "
 	mov eax, heapListSize
-	xor edx, edx
-	mov ecx, SIZEOF BPPtr
-	div ecx
+	shr eax, BPPtrShl
 	print str$(eax), 32, 40
 	print udword$(heapAllocated)
 	print " bytes", 41, 13, 10
@@ -469,7 +463,7 @@ bpCalculateDelta PROC EXPORT LastTick:BPPtr, DeltaPtr:BPPtr
 	ret
 bpCalculateDelta ENDP
 
-;   Initialize form and createa window based on its parameters.
+;   Initialize form and create a window based on its parameters.
 ;   BPFormPtr:BPPtr - pointer to a form structure.
 bpCreateForm PROC EXPORT BPFormPtr:BPPtr
 	LOCAL wc:WNDCLASSEX, msg:MSG, testFreq:LARGE_INTEGER, quitFlag:BPBool
@@ -583,10 +577,20 @@ bpCreateForm PROC EXPORT BPFormPtr:BPPtr
 		.ENDIF
 	.ENDW
 	
-	invoke GetCurrentProcess
-	invoke TerminateProcess, pax, 0
 	ret
 bpCreateForm ENDP
+
+;   Destroy the window associated with a form.
+;   BPFormPtr:BPPtr - pointer to a form structure.
+bpDestroyForm PROC EXPORT BPFormPtr:BPPtr
+	ASSUME pcx:PTR BPForm
+	
+	mov pcx, BPFormPtr
+	invoke DestroyWindow, [pcx].Handle
+	
+	ASSUME pcx:nothing
+	ret
+bpDestroyForm ENDP
 
 ;   Initialize OpenGL context in an existing form.
 ;   BPFormPtr:BPPtr - pointer to a form structure.
@@ -966,6 +970,14 @@ bpDefWndProc PROC EXPORT hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
 				call [pcx].OnDestroy
 			.ENDIF
 			.IF (bpDefaultFlag)
+				mov pcx, dwRefData
+				.IF ([pcx].GLContext)
+					invoke wglDeleteContext, [pcx].GLContext
+				.ENDIF
+				mov pcx, dwRefData
+				.IF ([pcx].DeviceContext)
+					invoke ReleaseDC, [pcx].Handle, [pcx].DeviceContext
+				.ENDIF
 				invoke PostQuitMessage, 0
 			.ENDIF
 		

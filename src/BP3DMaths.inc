@@ -66,6 +66,7 @@ fl6		REAL4	6.0
 fl7		REAL4	7.0
 fl8		REAL4	8.0
 fl8N	REAL4	-8.0
+fl9		REAL4	9.0
 fl10	REAL4	10.0
 fl12	REAL4	12.0
 fl12N	REAL4	-12.0
@@ -74,6 +75,7 @@ fl13N	REAL4	-13.0
 fl14	REAL4	14.0
 fl15	REAL4	15.0
 fl16	REAL4	16.0
+fl18	REAL4	18.0
 fl20	REAL4	20.0
 fl20N	REAL4	-20.0
 fl24	REAL4	24.0
@@ -99,27 +101,38 @@ flFastATan_1 REAL4 0.2447
 flFastATan_2 REAL4 0.0663
 
 .DATA?
+FPUCW WORD ?
 nRandSeed DWORD ?
 
-; Floating point comparison macro and PROC by jj2007
 fcmp MACRO cmp1:REQ, cmp2
 	LOCAL oa
-	ffree st(7)
-	ifb <cmp2>
-		fldz	; No second arg; compare against zero
-	else
-		oa = (opattr cmp2) and 127
-		if (oa eq 36) or (oa eq 48)
-			push cmp2
-			fild DWORD PTR [esp]	; Integer or reg32 on stack, then on FPU
-			pop eax
+	IF @Cpu EQ 3423	; .686 has fcomip
+		IFB <cmp2>
+			fldz
+		ELSE
+			fld cmp2
+		ENDIF
+		fld cmp1
+		fcomip st, st(1)
+		fstp st
+	ELSE
+		;ffree st(7)
+		ifb <cmp2>
+			fldz	; No second arg; compare against zero
 		else
-			fld cmp2	; Real on FPU
+			oa = (opattr cmp2) and 127
+			if (oa eq 36) or (oa eq 48)
+				push cmp2
+				fild DWORD PTR [esp]	; Integer or reg32 on stack, then on FPU
+				pop eax
+			else
+				fld cmp2	; Real on FPU
+			endif
 		endif
-	endif
-	ffree st(7)
-	fld cmp1
-	call fcmpP
+		;ffree st(7)
+		fld cmp1
+		call fcmpP
+	ENDIF
 ENDM
 
 .CODE
@@ -127,29 +140,28 @@ flSign PROTO :REAL4
 nRand PROTO :DWORD
 
 fcmpP PROC EXPORT
-	push edx
-	xor edx, edx	; Clear the flag register
-	fcompp			; Compare ST(0) with ST(1) and pop twice
-	fstsw ax		; Move FPU flags C1 etc to ax
-	test ah, 64		; C3 is set if ST=0 (bt eax, 14)
-	jne @F			; Equal, edx=0
-	test ah, 1		; C0 (bt eax, 8)
-	je fcPos
-	dec edx			; Negative (-2+1=-1)
-	@@:		dec edx	; Zero (0-1+1=0)
-	fcPos:	inc edx	; Positive
-		pop edx
-		ret
+	fcompp
+	fstsw ax
+	
+	push pax
+	and ax, 4000h
+	xor ax, 4000h
+	
+	test ax, ax
+	pop pax
+	
+	bt ax, 8
+	ret
 fcmpP ENDP
 
 flClamp PROC EXPORT Val:REAL4, Min:REAL4, Max:REAL4
 	fcmp Val, Max
-	.IF !Sign? && !Zero?		; X > X1
+	.IF (!Carry?)		; X > X1
 		fld Max
 		fstp Val
 	.ELSE
 		fcmp Val, Min
-		.IF Sign? && !Zero?		; X < X1
+		.IF (Carry?)	; X < X1
 			fld Min
 			fstp Val
 		.ENDIF
@@ -170,13 +182,13 @@ flDistance ENDP
 
 flEuler PROC EXPORT Val:REAL4
 	fcmp Val, PI
-	.IF !Sign? && !Zero?	; Val > PI
+	.IF (!Carry?)	; Val > PI
 		fld Val
 		fsub PI2
 		fstp Val
 	.ENDIF
 	fcmp Val, PIN
-	.IF Sign? && !Zero?		; Val < -PI
+	.IF (Carry?)	; Val < -PI
 		fld Val
 		fadd PI2
 		fstp Val
@@ -209,7 +221,7 @@ flFastATan2 PROC EXPORT Y:REAL4, X:REAL4
 		.IF (Y & FLT_NEG)	; y <= 0
 			xor Y, FLT_NEG
 			fcmp Y, X
-			.IF (Sign?)		; -y < x ; -PI/4 .. 0
+			.IF (Carry?)		; -y < x ; -PI/4 .. 0
 				xor Y, FLT_NEG
 				fld Y
 				fdiv X
@@ -230,7 +242,7 @@ flFastATan2 PROC EXPORT Y:REAL4, X:REAL4
 			.ENDIF
 		.ELSE
 			fcmp Y, X
-			.IF (Sign?)		; y < x ; -PI/4 .. 0
+			.IF (Carry?)		; y < x ; -PI/4 .. 0
 				fld Y
 				fdiv X
 				fstp X
@@ -253,7 +265,7 @@ flFastATan2 PROC EXPORT Y:REAL4, X:REAL4
 			xor X, FLT_NEG
 			xor Y, FLT_NEG
 			fcmp Y, X
-			.IF (Sign?)		; -y < -x
+			.IF (Carry?)		; -y < -x
 				xor X, FLT_NEG
 				xor Y, FLT_NEG
 				fld Y
@@ -281,7 +293,7 @@ flFastATan2 PROC EXPORT Y:REAL4, X:REAL4
 		.ELSE
 			xor X, FLT_NEG
 			fcmp Y, X
-			.IF (Sign?)		; y < -x 
+			.IF (Carry?)		; y < -x 
 				xor X, FLT_NEG
 				fld Y
 				fdiv X
@@ -330,14 +342,14 @@ flFrac ENDP
 
 flInRange PROC EXPORT Val:REAL4, Min:REAL4, Max:REAL4
 	fcmp Val, Min
-	.IF (!Sign?)
+	.IF (!Carry?)
 		fcmp Val, Max
-		.IF (Sign?)
-			mov al, TRUE
+		.IF (Carry?)
+			mov pax, TRUE
 			ret
 		.ENDIF
 	.ENDIF
-	mov al, FALSE
+	mov pax, FALSE
 	ret
 flInRange ENDP
 
@@ -373,7 +385,7 @@ flMove PROC EXPORT From:REAL4, To:REAL4, T:REAL4
 	invoke flDistance, From, To
 	mov Dist, eax
 	fcmp Dist, T
-	.IF Sign?
+	.IF (Carry?)	; Dist < T
 		mov eax, To
 		ret
 	.ENDIF
@@ -394,7 +406,7 @@ flMove ENDP
 
 flMin PROC EXPORT A:REAL4, B:REAL4
 	fcmp A, B
-	.IF (Sign?)
+	.IF (Carry?)
 		mov eax, A
 	.ELSE
 		mov eax, B
@@ -451,7 +463,7 @@ flRepeat PROC EXPORT Val:REAL4, Max:REAL4
 flRepeat ENDP
 
 flSign PROC EXPORT Val:REAL4
-	.IF (Val & 80000000h)
+	.IF (Val & FLT_NEG)
 		mov eax, fl1N
 		ret
 	.ELSE
@@ -459,12 +471,12 @@ flSign PROC EXPORT Val:REAL4
 	.ENDIF
 	ret
 	fcmp Val
-	.IF (Sign? && !Zero?)
+	.IF (Carry?)
 		mov eax, fl1N	; -1.0
 		ret
 	.ENDIF
 	fcmp Val
-	.IF (!Sign? && !Zero?)
+	.IF (!Carry?)
 		mov eax, fl1	; 1.0
 		ret
 	.ELSE
@@ -508,10 +520,10 @@ intInRange PROC EXPORT Val:SDWORD, Min:SDWORD, Max:SDWORD
 	jl intInRangeFalse
 	cmp eax, Max
 	jg intInRangeFalse
-	mov al, TRUE
+	mov pax, TRUE
 	ret
 	intInRangeFalse:
-	mov al, FALSE
+	mov pax, FALSE
 	ret
 intInRange ENDP
 

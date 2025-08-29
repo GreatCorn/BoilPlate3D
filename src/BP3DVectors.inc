@@ -62,6 +62,30 @@ VectorCopy MACRO Cnt:REQ, To:REQ, From:REQ
 	ENDM
 ENDM
 
+VectorClampLength MACRO Cnt:REQ, A:REQ, Len:REQ
+	LOCAL ALen
+	.DATA?
+	ALen REAL4 ?
+	
+	.CODE
+	VectorLength Cnt, A
+	mov ALen, eax
+	.IF (ALen)
+		fcmp Len, ALen
+		.IF (Carry?)
+			mov pax, A
+			PosOff = 0
+			REPEAT Cnt
+				fld REAL4 PTR [pax+PosOff]
+				fdiv ALen
+				fmul Len
+				fstp REAL4 PTR [pax+PosOff]
+				PosOff = PosOff + SIZEOF REAL4
+			ENDM
+		.ENDIF
+	.ENDIF
+ENDM
+
 VectorDistanceSqr MACRO Cnt:REQ, A:REQ, B:REQ
 	mov pax, A
 	mov pcx, B
@@ -88,6 +112,23 @@ VectorF MACRO Cnt:REQ, A:REQ
 		fstp REAL4 PTR [pax+PosOff]
 		PosOff = PosOff + SIZEOF REAL4
 	ENDM
+ENDM
+
+VectorLength MACRO Cnt:REQ, A:REQ
+	mov pax, A
+	PosOff = 0
+	REPEAT Cnt
+		fld REAL4 PTR [pax+PosOff]
+		fmul st, st
+		PosOff = PosOff + SIZEOF REAL4
+	ENDM
+	REPEAT Cnt-1
+		fadd
+	ENDM
+	fsqrt
+	sub esp, 4
+	fstp REAL4 PTR [esp]
+	pop eax
 ENDM
 
 VectorLengthSqr MACRO Cnt:REQ, A:REQ
@@ -251,6 +292,11 @@ Vector2Angle PROC EXPORT From:BPPtr, To:BPPtr
 	ret
 Vector2Angle ENDP
 
+Vector2ClampLength PROC EXPORT A:BPPtr, Len:REAL4
+	VectorClampLength 2, A, Len
+	ret
+Vector2ClampLength ENDP
+
 Vector2Copy PROC EXPORT To:BPPtr, From:BPPtr
 	VectorCopy 2, To, From
 	ret
@@ -362,25 +408,38 @@ Vector3Add PROC EXPORT A:BPPtr, B:BPPtr
 Vector3Add ENDP
 
 Vector3Angle PROC EXPORT From:BPPtr, To:BPPtr, Angle:BPPtr
+	LOCAL d2d:Vector2
 	mov pax, From
 	mov pcx, To
 	mov pdx, Angle
 	
-	fld REAL4 PTR [pcx+8]
-	fsub REAL4 PTR [pax+8]
 	fld REAL4 PTR [pcx]
 	fsub REAL4 PTR [pax]
+	fst d2d.X
+	fld REAL4 PTR [pcx+8]
+	fsub REAL4 PTR [pax+8]
+	fst d2d.Y
 	fpatan
 	fstp REAL4 PTR [pdx+4]
 	
-	fld REAL4 PTR [pcx+8]
-	fsub REAL4 PTR [pax+8]
 	fld REAL4 PTR [pcx+4]
 	fsub REAL4 PTR [pax+4]
+	fchs
+	fld d2d.X
+	fmul st, st
+	fld d2d.Y
+	fmul st, st
+	fadd
+	fsqrt
 	fpatan
 	fstp REAL4 PTR [pdx]
 	ret
 Vector3Angle ENDP
+
+Vector3ClampLength PROC EXPORT A:BPPtr, Len:REAL4
+	VectorClampLength 3, A, Len
+	ret
+Vector3ClampLength ENDP
 
 Vector3Copy PROC EXPORT To:BPPtr, From:BPPtr
 	VectorCopy 3, To, From
@@ -425,6 +484,11 @@ Vector3F PROC EXPORT A:BPPtr
 	VectorF 3, A
 	ret
 Vector3F ENDP
+
+Vector3Length PROC EXPORT A:BPPtr
+	VectorLength 3, A
+	ret
+Vector3Length ENDP
 
 Vector3LengthSqr PROC EXPORT A:BPPtr
 	VectorLengthSqr 3, A

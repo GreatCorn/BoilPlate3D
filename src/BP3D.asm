@@ -1,3 +1,11 @@
+;
+;   BP3D.asm
+;   BP3D (short for BoilPlate3D) framework main base unit.
+;
+;   Copyright (c) 2025 Yevhenii Ionenko (aka GreatCorn). All rights reserved.
+;   Licensed under the terms of the MIT license (see .\LICENSE.txt).
+;
+
 ; -----	MASM32 INCLUDES -----
 include include\windows.inc
 
@@ -27,9 +35,7 @@ include macros\macros.asm
 
 ; -----	INTERFACE -----
 
-BP3D_CLAMP_INTERPOLATION	EQU <1>
-BP3D_FIXED_INTERVAL			EQU 1000 / 60	; OnFixed signal interval (ms)
-IFDEF BP3D_TRACEABLE_HEAP					; Malloc macros for memory tracing
+IFDEF BP_TRACEABLE_HEAP					; Malloc macros for memory tracing
 	bpFree		TEXTEQU <bpFreeProc>
 	bpMalloc	TEXTEQU <bpMallocProc>
 	bpReAlloc	TEXTEQU <bpReAllocProc>
@@ -39,34 +45,104 @@ ELSE
 	bpReAlloc	TEXTEQU <HeapReAlloc>
 ENDIF
 
-; ----- CONSTANTS -----
-BPIN_JOYAXIS		EQU 0
-BPIN_JOYBUTTON		EQU 1
-BPIN_KEY			EQU 2
-BPIN_MOUSEMOVE		EQU 3
-BPIN_MOUSEBUTTON	EQU 4
-BPIN_TOUCH			EQU 5
-
-BPMSMODE_VISIBLE	EQU 0
-BPMSMODE_HIDDEN		EQU 1
-BPMSMODE_LOCKED		EQU 2
-
-BPWINMODE_WINDOWED		EQU 0
-BPWINMODE_MINIMIZED		EQU 1
-BPWINMODE_MAXIMIZED		EQU 2
-BPWINMODE_FULLSCREEN	EQU 3
-BPWINMODE_FULLSCREEN_EX	EQU 4
-
 ; ----- TYPES -----
-RAWINPUTHEADER  struct 
+;   MASM has some bad headers, fixed redefinitions are here. The ones that have
+; unions in them are the ones that are fucked, with the exception of the 
+; joystick, ones which are of an entirely different size due to microcock 
+; switching UINT size from WORD to DWORD (symbolic field prefixes are still w).
+DEVMODEA STRUCT
+	dmDeviceName	BYTE	CCHDEVICENAME dup(?)
+	dmSpecVersion	WORD	?
+	dmDriverVersion	WORD	?
+	dmSize			WORD	?
+	dmDriverExtra	WORD	?
+	dmFields		DWORD	?
+	union
+		struct
+			dmOrientation	WORD	?
+			dmPaperSize 	WORD	?
+			dmPaperLength	WORD	?
+			dmPaperWidth	WORD	?
+			dmScale			WORD	?
+			dmCopies		WORD	?
+			dmDefaultSource	WORD	?
+			dmPrintQuality	WORD	?
+		ends
+		;dmPosition POINTL <>	; are Microsoft docs also tripping
+		struct
+			dmPosition				POINTL	<>
+			dmDisplayOrientation	DWORD	?
+			dmDisplayFixedOutput	DWORD	?
+		ends
+	ends
+	dmColor			WORD	?
+	dmDuplex		WORD	?
+	dmYResolution	WORD	?
+	dmTTOption		WORD	?
+	dmCollate		WORD	?
+	dmFormName		BYTE	CCHFORMNAME dup (?)
+	dmLogPixels		WORD	?
+	dmBitsPerPel	DWORD	?
+	dmPelsWidth		DWORD	?
+	dmPelsHeight	DWORD	?
+	union
+		dmDisplayFlags	DWORD	?
+		dmNup			DWORD	?
+	ends
+	dmDisplayFrequency	DWORD	?
+	dmICMMethod			DWORD	?
+	dmICMIntent			DWORD	?
+	dmMediaType			DWORD	?
+	dmDitherType		DWORD	?
+	dmReserved1			DWORD	?
+	dmReserved2			DWORD	?
+	dmPanningWidth		DWORD	?
+	dmPanningHeight		DWORD	?
+DEVMODEA ENDS
+
+JOYCAPSAFIX STRUCT	; This redefinition isn't the same size, so another name
+	wMid			WORD	?
+	wPid			WORD	?
+	szPname			BYTE	MAXPNAMELEN dup (?)
+	wXmin			DWORD	?
+	wXmax			DWORD	?
+	wYmin			DWORD	?
+	wYmax			DWORD	?
+	wZmin			DWORD	?
+	wZmax			DWORD	?
+	wNumButtons		DWORD	?
+	wPeriodMin		DWORD	?
+	wPeriodMax		DWORD	?
+	wRmin			DWORD	?
+	wRmax			DWORD	?
+	wUmin			DWORD	?
+	wUmax			DWORD	?
+	wVmin			DWORD	?
+	wVmax			DWORD	?
+	wCaps			DWORD	?
+	wMaxAxes		DWORD	?
+	wNumAxes		DWORD	?
+	wMaxButtons		DWORD	?
+	szRegKey		BYTE	MAXPNAMELEN dup(?)
+	szOEMVxD		BYTE	MAX_JOYSTICKOEMVXDNAME dup(?)
+JOYCAPSAFIX ENDS
+
+JOYINFOFIX STRUCT
+	wXpos		DWORD	?
+	wYpos		DWORD	?
+	wZpos		DWORD	?
+	wButtons	DWORD	?
+JOYINFOFIX ENDS
+
+RAWINPUTHEADER  STRUCT 		; Just redefine all RAWINPUT while we're at it
 	dwType      DWORD   ?
 	dwSize      DWORD   ?
 	hDevice     HANDLE  ?
 	wParam      WPARAM  ?
-RAWINPUTHEADER  ends
-PRAWINPUTHEADER typedef ptr RAWINPUTHEADER
+RAWINPUTHEADER  ENDS
+PRAWINPUTHEADER TYPEDEF PTR RAWINPUTHEADER
 
-RAWMOUSE struct 
+RAWMOUSE STRUCT 
 	usFlags WORD    ?
 	union
 		ulButtons       DWORD   ?
@@ -79,118 +155,182 @@ RAWMOUSE struct
 	lLastX              SDWORD  ?
 	lLastY              SDWORD  ?
 	ulExtraInformation  DWORD   ?
-RAWMOUSE ends
-PRAWMOUSE typedef ptr RAWMOUSE
+RAWMOUSE ENDS
+PRAWMOUSE TYPEDEF PTR RAWMOUSE
 
-RAWKEYBOARD struct 
+RAWKEYBOARD STRUCT 
 	MakeCode            WORD    ?
 	Flags               WORD    ?
 	Reserved            WORD    ?
 	VKey                WORD    ?
 	Message             DWORD   ?
 	ExtraInformation    DWORD   ?
-RAWKEYBOARD ends
-PRAWKEYBOARD typedef ptr RAWKEYBOARD
+RAWKEYBOARD ENDS
+PRAWKEYBOARD TYPEDEF PTR RAWKEYBOARD
 
-RAWHID struct 
+RAWHID STRUCT 
 	dwSizeHid           DWORD ?
 	dwCount             DWORD ?
 	bRawData            BYTE 1 dup (?)
-RAWHID ends
-PRAWHID typedef ptr RAWHID
+RAWHID ENDS
+PRAWHID TYPEDEF PTR RAWHID
 
-RAWINPUT struct 
+RAWINPUT STRUCT 
 	header  RAWINPUTHEADER <>
 	union data
 		mouse           RAWMOUSE    <>
 		keyboard        RAWKEYBOARD <>
 		hid             RAWHID      <>
 	ends
-RAWINPUT ends
+RAWINPUT ENDS
 
-IFDEF rax
+IFDEF rax	; Cross-architecture compatibility (WIP)
 	ECHO BP3D: Compiling in 64-bit mode.
-	BPPtr TYPEDEF QWORD
-	BPSPtr TYPEDEF SQWORD
-	BPPtrWord TYPEDEF QWORD
-	BPPtrInt TYPEDEF SQWORD
-	BPPtrShl EQU 3
-	pax EQU rax
+	BPPtr TYPEDEF QWORD		; Pointer type
+	BPSPtr TYPEDEF SQWORD	; Signed pointer type
+	;BPPtrWord TYPEDEF QWORD
+	;BPPtrInt TYPEDEF SQWORD
+	BPPtrShift EQU 3		; Byte shift amount (to use instead of mul/div)
+	pax EQU rax				; Pointer registers
 	pbx EQU rbx
 	pcx EQU rcx
 	pdx EQU rdx
 ELSE
 	ECHO BP3D: Compiling in 32-bit mode.
-	BPPtr TYPEDEF DWORD
-	BPSPtr TYPEDEF SDWORD
-	BPPtrWord TYPEDEF DWORD
-	BPPtrInt TYPEDEF SDWORD
-	BPPtrShl EQU 2
-	pax EQU eax
+	BPPtr TYPEDEF DWORD		; Pointer type
+	BPSPtr TYPEDEF SDWORD	; Signed pointer type
+	;BPPtrWord TYPEDEF DWORD
+	;BPPtrInt TYPEDEF SDWORD
+	BPPtrShift EQU 2		; Byte shift amount (to use instead of mul/div)
+	pax EQU eax				; Pointer registers
 	pbx EQU ebx
 	pcx EQU ecx
 	pdx EQU edx
 ENDIF
 
-BPBool TYPEDEF BYTE
-BPEnum TYPEDEF BYTE
+BPBool TYPEDEF BYTE			; Boolean type (for argument generalization)
+BPEnum TYPEDEF BYTE			; Enumerator type
 	
-BPForm STRUCT
-	Caption BPPtr 0
-	ClassName BPPtr 0
-	DeviceContext HDC 0
-	GLContext HANDLE 0
-	Handle HWND 0
-	WndProc BPPtr 0
-	ScreenPos POINT <CW_USEDEFAULT, CW_USEDEFAULT>
-	ScreenSize POINT <CW_USEDEFAULT, CW_USEDEFAULT>
+BPForm STRUCT				; Windows form (window) structure
+	Caption			BPPtr 0		; Form caption/title
+	ClassName		BPPtr 0		; Form class name to register
+	DefaultFlag		BPBool TRUE	; Flag to trigger default Win32/BP3D event proc
+	DeviceContext	HDC 0		; Form device context
+	GLContext		HANDLE 0	; Form OpenGL context
+	InputFlags			BYTE BP_USE_RAW_MOUSE or BP_USE_JOYSTICK
+	Handle			HWND 0		; Form window handle
+	WndProc			BPPtr 0		; WndProc procedure offset
 	
-	; Read-only fields
-	Aspect REAL4 0.0
-	Focused BPBool TRUE
-	MouseMode BPEnum BPMSMODE_VISIBLE
-	WindowMode BPEnum BPWINMODE_WINDOWED
-	ScreenCnt POINT <0, 0>
-	WindowPos POINT <CW_USEDEFAULT, CW_USEDEFAULT>
-	WindowSize POINT <CW_USEDEFAULT, CW_USEDEFAULT>
+	; Read-only fields (set by internal BP3D or abstracted by procedures)
+	Aspect			REAL4 0.0	; Form width divided by height (for GL viewport)
+	Focused			BPBool TRUE	; Is the form in focus
+	InputHeader		BPPtr 0
+	MouseMode		BPEnum BP_MOUSE_MODE_VISIBLE		; Set with bpSetMouseMode
+	WindowMode		BPEnum BP_WINDOW_MODE_WINDOWED	; Set with bpSetWindowMode
+	ScreenCnt		POINT <0, 0>				; Global screen center
+	ScreenPos		POINT <CW_USEDEFAULT, CW_USEDEFAULT>
+	ScreenSize		POINT <CW_USEDEFAULT, CW_USEDEFAULT>
+	WindowPos		POINT <CW_USEDEFAULT, CW_USEDEFAULT>
+	WindowSize		POINT <CW_USEDEFAULT, CW_USEDEFAULT>
 	
-	; OnCreate PROC
-	OnCreate BPPtr 0
-	; OnDestroy PROC
-	OnDestroy BPPtr 0
-	; OnFixed PROC
-	OnFixed BPPtr 0
-	; OnInput PROC BPInType:BPEnum, BPInStruct:BPPtr
-	OnInput BPPtr 0
-	; OnRender PROC
-	OnRender BPPtr 0
-	; OnResize PROC
-	OnResize BPPtr 0
+	; Event procedures
+	OnCreate		BPPtr 0	; OnCreate PROC
+	OnDestroy		BPPtr 0	; OnDestroy PROC
+	OnFixed			BPPtr 0	; OnFixed PROC
+	OnInput			BPPtr 0	; OnInput PROC BPInType:BPEnum, BPInStruct:BPPtr
+	OnRender		BPPtr 0	; OnRender PROC
+	OnResize		BPPtr 0	; OnResize PROC
 BPForm ENDS
 
-BPInKey STRUCT
-	Keycode BPPtr ?
-	Pressed BPBool ?
+BPInJoyAxis STRUCT
+	JoyNum		DWORD ?
+	Axis		BPPtr ?
+	Position	REAL4 ?
+BPInJoyAxis ENDS
+
+BPInJoyButton STRUCT
+	JoyNum		DWORD ?
+	Button		BPPtr ?
+	Pressed		BPBool ?
+BPInJoyButton ENDS
+
+BPInKey STRUCT			; Keyboard input structure
+	Keycode		BPPtr ?
+	Pressed		BPBool ?
 BPInKey ENDS
 
-BPInMouseButton STRUCT
-	Button BPPtr ?
-	Pressed BPBool ?
+BPInMouseButton STRUCT	; Mouse button input structure
+	Button		BPPtr ?
+	Pressed		BPBool ?
 BPInMouseButton ENDS
 
-BPInMouseMove STRUCT
-	Position POINT <?, ?>
-	Relative POINT <?, ?>
+BPInMouseMove STRUCT	; Mouse movement input structure
+	Position	POINT <?, ?>
+	Relative	POINT <?, ?>
 BPInMouseMove ENDS
 
+BPInTouch STRUCT
+	Position	POINT <?, ?>
+BPInTouch ENDS
+
+BPJoystick STRUCT
+	Active		BPBool 		FALSE
+	VendorId	WORD		?
+	ProductId	WORD		?
+	NumAxes		DWORD		?
+	NumButtons	DWORD		?
+	RawName		BYTE		MAXPNAMELEN dup (?)
+BPJoystick ENDS
+
+; ----- CONSTANTS -----
+BP_FIXED_INTERVAL		EQU 1000 / 60	; OnFixed signal interval (ms)
+
+; Input type constants (BPForm.OnInput)
+BP_INPUT_JOY_AXIS		EQU 0	; Input structure is BPInJoyAxis
+BP_INPUT_JOY_BUTTON		EQU 1	; Input structure is BPInJoyButton
+BP_INPUT_KEY			EQU 2	; Input structure is BPInKey
+BP_INPUT_MOUSE_BUTTON	EQU 3	; Input structure is BPInMouseButton
+BP_INPUT_MOUSE_MOVE		EQU 4	; Input structure is BPInMouseMove
+BP_INPUT_TOUCH			EQU 5	; Input structure is BPInTouch
+
+; Joystick axes (BPInJoyAxis)
+BP_JOY_AXIS_X	EQU 0
+BP_JOY_AXIS_Y	EQU 1
+BP_JOY_AXIS_Z	EQU 2
+BP_JOY_AXIS_R	EQU 3
+BP_JOY_AXIS_U	EQU 4
+BP_JOY_AXIS_V	EQU 4
+
+; Mouse cursor mode constants (BPForm.MouseMode, bpSetMouseMode)
+BP_MOUSE_MODE_VISIBLE	EQU 0	; Cursor is visible
+BP_MOUSE_MODE_HIDDEN	EQU 1	; Cursor is invisible while above the form
+BP_MOUSE_MODE_LOCKED	EQU 2	; Cursor is locked to the form center
+
+BP_MOUSE_TOUCH_COOLDOWN	EQU 10
+
+; BPForm.InputFlags
+BP_USE_RAW_MOUSE	EQU 1	; Register and use raw mouse instead of WM
+BP_USE_JOYSTICK		EQU 2	; Use joysticks
+
+; Form window mode constants (BPForm.WindowMode, bpSetWindowMode)
+BP_WINDOW_MODE_WINDOWED			EQU 0	; Form is a draggable (sizeable) window
+BP_WINDOW_MODE_MINIMIZED		EQU 1	; Form is minimized into tray
+BP_WINDOW_MODE_MAXIMIZED		EQU 2	; Form is a maximized window
+BP_WINDOW_MODE_FULLSCREEN		EQU 3	; Form is a 'fullscreen window'
+BP_WINDOW_MODE_FULLSCREEN_EX	EQU 4	; Form uses exclusive fullscreen
+
 .CONST
-bpDefCaption DB "BP3D", 0
-bpDefClassMain DB "BPFMain", 0
+bpDefCaption	DB "BP3D", 0	; Default window caption
+bpDefClassMain	DB "BPFMain", 0	; Default window class name
+bpJoyMaxValue	DWORD 1191182336
 
 .DATA
-bpDefaultFlag BPBool FALSE
+; Set to TRUE after first frame, then allows OnRender execution
 bpFirstFrameSkipped BPBool FALSE
-IFDEF BP3D_USELARGEINTEGER
+
+;   Delta time calculation variables (QueryPerformanceCounter uses
+; LARGE_INTEGER, but one 32-bit portion of it is enough)
+IFDEF BP_USE_LARGEINTEGER
 	BPDelta TYPEDEF LARGE_INTEGER
 	bpLastTick LARGE_INTEGER <0,0>
 	bpPerfFreq LARGE_INTEGER <0,0>
@@ -201,30 +341,58 @@ ELSE
 	bpPerfFreq DWORD 0
 	bpTick DWORD 0
 ENDIF
-bpMouseClient SDWORD 0, 0
-bpMouseScreen SDWORD 0, 0
 
-deltaTime 		REAL4	0.0
-deltaScale 		REAL4	1.0
-deltaUnscaled 	REAL4	0.0
+bpDefHeap HANDLE 0
 
-heapAllocated	DWORD	0
-heapList		BPPtr	0
-heapListSize	DWORD	0
+bpJoyCount		DWORD 0
+bpJoyInfoEx		JOYINFOEX 16 dup (<>)
+bpJoysticks		BPJoystick 16 dup (<>)
+bpJoyThreshold	REAL4 0.06, 0.94
+bpMouseClient SDWORD 0, 0	; Local mouse cursor position in the window
+bpMouseClientPrev SDWORD 0, 0
+bpMouseScreen SDWORD 0, 0	; On-screen global mouse cursor position
+bpMouseTouchCooldown	DWORD BP_MOUSE_TOUCH_COOLDOWN
 
-timeStart		REAL4	0.0
+deltaTime 		REAL4	0.0	; Scaled delta time, used for frame-independence
+deltaScale 		REAL4	1.0	; Delta time scale mutiplier
+deltaUnscaled 	REAL4	0.0	; Unscaled delta time
+timeStart		REAL4	0.0	; Time since start (first OnCreate)
+
+IFDEF BP_TRACEABLE_HEAP
+	heapAllocated	DWORD	0	; Size of memory allocated on the heap
+	IFDEF BP_TRACEABLE_HEAP_LIST
+		heapList		BPPtr	0	; The list of all allocated memory blocks
+		heapListSize	DWORD	0	; Size, in bytes, of the heap list
+	ENDIF
+ENDIF
 
 ; ----- IMPLEMENTATION -----
 .CODE
 
-bpInitContext PROTO :HWND
-bpInMouseButton PROTO :BPPtr, :BPPtr, :BPBool
-bpSetScreenCenter PROTO :BPPtr
-bpDefTimeProc PROTO :UINT, :UINT, :DWORD, :DWORD, :DWORD
-bpDefWndProc PROTO :HWND, :UINT, :WPARAM, :LPARAM
-bpMallocProc PROTO :HANDLE, :DWORD, :DWORD
-bpSetWindowMode PROTO :BPPtr, :BPEnum
-bpUpdateWindowPos PROTO :BPPtr
+; Prototype procedure declarations (for potential forward usage in unit)
+IFDEF BP_TRACEABLE_HEAP
+	bpFreeProc		PROTO :HANDLE, :DWORD, :LPVOID
+	bpReAllocProc	PROTO :HANDLE, :DWORD, :LPVOID, :DWORD
+	bpMallocProc	PROTO :HANDLE, :DWORD, :DWORD
+	IFDEF BP_TRACEABLE_HEAP_LIST
+		bpPrintHeapList PROTO
+	ENDIF
+ENDIF
+
+bpCalculateDelta	PROTO :BPPtr, :BPPtr
+bpCreateForm		PROTO :BPPtr
+bpDestroyForm		PROTO :BPPtr
+bpInitGLContext		PROTO :BPPtr
+bpInKey				PROTO :BPPtr, :WPARAM, :BOOL
+bpInMouseButton		PROTO :BPPtr, :BPPtr, :BPBool
+bpInRaw				PROTO :BPPtr, :LPARAM
+bpSetMouseMode		PROTO :BPPtr, :BPEnum
+bpSetScreenCenter	PROTO :BPPtr
+bpSetWindowMode		PROTO :BPPtr, :BPEnum
+bpUpdateJoysticks	PROTO
+bpUpdateWindowPos	PROTO :BPPtr
+bpDefTimeProc		PROTO :UINT, :UINT, :DWORD, :DWORD, :DWORD
+bpDefWndProc		PROTO :HWND, :UINT, :WPARAM, :LPARAM
 
 ;   32-bit m2m macro implementation that uses 64-bit values.
 ;   dst:REQ - mov destination.
@@ -241,14 +409,14 @@ bpm2m64 MACRO dst:REQ, src:REQ
 	ENDIF
 ENDM
 
-IFDEF BP3D_TRACEABLE_HEAP
+IFDEF BP_TRACEABLE_HEAP
 ;   Traceable memory free macro (maps to Win32 HeapFree).
 bpFreeProc PROC EXPORT hHeap:HANDLE, dwFlags:DWORD, lpMem:LPVOID
 	invoke HeapSize, hHeap, dwFlags, lpMem
 	sub heapAllocated, eax
 	invoke HeapFree, hHeap, dwFlags, lpMem
 	
-	IFDEF BP3D_TRACEABLE_HEAP_LIST
+	IFDEF BP_TRACEABLE_HEAP_LIST
 		push pbx
 		xor pbx, pbx
 		.WHILE (pbx < heapListSize)
@@ -273,7 +441,7 @@ bpFreeProc PROC EXPORT hHeap:HANDLE, dwFlags:DWORD, lpMem:LPVOID
 		pop pbx
 	ENDIF
 	
-	IFDEF BP3D_TRACEABLE_HEAP_VERBOSE
+	IFDEF BP_TRACEABLE_HEAP_VERBOSE
 		print "Freeing address "
 		print uhex$(lpMem), 13, 10
 	ENDIF
@@ -281,13 +449,14 @@ bpFreeProc PROC EXPORT hHeap:HANDLE, dwFlags:DWORD, lpMem:LPVOID
 bpFreeProc ENDP
 
 ;   Traceable memory reallocation macro (maps to Win32 HeapReAlloc).
-bpReAllocProc PROC EXPORT hHeap:HANDLE, dwFlags:DWORD, lpMem:LPVOID, dwBytes:DWORD
+bpReAllocProc PROC EXPORT hHeap:HANDLE, dwFlags:DWORD, lpMem:LPVOID, \
+dwBytes:DWORD
 	invoke HeapSize, hHeap, dwFlags, lpMem
 	sub heapAllocated, eax
 	mov eax, dwBytes
 	add heapAllocated, eax
 	
-	IFDEF BP3D_TRACEABLE_HEAP_VERBOSE
+	IFDEF BP_TRACEABLE_HEAP_VERBOSE
 		print "Reallocating ", 9
 		print udword$(dwBytes), 9
 		print "from "
@@ -296,7 +465,7 @@ bpReAllocProc PROC EXPORT hHeap:HANDLE, dwFlags:DWORD, lpMem:LPVOID, dwBytes:DWO
 	
 	invoke HeapReAlloc, hHeap, dwFlags, lpMem, dwBytes
 	
-	IFDEF BP3D_TRACEABLE_HEAP_LIST
+	IFDEF BP_TRACEABLE_HEAP_LIST
 		push pax
 		push pbx
 		xor pbx, pbx
@@ -312,7 +481,7 @@ bpReAllocProc PROC EXPORT hHeap:HANDLE, dwFlags:DWORD, lpMem:LPVOID, dwBytes:DWO
 		pop pbx
 		pop pax
 	ENDIF
-	IFDEF BP3D_TRACEABLE_HEAP_VERBOSE
+	IFDEF BP_TRACEABLE_HEAP_VERBOSE
 		push pax
 		print "to "
 		pop pax
@@ -328,7 +497,7 @@ bpMallocProc PROC EXPORT hHeap:HANDLE, dwFlags:DWORD, dwBytes:DWORD
 	mov eax, dwBytes
 	add heapAllocated, eax
 	
-	IFDEF BP3D_TRACEABLE_HEAP_LIST
+	IFDEF BP_TRACEABLE_HEAP_LIST
 		add heapListSize, SIZEOF BPPtr
 		.IF (heapList)
 			mov heapList, rv(HeapReAlloc, hHeap, 0, heapList, heapListSize)
@@ -336,20 +505,20 @@ bpMallocProc PROC EXPORT hHeap:HANDLE, dwFlags:DWORD, dwBytes:DWORD
 			mov heapList, rv(HeapAlloc, hHeap, 0, heapListSize)
 		.ENDIF
 	ENDIF
-	IFDEF BP3D_TRACEABLE_HEAP_VERBOSE
+	IFDEF BP_TRACEABLE_HEAP_VERBOSE
 		print "Allocating ", 9
 		print udword$(dwBytes), 9
 	ENDIF
 	
 	invoke HeapAlloc, hHeap, dwFlags, dwBytes
 	
-	IFDEF BP3D_TRACEABLE_HEAP_LIST
+	IFDEF BP_TRACEABLE_HEAP_LIST
 		mov pcx, heapList
 		mov pdx, heapListSize
 		sub pdx, SIZEOF BPPtr
 		mov BPPtr PTR [pcx+pdx], pax
 	ENDIF
-	IFDEF BP3D_TRACEABLE_HEAP_VERBOSE
+	IFDEF BP_TRACEABLE_HEAP_VERBOSE
 		push pax
 		print "on address "
 		pop pax
@@ -360,11 +529,11 @@ bpMallocProc PROC EXPORT hHeap:HANDLE, dwFlags:DWORD, dwBytes:DWORD
 	ret
 bpMallocProc ENDP
 
-IFDEF BP3D_TRACEABLE_HEAP_LIST
+IFDEF BP_TRACEABLE_HEAP_LIST
 bpPrintHeapList PROC EXPORT
 	print "Allocated heap block count: "
 	mov eax, heapListSize
-	shr eax, BPPtrShl
+	shr eax, BPPtrShift
 	print str$(eax), 32, 40
 	print udword$(heapAllocated)
 	print " bytes", 41, 13, 10
@@ -377,7 +546,7 @@ bpPrintHeapList PROC EXPORT
 		print " ", 9
 		print uhex$(BPPtr PTR [pbx]), 32
 		print "size: "
-		invoke HeapSize, rv(GetProcessHeap), 0, BPPtr PTR [pbx]
+		invoke HeapSize, bpDefHeap, 0, BPPtr PTR [pbx]
 		print udword$(eax), 13, 10
 		pop pbx
 		add pbx, SIZEOF BPPtr
@@ -391,9 +560,9 @@ ENDIF
 
 
 ;   Calculate deltaTime. Done automatically in the message loop in bpCreateForm,
-; if bpDefaultFlag is TRUE (after OnRender callback).
+; if BPForm.DefaultFlag is TRUE (after OnRender callback).
 bpCalculateDelta PROC EXPORT LastTick:BPPtr, DeltaPtr:BPPtr
-	IFDEF BP3D_USELARGEINTEGER
+	IFDEF BP_USE_LARGEINTEGER
 		LOCAL diff:LARGE_INTEGER
 		
 		invoke QueryPerformanceCounter, ADDR bpTick
@@ -455,7 +624,7 @@ bpCalculateDelta PROC EXPORT LastTick:BPPtr, DeltaPtr:BPPtr
 	
 	bpCalculateDeltaSkip:
 	mov pcx, LastTick
-	IFDEF BP3D_USELARGEINTEGER
+	IFDEF BP_USE_LARGEINTEGER
 		bpm2m64 LARGE_INTEGER PTR [pcx], bpTick
 	ELSE
 		m2m DWORD PTR [pcx], bpTick
@@ -467,7 +636,7 @@ bpCalculateDelta ENDP
 ;   BPFormPtr:BPPtr - pointer to a form structure.
 bpCreateForm PROC EXPORT BPFormPtr:BPPtr
 	LOCAL wc:WNDCLASSEX, msg:MSG, testFreq:LARGE_INTEGER, quitFlag:BPBool
-	LOCAL rid:RAWINPUTDEVICE 
+	LOCAL ridMouse:RAWINPUTDEVICE
 	ASSUME pcx:PTR BPForm
 	
 	mov wc.cbSize, SIZEOF WNDCLASSEX
@@ -510,28 +679,41 @@ bpCreateForm PROC EXPORT BPFormPtr:BPPtr
 	mov [pcx].Handle, pax
 	invoke SetWindowLong, pax, GWLP_USERDATA, BPFormPtr
 	
-	IFDEF BP3D_USELARGEINTEGER
+	IFDEF BP_USE_LARGEINTEGER
 		invoke QueryPerformanceFrequency, ADDR bpPerfFreq
 	ELSE
 		invoke QueryPerformanceFrequency, ADDR testFreq
 		m2m bpPerfFreq, testFreq.LowPart
 	ENDIF
 	
-	mov bpDefaultFlag, TRUE
 	mov pcx, BPFormPtr
+	mov [pcx].DefaultFlag, TRUE
 	.IF ([pcx].OnCreate)
 		call [pcx].OnCreate
 	.ENDIF
-	.IF (bpDefaultFlag)
-		; Register raw mouse input (for best mouse control with lag and vsync)
-		mov rid.usUsagePage, 01h	; Generic desktop
-		mov rid.usUsage, 02h		; Mouse
-		mov rid.dwFlags, RIDEV_INPUTSINK
-		mov pcx, BPFormPtr
-		m2m rid.hwndTarget, [pcx].Handle
-		print str$(rid.hwndTarget), 13, 10
+	mov pcx, BPFormPtr
+	.IF ([pcx].DefaultFlag)
+		.IF (!bpDefHeap)
+			mov bpDefHeap, rv(GetProcessHeap)
+		.ENDIF
 		
-		invoke RegisterRawInputDevices, ADDR rid, 1, SIZEOF RAWINPUTDEVICE
+		.IF ([pcx].InputFlags & BP_USE_JOYSTICK)
+			call bpUpdateJoysticks
+		.ENDIF
+		
+		mov pcx, BPFormPtr
+		.IF ([pcx].InputFlags & BP_USE_RAW_MOUSE)
+			mov pcx, BPFormPtr
+			
+			; Register raw mouse input (for no mouse lag on vsync)
+			mov ridMouse.usUsagePage, 1		; Generic desktop
+			mov ridMouse.usUsage, 2			; Mouse
+			mov ridMouse.dwFlags, RIDEV_INPUTSINK
+			m2m ridMouse.hwndTarget, [pcx].Handle
+			
+			invoke RegisterRawInputDevices, ADDR ridMouse, 1, \
+			SIZEOF RAWINPUTDEVICE
+		.ENDIF
 		
 		mov pcx, BPFormPtr
 		.IF ([pcx].WindowMode)
@@ -542,9 +724,9 @@ bpCreateForm PROC EXPORT BPFormPtr:BPPtr
 	; OnFixed
 	mov pcx, BPFormPtr
 	.IF ([pcx].OnFixed)
-		;invoke SetTimer, [pcx].Handle, IDT_MOUSETRAP, BP3D_FIXED_INTERVAL, \
-		;NULL	THIS FUCKING COCKSUCKER NEVER WORKED I FUCKING HATE IT
-		invoke timeSetEvent, BP3D_FIXED_INTERVAL, 0, OFFSET bpDefTimeProc, \
+		;invoke SetTimer, [pcx].Handle, IDT_MOUSETRAP, BP_FIXED_INTERVAL, \
+		;NULL	Non-functional ass
+		invoke timeSetEvent, BP_FIXED_INTERVAL, 0, OFFSET bpDefTimeProc, \
 		BPFormPtr, TIME_PERIODIC
 	.ENDIF
 	
@@ -642,6 +824,74 @@ bpInitGLContext PROC EXPORT BPFormPtr:BPPtr
 	ret
 bpInitGLContext ENDP
 
+bpInJoyAxis PROC EXPORT BPFormPtr:BPPtr, JoyNum:DWORD, Axis:BPPtr, \
+Position:REAL4
+	LOCAL bpInStruct:BPInJoyAxis, pos:REAL4
+	
+	fld Position
+	fabs
+	fld bpJoyThreshold[0]
+	fcomp
+	fstsw ax
+	bt ax, 8
+	
+	.IF (!Carry?)
+		fstp st
+		mov pos, 0
+	.ELSE
+		fld bpJoyThreshold[4]
+		fcompp
+		fstsw ax
+		bt ax, 8
+		
+		.IF (Carry?)
+			.IF (Position & FLT_NEG)
+				mov pos, 3212836864
+			.ELSE
+				mov pos, 1065353216
+			.ENDIF
+		.ELSE
+			m2m pos, Position
+		.ENDIF
+	.ENDIF
+	
+	m2m bpInStruct.JoyNum, JoyNum
+	m2m bpInStruct.Axis, Axis
+	m2m bpInStruct.Position, pos
+	
+	ASSUME pcx:PTR BPForm
+	mov pcx, BPFormPtr
+	
+	lea pax, bpInStruct
+	push pax
+	push BP_INPUT_JOY_AXIS
+	call [pcx].OnInput
+	
+	ASSUME pcx:nothing
+	ret
+bpInJoyAxis ENDP
+
+bpInJoyButton PROC EXPORT BPFormPtr:BPPtr, JoyNum:DWORD, Button:BPPtr, \
+Pressed:BOOL
+	LOCAL bpInStruct:BPInJoyButton
+	
+	m2m bpInStruct.JoyNum, JoyNum
+	m2m bpInStruct.Button, Button
+	mov eax, Pressed
+	mov bpInStruct.Pressed, al
+	
+	ASSUME pcx:PTR BPForm
+	mov pcx, BPFormPtr
+	
+	lea pax, bpInStruct
+	push pax
+	push BP_INPUT_JOY_BUTTON
+	call [pcx].OnInput
+	
+	ASSUME pcx:nothing
+	ret
+bpInJoyButton ENDP
+
 ;   Send keyboard input to form OnInput event as a struct.
 ;   BPFormPtr:BPPtr - pointer to a form structure.
 ;   Keycode:WPARAM - virtual-key code of the keyboard button.
@@ -658,103 +908,12 @@ bpInKey PROC EXPORT BPFormPtr:BPPtr, Keycode:WPARAM, Pressed:BOOL
 	
 	lea pax, bpInStruct
 	push pax
-	push BPIN_KEY
+	push BP_INPUT_KEY
 	call [pcx].OnInput
 	
 	ASSUME pcx:nothing
 	ret
 bpInKey ENDP
-
-;   Send mouse input to form OnInput event as a struct.
-;   BPFormPtr:BPPtr - pointer to a form structure.
-;   RawHandle:LPARAM - handle to RAWINPUT structure (lParam in WM_INPUT)
-bpInMouse PROC EXPORT BPFormPtr:BPPtr, RawHandle:LPARAM
-	LOCAL bpInStruct:BPInMouseMove, dwSize:DWORD, lpb:BPPtr
-	
-	invoke GetRawInputData, RawHandle, RID_INPUT, NULL, ADDR dwSize, \
-	SIZEOF RAWINPUTHEADER
-	invoke bpMalloc, rv(GetProcessHeap), 0, dwSize
-	mov lpb, pax
-	
-	invoke GetRawInputData, RawHandle, RID_INPUT, lpb, ADDR dwSize, \
-	SIZEOF RAWINPUTHEADER
-	
-	.IF (pax == dwSize)
-		mov pcx, lpb
-		ASSUME pcx:PTR RAWINPUT
-		.IF ([pcx].header.dwType != RIM_TYPEMOUSE)
-			; This should always fail because we set to capture only raw mouse
-			invoke bpFree, rv(GetProcessHeap), 0, lpb
-			ret
-		.ENDIF
-		;.IF ([pcx].data.mouse.usFlags & MOUSE_MOVE_ABSOLUTE)
-			;TODO?
-		;.ELSE
-			mov eax, [pcx].data.mouse.lLastX
-			mov ecx, 65536
-			cdq
-			idiv ecx
-			mov bpInStruct.Relative.x, eax
-			mov pcx, lpb
-			mov eax, [pcx].data.mouse.lLastY
-			mov ecx, 65536
-			cdq
-			idiv ecx
-			mov bpInStruct.Relative.y, eax
-		;.ENDIF
-		
-		mov pcx, lpb
-		xor pax, pax
-		mov ax, [pcx].data.mouse.usButtonData
-		.IF (ax)
-			SWITCH pax
-				CASE RI_MOUSE_BUTTON_1_DOWN
-					invoke bpInMouseButton, BPFormPtr, VK_LBUTTON, TRUE
-				CASE RI_MOUSE_BUTTON_1_UP
-					invoke bpInMouseButton, BPFormPtr, VK_LBUTTON, FALSE
-				CASE RI_MOUSE_BUTTON_2_DOWN
-					invoke bpInMouseButton, BPFormPtr, VK_RBUTTON, TRUE
-				CASE RI_MOUSE_BUTTON_2_UP
-					invoke bpInMouseButton, BPFormPtr, VK_RBUTTON, FALSE
-				CASE RI_MOUSE_BUTTON_3_DOWN
-					invoke bpInMouseButton, BPFormPtr, VK_MBUTTON, TRUE
-				CASE RI_MOUSE_BUTTON_3_UP
-					invoke bpInMouseButton, BPFormPtr, VK_MBUTTON, FALSE
-				CASE RI_MOUSE_BUTTON_4_DOWN
-					invoke bpInMouseButton, BPFormPtr, VK_XBUTTON1, TRUE
-				CASE RI_MOUSE_BUTTON_4_UP
-					invoke bpInMouseButton, BPFormPtr, VK_XBUTTON1, FALSE
-				CASE RI_MOUSE_BUTTON_5_DOWN
-					invoke bpInMouseButton, BPFormPtr, VK_XBUTTON2, TRUE
-				CASE RI_MOUSE_BUTTON_5_UP
-					invoke bpInMouseButton, BPFormPtr, VK_XBUTTON2, FALSE
-			ENDSW
-		.ENDIF
-		ASSUME pcx:nothing
-	.ENDIF
-	invoke bpFree, rv(GetProcessHeap), 0, lpb
-	
-	; Get global cursor coords
-	invoke GetCursorPos, ADDR bpMouseScreen
-	m2m bpInStruct.Position.x, bpMouseScreen
-	m2m bpInStruct.Position.y, bpMouseScreen[4]
-	
-	ASSUME pcx:PTR BPForm
-	mov pcx, BPFormPtr
-	
-	m2m bpMouseClient[0], bpMouseScreen[0]
-	m2m bpMouseClient[4], bpMouseScreen[4]
-	invoke ScreenToClient, [pcx].Handle, ADDR bpMouseClient
-	
-	mov pcx, BPFormPtr
-	lea pax, bpInStruct
-	push pax
-	push BPIN_MOUSEMOVE
-	call [pcx].OnInput
-	
-	ASSUME pcx:nothing
-	ret
-bpInMouse ENDP
 
 ;   Send mouse button input to form OnInput event as a struct. Used to be sent
 ; from bpDefWndProc, but after switching to raw input, is sent from bpInMouse.
@@ -773,12 +932,213 @@ bpInMouseButton PROC EXPORT BPFormPtr:BPPtr, Button:BPPtr, Pressed:BPBool
 	
 	lea pax, bpInStruct
 	push pax
-	push BPIN_MOUSEBUTTON
+	push BP_INPUT_MOUSE_BUTTON
 	call [pcx].OnInput
 	
 	ASSUME pcx:nothing
 	ret
 bpInMouseButton ENDP
+
+;   Send mouse movement input to form OnInput event as a struct.
+;   BPFormPtr:BPPtr - pointer to a form structure.
+bpInMouseMove PROC BPFormPtr:BPPtr
+	LOCAL bpInStruct:BPInMouseMove
+	
+	m2m bpInStruct.Position.x, bpMouseClient
+	m2m bpInStruct.Position.y, bpMouseClient[4]
+	
+	ASSUME pcx:PTR BPForm
+	mov pcx, BPFormPtr
+	
+	mov eax, bpMouseClient
+	sub eax, bpMouseClientPrev
+	mov bpInStruct.Relative.x, eax
+	mov eax, bpMouseClient[4]
+	sub eax, bpMouseClientPrev[4]
+	mov bpInStruct.Relative.y, eax
+	
+	m2m bpMouseClientPrev, bpMouseClient
+	m2m bpMouseClientPrev[4], bpMouseClient[4]
+	
+	lea pax, bpInStruct
+	push pax
+	push BP_INPUT_MOUSE_MOVE
+	call [pcx].OnInput
+	
+	ASSUME pcx:nothing
+	ret
+bpInMouseMove ENDP
+
+;   Process raw input and send to form OnInput event as a struct.
+;   BPFormPtr:BPPtr - pointer to a form structure.
+;   RawHandle:LPARAM - handle to RAWINPUT structure (lParam in WM_INPUT)
+bpInRaw PROC EXPORT BPFormPtr:BPPtr, RawHandle:LPARAM
+	LOCAL bpInMouseMoveStruct:BPInMouseMove
+	LOCAL dwSize:DWORD, lpb:BPPtr
+	
+	; Get buffer size for RAWINPUT and allocate
+	invoke GetRawInputData, RawHandle, RID_INPUT, NULL, ADDR dwSize, \
+	SIZEOF RAWINPUTHEADER
+	invoke bpMalloc, bpDefHeap, 0, dwSize
+	mov lpb, pax
+	
+	; Read input data
+	invoke GetRawInputData, RawHandle, RID_INPUT, lpb, ADDR dwSize, \
+	SIZEOF RAWINPUTHEADER
+	
+	.IF (pax == dwSize)	; Check for valid input read
+		mov pcx, lpb
+		ASSUME pcx:PTR RAWINPUT
+		
+		.IF ([pcx].header.dwType == RIM_TYPEMOUSE)
+			.IF (bpMouseTouchCooldown)
+				dec bpMouseTouchCooldown
+			.ELSE
+				.IF ([pcx].data.mouse.usFlags & MOUSE_MOVE_ABSOLUTE)
+					;TODO?
+				.ELSE
+					mov eax, [pcx].data.mouse.lLastX
+					sar eax, 16
+					mov bpInMouseMoveStruct.Relative.x, eax
+					mov eax, [pcx].data.mouse.lLastY
+					sar eax, 16
+					mov bpInMouseMoveStruct.Relative.y, eax
+				.ENDIF
+				
+				mov pcx, lpb
+				xor pax, pax
+				mov ax, [pcx].data.mouse.usButtonData
+				.IF (ax)
+					SWITCH pax
+						CASE RI_MOUSE_BUTTON_1_DOWN
+							invoke bpInMouseButton,BPFormPtr, VK_LBUTTON, TRUE
+						CASE RI_MOUSE_BUTTON_1_UP
+							invoke bpInMouseButton,BPFormPtr, VK_LBUTTON, FALSE
+						CASE RI_MOUSE_BUTTON_2_DOWN
+							invoke bpInMouseButton,BPFormPtr, VK_RBUTTON, TRUE
+						CASE RI_MOUSE_BUTTON_2_UP
+							invoke bpInMouseButton,BPFormPtr, VK_RBUTTON, FALSE
+						CASE RI_MOUSE_BUTTON_3_DOWN
+							invoke bpInMouseButton,BPFormPtr, VK_MBUTTON, TRUE
+						CASE RI_MOUSE_BUTTON_3_UP
+							invoke bpInMouseButton,BPFormPtr, VK_MBUTTON, FALSE
+						CASE RI_MOUSE_BUTTON_4_DOWN
+							invoke bpInMouseButton,BPFormPtr, VK_XBUTTON1, TRUE
+						CASE RI_MOUSE_BUTTON_4_UP
+							invoke bpInMouseButton,BPFormPtr, VK_XBUTTON1, FALSE
+						CASE RI_MOUSE_BUTTON_5_DOWN
+							invoke bpInMouseButton,BPFormPtr, VK_XBUTTON2, TRUE
+						CASE RI_MOUSE_BUTTON_5_UP
+							invoke bpInMouseButton,BPFormPtr, VK_XBUTTON2, FALSE
+					ENDSW
+				.ENDIF
+				
+				; Get global cursor coords
+				invoke GetCursorPos, ADDR bpMouseScreen
+				
+				ASSUME pdx:PTR BPForm
+				mov pdx, BPFormPtr
+				
+				m2m bpMouseClient[0], bpMouseScreen[0]
+				m2m bpMouseClient[4], bpMouseScreen[4]
+				invoke ScreenToClient, [pdx].Handle, ADDR bpMouseClient
+				
+				m2m bpInMouseMoveStruct.Position.x, bpMouseClient
+				m2m bpInMouseMoveStruct.Position.y, bpMouseClient[4]
+				
+				mov pdx, BPFormPtr
+				lea pax, bpInMouseMoveStruct
+				push pax
+				push BP_INPUT_MOUSE_MOVE
+				call [pdx].OnInput
+				
+				ASSUME pdx:nothing
+			.ENDIF
+		.ELSEIF ([pcx].header.dwType == RIM_TYPEHID)
+			; WIP (touch is vendor-specific, HidP doesn't work with it)
+		.ENDIF
+		ASSUME pcx:nothing
+	.ENDIF
+	invoke bpFree, bpDefHeap, 0, lpb
+	ret
+bpInRaw ENDP
+
+	
+bpReadJoysticks PROC EXPORT BPFormPtr:BPPtr
+	LOCAL joyInfoEx:JOYINFOEX, joyNum:DWORD, axisPos:REAL4, buttons:DWORD
+	
+	bpJoyAxisCheck MACRO Axis:REQ, AxisNum:REQ
+		mov eax, joyInfoEx.Axis
+		.IF (bpJoyInfoEx[pbx].Axis != eax)
+			mov bpJoyInfoEx[pbx].Axis, eax
+			fild bpJoyInfoEx[pbx].Axis
+			fdiv bpJoyMaxValue
+			fsub fl1
+			fstp axisPos
+			
+			push pbx	; We'll still need it
+			invoke bpInJoyAxis, BPFormPtr, joyNum, AxisNum, axisPos
+			pop pbx
+		.ENDIF
+	ENDM
+	
+	mov joyInfoEx.dwSize, SIZEOF JOYINFOEX
+	mov joyInfoEx.dwFlags, JOY_RETURNALL
+	
+	push pbx
+	xor pbx, pbx
+	.WHILE (pbx < bpJoyCount)
+		mov pax, pbx
+		mov pcx, SIZEOF BPJoystick
+		mul pcx
+		
+		.IF (bpJoysticks[pax].Active)
+			m2m buttons, bpJoysticks[pax].NumButtons
+			
+			invoke joyGetPosEx, pbx, ADDR joyInfoEx
+			mov joyNum, pbx
+			
+			push pbx
+			mov pax, pbx
+			mov pcx, SIZEOF JOYINFOEX
+			mul pcx
+			mov pbx, pax
+			
+			bpJoyAxisCheck dwXpos, BP_JOY_AXIS_X
+			bpJoyAxisCheck dwYpos, BP_JOY_AXIS_Y
+			bpJoyAxisCheck dwZpos, BP_JOY_AXIS_Z
+			bpJoyAxisCheck dwRpos, BP_JOY_AXIS_R
+			bpJoyAxisCheck dwUpos, BP_JOY_AXIS_U
+			bpJoyAxisCheck dwVpos, BP_JOY_AXIS_V
+				
+			mov eax, joyInfoEx.dwButtons
+			.IF (bpJoyInfoEx[pbx].dwButtons != eax)
+				xor pcx, pcx
+				.WHILE (pcx < buttons)
+					mov eax, 1
+					shl eax, cl
+					mov edx, bpJoyInfoEx[pbx].dwButtons
+					and edx, eax
+					and eax, joyInfoEx.dwButtons
+					.IF (eax != edx)
+						push pbx
+						invoke bpInJoyButton, BPFormPtr, joyNum, pcx, eax
+						pop pbx
+					.ENDIF
+					inc pcx
+				.ENDW
+				
+				m2m bpJoyInfoEx[pbx].dwButtons, joyInfoEx.dwButtons
+			.ENDIF
+			
+			pop pbx
+		.ENDIF
+		
+		inc pbx
+	.ENDW
+	pop pbx
+	ret
+bpReadJoysticks ENDP
 
 ;   Sets form's mouse mode.
 ;   BPFormPtr:BPPtr - pointer to a form structure.
@@ -796,7 +1156,7 @@ bpSetMouseMode PROC EXPORT BPFormPtr:BPPtr, MouseMode:BPEnum
 	mov curInfo.cbSize, SIZEOF CURSORINFO
 	invoke GetCursorInfo, ADDR curInfo
 	
-	.IF (MouseMode == BPMSMODE_VISIBLE)
+	.IF (MouseMode == BP_MOUSE_MODE_VISIBLE)
 		.IF (curInfo.flags == 0)
 			invoke ShowCursor, 1
 		.ENDIF
@@ -810,8 +1170,8 @@ bpSetMouseMode ENDP
 
 ;   Sets [BPFormPtr].ScreenCnt POINT structure to values that represent the
 ; form's global center coordinates on the screen (used for locking the cursor).
-; Done automatically in bpDefSubclassProc - WM_MOVE & WM_SIZE, if bpDefaultFlag
-; is TRUE.
+; Done automatically in bpDefSubclassProc - WM_MOVE & WM_SIZE, if 
+; BPForm.DefaultFlag is TRUE.
 ;   BPFormPtr:BPPtr - pointer to a form structure.
 bpSetScreenCenter PROC EXPORT BPFormPtr:BPPtr
 	LOCAL winW, winH:DWORD
@@ -851,32 +1211,32 @@ bpSetWindowMode PROC EXPORT BPFormPtr:BPPtr, WindowMode:BPEnum
 	ASSUME pcx:PTR BPForm
 	mov pcx, BPFormPtr
 	
-	.IF ([pcx].WindowMode == BPWINMODE_FULLSCREEN)
+	.IF ([pcx].WindowMode == BP_WINDOW_MODE_FULLSCREEN)
 		; Dubiously necessary
 		; I stole the modes from Godot but didn't even check how they work smh
-		.IF (WindowMode == BPWINMODE_MINIMIZED) || \
-		(WindowMode == BPWINMODE_MAXIMIZED)
-			invoke bpSetWindowMode, pcx, BPWINMODE_WINDOWED
+		.IF (WindowMode == BP_WINDOW_MODE_MINIMIZED) || \
+		(WindowMode == BP_WINDOW_MODE_MAXIMIZED)
+			invoke bpSetWindowMode, pcx, BP_WINDOW_MODE_WINDOWED
 			mov pcx, BPFormPtr
 		.ENDIF
-	.ELSEIF ([pcx].WindowMode == BPWINMODE_FULLSCREEN_EX)
+	.ELSEIF ([pcx].WindowMode == BP_WINDOW_MODE_FULLSCREEN_EX)
 		invoke SetWindowLongA, [pcx].Handle, GWL_STYLE, WS_OVERLAPPEDWINDOW
 		invoke ChangeDisplaySettingsA, NULL, 0
 		mov pcx, BPFormPtr
 	.ENDIF
 	
-	.IF (WindowMode == BPWINMODE_WINDOWED)
+	.IF (WindowMode == BP_WINDOW_MODE_WINDOWED)
 		invoke SetWindowLongA, [pcx].Handle, GWL_STYLE, WS_OVERLAPPEDWINDOW
 		mov pcx, BPFormPtr
 		invoke SetWindowPos, [pcx].Handle, HWND_TOPMOST, [pcx].WindowPos.x, \
 		[pcx].WindowPos.y, [pcx].WindowSize.x, [pcx].WindowSize.y, \
 		SWP_NOZORDER or SWP_FRAMECHANGED or SWP_SHOWWINDOW
-	.ELSEIF (WindowMode == BPWINMODE_MINIMIZED)
+	.ELSEIF (WindowMode == BP_WINDOW_MODE_MINIMIZED)
 		invoke ShowWindow, [pcx].Handle, SW_MINIMIZE
-	.ELSEIF (WindowMode == BPWINMODE_MAXIMIZED)
+	.ELSEIF (WindowMode == BP_WINDOW_MODE_MAXIMIZED)
 		invoke ShowWindow, [pcx].Handle, SW_MAXIMIZE
-	.ELSEIF (WindowMode == BPWINMODE_FULLSCREEN)
-		.IF ([pcx].WindowMode != BPWINMODE_MAXIMIZED)
+	.ELSEIF (WindowMode == BP_WINDOW_MODE_FULLSCREEN)
+		.IF ([pcx].WindowMode != BP_WINDOW_MODE_MAXIMIZED)
 			invoke bpUpdateWindowPos, BPFormPtr
 		.ENDIF
 	
@@ -889,8 +1249,8 @@ bpSetWindowMode PROC EXPORT BPFormPtr:BPPtr, WindowMode:BPEnum
 		mov pcx, BPFormPtr
 		invoke SetWindowPos, [pcx].Handle, HWND_TOPMOST, 0, 0, eax, edx, \
 		SWP_NOZORDER or SWP_FRAMECHANGED or SWP_SHOWWINDOW
-	.ELSEIF (WindowMode == BPWINMODE_FULLSCREEN_EX)
-		.IF ([pcx].WindowMode != BPWINMODE_MAXIMIZED)
+	.ELSEIF (WindowMode == BP_WINDOW_MODE_FULLSCREEN_EX)
+		.IF ([pcx].WindowMode != BP_WINDOW_MODE_MAXIMIZED)
 			invoke bpUpdateWindowPos, BPFormPtr
 		.ENDIF
 		
@@ -917,6 +1277,40 @@ bpSetWindowMode PROC EXPORT BPFormPtr:BPPtr, WindowMode:BPEnum
 	ASSUME pcx:nothing
 	ret
 bpSetWindowMode ENDP
+
+bpUpdateJoysticks PROC EXPORT
+	LOCAL joyInfo:JOYINFOFIX, joyCaps:JOYCAPSAFIX
+	mov bpJoyCount, rv(joyGetNumDevs)
+	
+	push pbx
+	xor pbx, pbx
+	.WHILE (pbx < bpJoyCount)
+		invoke joyGetPos, pbx, ADDR joyInfo
+		.IF (pax == JOYERR_NOERROR)
+			mov pax, pbx
+			mov pcx, SIZEOF BPJoystick
+			mul pcx
+			mov bpJoysticks[pax].Active, TRUE
+			push pax
+			invoke joyGetDevCapsA, pbx, ADDR joyCaps, SIZEOF JOYCAPSAFIX
+			pop pax
+			m2m bpJoysticks[pax].VendorId, joyCaps.wMid
+			m2m bpJoysticks[pax].ProductId, joyCaps.wPid
+			m2m bpJoysticks[pax].NumAxes, joyCaps.wNumAxes
+			m2m bpJoysticks[pax].NumButtons, joyCaps.wNumButtons
+			invoke RtlMoveMemory, ADDR joyCaps.szPname, \
+			ADDR bpJoysticks[pax].RawName, MAXPNAMELEN
+		.ELSE
+			mov pax, pbx
+			mov pcx, SIZEOF BPJoystick
+			mul pcx
+			mov bpJoysticks[pax].Active, FALSE
+		.ENDIF
+		inc pbx
+	.ENDW
+	pop pbx
+	ret
+bpUpdateJoysticks ENDP
 
 ;   Updates the BPForm window size and position parameters.
 ;   BPFormPtr:BPPtr - pointer to a form structure.
@@ -958,18 +1352,23 @@ bpDefWndProc PROC EXPORT hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
 	LOCAL dwRefData:BPPtr
 	
 	invoke GetWindowLong, hWnd, GWLP_USERDATA
+	.IF (!pax)
+		invoke DefWindowProc, hWnd, uMsg, wParam, lParam
+		ret
+	.ENDIF
 	mov dwRefData, pax
 	
 	ASSUME pcx:PTR BPForm
 	
-	mov bpDefaultFlag, TRUE
+	mov pcx, dwRefData
+	mov [pcx].DefaultFlag, TRUE
 	SWITCH uMsg
 		CASE WM_DESTROY
-			mov pcx, dwRefData
 			.IF ([pcx].OnDestroy)
 				call [pcx].OnDestroy
 			.ENDIF
-			.IF (bpDefaultFlag)
+			mov pcx, dwRefData
+			.IF ([pcx].DefaultFlag)
 				mov pcx, dwRefData
 				.IF ([pcx].GLContext)
 					invoke wglDeleteContext, [pcx].GLContext
@@ -981,33 +1380,48 @@ bpDefWndProc PROC EXPORT hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
 				invoke PostQuitMessage, 0
 			.ENDIF
 		
+		CASE WM_DEVICECHANGE
+			.IF ([pcx].InputFlags & BP_USE_JOYSTICK)
+				.IF (wParam == 7)	; DBT_DEVNODES_CHANGED
+					call bpUpdateJoysticks
+				.ENDIF
+			.ENDIF
+		
 		CASE WM_INPUT
-			mov pcx, dwRefData
-			.IF ([pcx].OnInput && [pcx].Focused)				
-				invoke bpInMouse, dwRefData, lParam
+			.IF ([pcx].OnInput && [pcx].Focused)
+				invoke bpInRaw, dwRefData, lParam
 			.ENDIF
 		
 		CASE WM_KEYDOWN
-			mov pcx, dwRefData
 			.IF ([pcx].OnInput)
 				invoke bpInKey, dwRefData, wParam, TRUE
 			.ENDIF
 		CASE WM_KEYUP
-			mov pcx, dwRefData
 			.IF ([pcx].OnInput)
 				invoke bpInKey, dwRefData, wParam, FALSE
 			.ENDIF
 			
 		CASE WM_KILLFOCUS
-			mov pcx, dwRefData
 			mov [pcx].Focused, 0
 		CASE WM_SETFOCUS
-			mov pcx, dwRefData
 			mov [pcx].Focused, TRUE
 			
+		CASE WM_MOUSEMOVE
+			.IF !([pcx].InputFlags & BP_USE_RAW_MOUSE)
+				.IF ([pcx].OnInput && [pcx].Focused)
+					mov eax, lParam
+					movsx eax, ax
+					mov bpMouseClient, eax
+					mov eax, lParam
+					shr eax, 16
+					movsx eax, ax
+					mov bpMouseClient[4], eax
+					invoke GetCursorPos, ADDR bpMouseScreen
+					invoke bpInMouseMove, dwRefData
+				.ENDIF
+			.ENDIF
 		
 		CASE WM_MOVE
-			mov pcx, dwRefData
 			mov eax, lParam
 			movsx eax, ax
 			mov [pcx].ScreenPos.x, eax
@@ -1016,13 +1430,12 @@ bpDefWndProc PROC EXPORT hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
 			movsx eax, ax
 			mov [pcx].ScreenPos.y, eax
 			
-			.IF (bpDefaultFlag)
+			.IF ([pcx].DefaultFlag)
 				invoke bpSetScreenCenter, dwRefData
 			.ENDIF
 			
 		CASE WM_PAINT
-			mov pcx, dwRefData
-			.IF (([pcx].MouseMode == BPMSMODE_LOCKED) && [pcx].Focused)
+			.IF (([pcx].MouseMode == BP_MOUSE_MODE_LOCKED) && [pcx].Focused)
 				invoke SetCursorPos, [pcx].ScreenCnt.x, [pcx].ScreenCnt.y
 				mov pcx, dwRefData
 			.ENDIF
@@ -1036,29 +1449,29 @@ bpDefWndProc PROC EXPORT hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
 			fadd timeStart
 			fstp timeStart
 			
-			mov bpDefaultFlag, TRUE
 			mov pcx, dwRefData
+			mov [pcx].DefaultFlag, TRUE
 			.IF ([pcx].OnRender) && (bpFirstFrameSkipped)
 				call [pcx].OnRender
 			.ELSE
 				mov bpFirstFrameSkipped, TRUE
 			.ENDIF
 			
-			.IF (bpDefaultFlag)
-				mov pcx, dwRefData
+			mov pcx, dwRefData
+			.IF ([pcx].DefaultFlag)
+				mov [pcx].DefaultFlag, FALSE
 				invoke SwapBuffers, [pcx].DeviceContext
-				mov bpDefaultFlag, FALSE
+				invoke bpReadJoysticks, dwRefData
 			.ENDIF
 			
 		CASE WM_SIZE
-			mov pcx, dwRefData
 			SWITCH wParam
 				CASE SIZE_RESTORED
-					mov [pcx].WindowMode, BPWINMODE_WINDOWED
+					mov [pcx].WindowMode, BP_WINDOW_MODE_WINDOWED
 				CASE SIZE_MINIMIZED
-					mov [pcx].WindowMode, BPWINMODE_MINIMIZED
+					mov [pcx].WindowMode, BP_WINDOW_MODE_MINIMIZED
 				CASE SIZE_MAXIMIZED
-					mov [pcx].WindowMode, BPWINMODE_MAXIMIZED
+					mov [pcx].WindowMode, BP_WINDOW_MODE_MAXIMIZED
 			ENDSW
 			mov eax, lParam
 			movsx eax, ax
@@ -1073,14 +1486,59 @@ bpDefWndProc PROC EXPORT hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
 			.IF ([pcx].OnResize)
 				call [pcx].OnResize
 			.ENDIF
-			.IF (bpDefaultFlag)
-				mov pcx, dwRefData
+			
+			mov pcx, dwRefData
+			.IF ([pcx].DefaultFlag)
 				invoke glViewport, 0, 0, [pcx].ScreenSize.x, [pcx].ScreenSize.y
 				invoke bpSetScreenCenter, dwRefData
 			.ENDIF
+			
+			
+		; This down here is fucking rancid but ReactOS compatibility I guess
+		CASE WM_LBUTTONDOWN
+			.IF ([pcx].OnInput) && !([pcx].InputFlags & BP_USE_RAW_MOUSE)
+				invoke bpInMouseButton, dwRefData, VK_LBUTTON, TRUE
+			.ENDIF
+		CASE WM_LBUTTONUP
+			.IF ([pcx].OnInput) && !([pcx].InputFlags & BP_USE_RAW_MOUSE)
+				invoke bpInMouseButton, dwRefData, VK_LBUTTON, FALSE
+			.ENDIF
+		CASE WM_RBUTTONDOWN
+			.IF ([pcx].OnInput) && !([pcx].InputFlags & BP_USE_RAW_MOUSE)
+				invoke bpInMouseButton, dwRefData, VK_RBUTTON, TRUE
+			.ENDIF
+		CASE WM_RBUTTONUP
+			.IF ([pcx].OnInput) && !([pcx].InputFlags & BP_USE_RAW_MOUSE)
+				invoke bpInMouseButton, dwRefData, VK_RBUTTON, FALSE
+			.ENDIF
+		CASE WM_MBUTTONDOWN
+			.IF ([pcx].OnInput) && !([pcx].InputFlags & BP_USE_RAW_MOUSE)
+				invoke bpInMouseButton, dwRefData, VK_MBUTTON, TRUE
+			.ENDIF
+		CASE WM_MBUTTONUP
+			.IF ([pcx].OnInput) && !([pcx].InputFlags & BP_USE_RAW_MOUSE)
+				invoke bpInMouseButton, dwRefData, VK_MBUTTON, FALSE
+			.ENDIF
+		CASE WM_XBUTTONDOWN
+			.IF ([pcx].OnInput) && !([pcx].InputFlags & BP_USE_RAW_MOUSE)
+				mov eax, wParam
+				shr eax, 16
+				movsx eax, ax
+				add eax, 4
+				invoke bpInMouseButton, dwRefData, eax, TRUE
+			.ENDIF
+		CASE WM_XBUTTONUP
+			.IF ([pcx].OnInput) && !([pcx].InputFlags & BP_USE_RAW_MOUSE)
+				mov eax, wParam
+				shr eax, 16
+				movsx eax, ax
+				add eax, 4
+				invoke bpInMouseButton, dwRefData, eax, FALSE
+			.ENDIF
 	ENDSW
 	
-	.IF (bpDefaultFlag)
+	mov pcx, dwRefData
+	.IF ([pcx].DefaultFlag)
 		invoke DefWindowProc, hWnd, uMsg, wParam, lParam
 	.ENDIF
 	

@@ -1,5 +1,8 @@
 IFNDEF BP3DIMPORTERS_INC
 BP3DIMPORTERS_INC equ <1>
+
+BP_CLAMP_INTERPOLATION	EQU <1>	; makes no sense to put it here
+
 ; ----- INTERFACE -----
 
 ; ----- CONSTANTS -----
@@ -251,7 +254,7 @@ bpLoadBPA PROC EXPORT BPAnimPTR:BPPtr, FilePath:BPPtr
 	
 	invoke ReadFile, hFile, [pcx].Frames, dwFileSize, ADDR dwBytesRead, 0
 		
-	IFDEF BP3D_IMPORTERS_VERBOSE
+	IFDEF BP_IMPORTERS_VERBOSE
 		push pax
 		print FilePath, 9
 		print "ReadFile value:", 32
@@ -380,7 +383,7 @@ bpLoadBPM PROC EXPORT BPMeshPTR:BPPtr, FilePath:BPPtr
     invoke ReadFile, hFile, [pcx].Normals, v3Size, ADDR dwBytesRead, 0
 	
 	
-	IFDEF BP3D_IMPORTERS_VERBOSE
+	IFDEF BP_IMPORTERS_VERBOSE
 		pushad
 		print FilePath, 9
 		print "ReadFile value:", 32
@@ -516,7 +519,7 @@ bpLoadFile PROC EXPORT FilePath:BPPtr, FileSizePtr:BPPtr
 
     invoke ReadFile, hFile, buffer, dwFileSize, ADDR dwBytesRead, 0
 	
-	IFDEF BP3D_IMPORTERS_VERBOSE
+	IFDEF BP_IMPORTERS_VERBOSE
 		pushad
 		print FilePath, 9
 		print "ReadFile value:", 32
@@ -765,7 +768,7 @@ bpProcessAnimPlayer PROC EXPORT BPAnimPlrPTR:BPPtr
 			fld animSpd
 			fdiv floatVal
 			fstp fact
-			IFDEF BP3D_CLAMP_INTERPOLATION
+			IFDEF BP_CLAMP_INTERPOLATION
 				push pax
 				invoke flClamp, fact, 0, fl1
 				mov fact, eax

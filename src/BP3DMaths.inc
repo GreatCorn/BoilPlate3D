@@ -106,7 +106,7 @@ nRandSeed DWORD ?
 
 fcmp MACRO cmp1:REQ, cmp2
 	LOCAL oa
-	IF @Cpu EQ 3423	; .686 has fcomip
+	IF @Cpu GE 3423	; .686 has fcomip
 		IFB <cmp2>
 			fldz
 		ELSE
@@ -461,6 +461,32 @@ flRepeat PROC EXPORT Val:REAL4, Max:REAL4
 	invoke flClamp, Val, 0, Max
 	ret
 flRepeat ENDP
+
+flSqrt PROC EXPORT
+	fld st			; st(1) = number		(y)
+	fmul flHalf		; st(0) = number * 0.5	(x2)
+	fxch			; st(0) = y; st(1) = x2
+	
+	sub esp, 4
+	fstp REAL4 PTR [esp]	; st(0) = x2
+	pop eax			; i = * (long *) &y;
+	
+	shr eax, 1
+	mov ecx, 5f3759dfh
+	sub ecx, eax	; 0x5f3759df - (i >> 1)
+	
+	push ecx
+	fld REAL4 PTR [esp]	; st(0) = y; st(1) = x2
+	fld st	; st(0) = y; st(1) = y; st(2) = x2		| esp = y
+	fmul	; st(0) = y*y; st(1) = x2
+	fmul
+	fsubr fl1n5
+	fmul REAL4 PTR [esp]
+	add esp, 4
+	fdivr fl1
+	
+	ret
+flSqrt ENDP
 
 flSign PROC EXPORT Val:REAL4
 	.IF (Val & FLT_NEG)

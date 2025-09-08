@@ -3,16 +3,12 @@
 ;   BP3D (short for BoilPlate3D) framework main base unit.
 ;
 ;   Copyright (c) 2025 Yevhenii Ionenko (aka GreatCorn). All rights reserved.
-;   Licensed under the terms of the MIT license (see .\LICENSE.txt).
+;   Licensed under the terms of the MIT license (see ..\LICENSE.txt).
 ;
 
 ; -----	MASM32 INCLUDES -----
 include include\windows.inc
 
-include include\advapi32.inc
-includelib advapi32.lib
-include include\comctl32.inc
-includelib comctl32.lib
 include include\gdi32.inc
 includelib gdi32.lib
 include include\glu32.inc
@@ -186,32 +182,37 @@ RAWINPUT ENDS
 
 IFDEF rax	; Cross-architecture compatibility (WIP)
 	ECHO BP3D: Compiling in 64-bit mode.
-	BPPtr TYPEDEF QWORD		; Pointer type
-	BPSPtr TYPEDEF SQWORD	; Signed pointer type
-	;BPPtrWord TYPEDEF QWORD
-	;BPPtrInt TYPEDEF SQWORD
-	BPPtrShift EQU 3		; Byte shift amount (to use instead of mul/div)
-	pax EQU rax				; Pointer registers
-	pbx EQU rbx
-	pcx EQU rcx
-	pdx EQU rdx
+	BPPtr		TYPEDEF QWORD	; Pointer type
+	BPSPtr		TYPEDEF SQWORD	; Signed pointer type
+	BPPtrShift	EQU 3			; Byte shift amount (to use instead of mul/div)
+	
+	; Pointer registers
+	pax	EQU rax	
+	pbx	EQU rbx
+	pcx	EQU rcx
+	pdx	EQU rdx
+	pbp	EQU rbp
+	psp	EQU rsp
 ELSE
 	ECHO BP3D: Compiling in 32-bit mode.
-	BPPtr TYPEDEF DWORD		; Pointer type
-	BPSPtr TYPEDEF SDWORD	; Signed pointer type
-	;BPPtrWord TYPEDEF DWORD
-	;BPPtrInt TYPEDEF SDWORD
-	BPPtrShift EQU 2		; Byte shift amount (to use instead of mul/div)
-	pax EQU eax				; Pointer registers
-	pbx EQU ebx
-	pcx EQU ecx
-	pdx EQU edx
+	BPPtr		TYPEDEF DWORD	; Pointer type
+	BPSPtr		TYPEDEF SDWORD	; Signed pointer type
+	BPPtrShift	EQU 2			; Byte shift amount (to use instead of mul/div)
+	
+	; Pointer registers
+	pax	EQU eax
+	pbx	EQU ebx
+	pcx	EQU ecx
+	pdx	EQU edx
+	pbp	EQU ebp
+	psp	EQU esp
 ENDIF
 
-BPBool TYPEDEF BYTE			; Boolean type (for argument generalization)
-BPEnum TYPEDEF BYTE			; Enumerator type
+; Miscellaneous types for argument generalization
+BPBool TYPEDEF BYTE		; Boolean type
+BPEnum TYPEDEF BYTE		; Enumerator type
 	
-BPForm STRUCT				; Windows form (window) structure
+BPForm STRUCT			; Windows form (window) structure
 	Caption			BPPtr 0		; Form caption/title
 	ClassName		BPPtr 0		; Form class name to register
 	DefaultFlag		BPBool TRUE	; Flag to trigger default Win32/BP3D event proc
@@ -242,13 +243,13 @@ BPForm STRUCT				; Windows form (window) structure
 	OnResize		BPPtr 0	; OnResize PROC
 BPForm ENDS
 
-BPInJoyAxis STRUCT
+BPInJoyAxis STRUCT		; Joystick axis input structure
 	JoyNum		DWORD ?
 	Axis		BPPtr ?
 	Position	REAL4 ?
 BPInJoyAxis ENDS
 
-BPInJoyButton STRUCT
+BPInJoyButton STRUCT	; Joystick button input structure
 	JoyNum		DWORD ?
 	Button		BPPtr ?
 	Pressed		BPBool ?
@@ -269,11 +270,11 @@ BPInMouseMove STRUCT	; Mouse movement input structure
 	Relative	POINT <?, ?>
 BPInMouseMove ENDS
 
-BPInTouch STRUCT
+BPInTouch STRUCT		; Touch input structure
 	Position	POINT <?, ?>
 BPInTouch ENDS
 
-BPJoystick STRUCT
+BPJoystick STRUCT		; Joystick info abstraction structure (for bpJoysticks)
 	Active		BPBool 		FALSE
 	VendorId	WORD		?
 	ProductId	WORD		?
@@ -294,18 +295,26 @@ BP_INPUT_MOUSE_MOVE		EQU 4	; Input structure is BPInMouseMove
 BP_INPUT_TOUCH			EQU 5	; Input structure is BPInTouch
 
 ; Joystick axes (BPInJoyAxis)
-BP_JOY_AXIS_X	EQU 0
-BP_JOY_AXIS_Y	EQU 1
-BP_JOY_AXIS_Z	EQU 2
-BP_JOY_AXIS_R	EQU 3
-BP_JOY_AXIS_U	EQU 4
-BP_JOY_AXIS_V	EQU 4
+BP_JOY_AXIS_X	EQU 0	; (left stick horizontal)
+BP_JOY_AXIS_Y	EQU 1	; (left stick vertical)
+BP_JOY_AXIS_Z	EQU 2	; (right stick horizontal or analog shoulders)
+BP_JOY_AXIS_R	EQU 3	; (right stick vertical)
+BP_JOY_AXIS_U	EQU 4	; (right stick horizontal)
+BP_JOY_AXIS_V	EQU 5
+
+BP_JOY_DPAD_UP		EQU 32
+BP_JOY_DPAD_RIGHT	EQU 33
+BP_JOY_DPAD_DOWN	EQU 34
+BP_JOY_DPAD_LEFT	EQU 35
 
 ; Mouse cursor mode constants (BPForm.MouseMode, bpSetMouseMode)
 BP_MOUSE_MODE_VISIBLE	EQU 0	; Cursor is visible
 BP_MOUSE_MODE_HIDDEN	EQU 1	; Cursor is invisible while above the form
 BP_MOUSE_MODE_LOCKED	EQU 2	; Cursor is locked to the form center
 
+;   Touch events through raw input seem to be sent with interpreted "mouse" 
+; events. To combat that, a cooldown drops all mouse events after a touch event,
+; until enough mouse events have been sent.
 BP_MOUSE_TOUCH_COOLDOWN	EQU 10
 
 ; BPForm.InputFlags
@@ -320,9 +329,9 @@ BP_WINDOW_MODE_FULLSCREEN		EQU 3	; Form is a 'fullscreen window'
 BP_WINDOW_MODE_FULLSCREEN_EX	EQU 4	; Form uses exclusive fullscreen
 
 .CONST
-bpDefCaption	DB "BP3D", 0	; Default window caption
-bpDefClassMain	DB "BPFMain", 0	; Default window class name
-bpJoyMaxValue	DWORD 1191182336
+bpDefCaption	DB "BP3D", 0		; Default window caption
+bpDefClassMain	DB "BPFMain", 0		; Default window class name
+bpJoyMaxValue	DWORD 1191182336	; Value to divide the joystick DW by (32768)
 
 .DATA
 ; Set to TRUE after first frame, then allows OnRender execution
@@ -342,15 +351,18 @@ ELSE
 	bpTick DWORD 0
 ENDIF
 
-bpDefHeap HANDLE 0
+bpDefHeap	HANDLE 0	; Default heap (to not GetProcessHeap every time)
 
-bpJoyCount		DWORD 0
-bpJoyInfoEx		JOYINFOEX 16 dup (<>)
-bpJoysticks		BPJoystick 16 dup (<>)
-bpJoyThreshold	REAL4 0.06, 0.94
-bpMouseClient SDWORD 0, 0	; Local mouse cursor position in the window
-bpMouseClientPrev SDWORD 0, 0
-bpMouseScreen SDWORD 0, 0	; On-screen global mouse cursor position
+bpJoyCount		DWORD 0					; Total amount of joysticks available
+bpJoyInfoEx		JOYINFOEX 16 dup (<>)	; JOYINFOEX array for comparing states
+bpJoysticks		BPJoystick 16 dup (<>)	; BPJoystick array to read info from
+bpJoyThreshold	REAL4 0.06, 0.94		; Joystick axis threshold (min, max)
+
+bpMouseClient 		SDWORD 0, 0	; Local mouse cursor position in the window
+bpMouseClientPrev	SDWORD 0, 0	; Previous mouse cursor position (WM_MOUSEMOVE)
+bpMouseScreen		SDWORD 0, 0	; On-screen global mouse cursor position
+
+; See BP_MOUSE_TOUCH_COOLDOWN
 bpMouseTouchCooldown	DWORD BP_MOUSE_TOUCH_COOLDOWN
 
 deltaTime 		REAL4	0.0	; Scaled delta time, used for frame-independence
@@ -383,9 +395,12 @@ bpCalculateDelta	PROTO :BPPtr, :BPPtr
 bpCreateForm		PROTO :BPPtr
 bpDestroyForm		PROTO :BPPtr
 bpInitGLContext		PROTO :BPPtr
+bpInJoyAxis			PROTO :BPPtr, :DWORD, :BPPtr, :REAL4
+bpInJoyButton		PROTO :BPPtr, :DWORD, :BPPtr, :BOOL
 bpInKey				PROTO :BPPtr, :WPARAM, :BOOL
 bpInMouseButton		PROTO :BPPtr, :BPPtr, :BPBool
 bpInRaw				PROTO :BPPtr, :LPARAM
+bpReadJoysticks		PROTO :BPPtr
 bpSetMouseMode		PROTO :BPPtr, :BPEnum
 bpSetScreenCenter	PROTO :BPPtr
 bpSetWindowMode		PROTO :BPPtr, :BPEnum
@@ -530,6 +545,7 @@ bpMallocProc PROC EXPORT hHeap:HANDLE, dwFlags:DWORD, dwBytes:DWORD
 bpMallocProc ENDP
 
 IFDEF BP_TRACEABLE_HEAP_LIST
+;   Print the list of allocated memory blocks.
 bpPrintHeapList PROC EXPORT
 	print "Allocated heap block count: "
 	mov eax, heapListSize
@@ -639,6 +655,10 @@ bpCreateForm PROC EXPORT BPFormPtr:BPPtr
 	LOCAL ridMouse:RAWINPUTDEVICE
 	ASSUME pcx:PTR BPForm
 	
+	.IF (!bpDefHeap)
+		mov bpDefHeap, rv(GetProcessHeap)
+	.ENDIF
+	
 	mov wc.cbSize, SIZEOF WNDCLASSEX
 	mov wc.style, CS_HREDRAW or CS_VREDRAW
 	mov wc.lpfnWndProc, OFFSET bpDefWndProc
@@ -693,9 +713,6 @@ bpCreateForm PROC EXPORT BPFormPtr:BPPtr
 	.ENDIF
 	mov pcx, BPFormPtr
 	.IF ([pcx].DefaultFlag)
-		.IF (!bpDefHeap)
-			mov bpDefHeap, rv(GetProcessHeap)
-		.ENDIF
 		
 		.IF ([pcx].InputFlags & BP_USE_JOYSTICK)
 			call bpUpdateJoysticks
@@ -824,6 +841,11 @@ bpInitGLContext PROC EXPORT BPFormPtr:BPPtr
 	ret
 bpInitGLContext ENDP
 
+;   Send joystick axis input to form OnInput event as a struct.
+;   BPFormPtr:BPPtr - pointer to a form structure.
+;   JoyNum:DWORD - number of the joystick sending input.
+;   Axis:BPPtr - axis number (correspondent to BP_JOY_AXIS_? constants).
+;   Position:REAL4 - axis position.
 bpInJoyAxis PROC EXPORT BPFormPtr:BPPtr, JoyNum:DWORD, Axis:BPPtr, \
 Position:REAL4
 	LOCAL bpInStruct:BPInJoyAxis, pos:REAL4
@@ -845,7 +867,7 @@ Position:REAL4
 		bt ax, 8
 		
 		.IF (Carry?)
-			.IF (Position & FLT_NEG)
+			.IF (Position & 80000000h)
 				mov pos, 3212836864
 			.ELSE
 				mov pos, 1065353216
@@ -871,13 +893,22 @@ Position:REAL4
 	ret
 bpInJoyAxis ENDP
 
+;   Send joystick button input to form OnInput event as a struct.
+;   BPFormPtr:BPPtr - pointer to a form structure.
+;   JoyNum:DWORD - number of the joystick sending input.
+;   Button:BPPtr - number of the joystick button.
+;   Pressed:BOOL - if the button has been pressed or released.
 bpInJoyButton PROC EXPORT BPFormPtr:BPPtr, JoyNum:DWORD, Button:BPPtr, \
 Pressed:BOOL
 	LOCAL bpInStruct:BPInJoyButton
 	
 	m2m bpInStruct.JoyNum, JoyNum
 	m2m bpInStruct.Button, Button
-	mov eax, Pressed
+	.IF (Pressed)
+		mov al, 1
+	.ELSE
+		xor al, al
+	.ENDIF
 	mov bpInStruct.Pressed, al
 	
 	ASSUME pcx:PTR BPForm
@@ -1063,7 +1094,8 @@ bpInRaw PROC EXPORT BPFormPtr:BPPtr, RawHandle:LPARAM
 	ret
 bpInRaw ENDP
 
-	
+;   Read and process all available joysticks for input.
+;   BPFormPtr:BPPtr - pointer to a form structure to which input will be sent.
 bpReadJoysticks PROC EXPORT BPFormPtr:BPPtr
 	LOCAL joyInfoEx:JOYINFOEX, joyNum:DWORD, axisPos:REAL4, buttons:DWORD
 	
@@ -1073,7 +1105,8 @@ bpReadJoysticks PROC EXPORT BPFormPtr:BPPtr
 			mov bpJoyInfoEx[pbx].Axis, eax
 			fild bpJoyInfoEx[pbx].Axis
 			fdiv bpJoyMaxValue
-			fsub fl1
+			fld1
+			fsub
 			fstp axisPos
 			
 			push pbx	; We'll still need it
@@ -1122,13 +1155,80 @@ bpReadJoysticks PROC EXPORT BPFormPtr:BPPtr
 					and eax, joyInfoEx.dwButtons
 					.IF (eax != edx)
 						push pbx
+						push pcx
 						invoke bpInJoyButton, BPFormPtr, joyNum, pcx, eax
+						pop pcx
 						pop pbx
 					.ENDIF
 					inc pcx
 				.ENDW
 				
 				m2m bpJoyInfoEx[pbx].dwButtons, joyInfoEx.dwButtons
+			.ENDIF
+			
+			mov eax, joyInfoEx.dwPOV
+			.IF (bpJoyInfoEx[pbx].dwPOV != eax)
+				; Maybe .IF blocks is a better way overall
+				.IF (eax == 65535)
+					xor eax, eax
+				.ELSE
+					add eax, 4500
+					.IF (eax >= 36000)
+						sub eax, 36000
+					.ENDIF
+					
+					mov edx, 8
+					mul edx
+					shr eax, 16
+					
+					mov cl, al
+					mov eax, 1
+					shl eax, cl
+					
+					push pax
+					push pcx
+					
+					mov eax, joyInfoEx.dwPOV
+					mov ecx, 9000
+					xor edx, edx
+					div ecx
+					
+					pop pcx
+					pop pax
+					
+					.IF (edx)
+						dec cl
+						and cl, 3
+						mov edx, 1
+						shl edx, cl
+						or eax, edx
+					.ENDIF
+				.ENDIF
+				
+				m2m bpJoyInfoEx[pbx].dwPOV, joyInfoEx.dwPOV
+				
+				mov joyInfoEx.dwReserved1, eax	; evil
+				
+				xor pcx, pcx
+				.WHILE (pcx < 4)
+					mov eax, 1
+					shl eax, cl
+					mov edx, bpJoyInfoEx[pbx].dwReserved1
+					and edx, eax
+					and eax, joyInfoEx.dwReserved1
+					.IF (eax != edx)
+						mov pdx, pcx
+						add pdx, 32
+						push pbx
+						push pcx
+						invoke bpInJoyButton, BPFormPtr, joyNum, pdx, eax
+						pop pcx
+						pop pbx
+					.ENDIF
+					inc pcx
+				.ENDW
+				
+				m2m bpJoyInfoEx[pbx].dwReserved1, joyInfoEx.dwReserved1
 			.ENDIF
 			
 			pop pbx
@@ -1278,6 +1378,7 @@ bpSetWindowMode PROC EXPORT BPFormPtr:BPPtr, WindowMode:BPEnum
 	ret
 bpSetWindowMode ENDP
 
+;   Update bpJoysticks (and respective bpJoyInfoEx) to then capture their input.
 bpUpdateJoysticks PROC EXPORT
 	LOCAL joyInfo:JOYINFOFIX, joyCaps:JOYCAPSAFIX
 	mov bpJoyCount, rv(joyGetNumDevs)
@@ -1491,6 +1592,16 @@ bpDefWndProc PROC EXPORT hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
 			.IF ([pcx].DefaultFlag)
 				invoke glViewport, 0, 0, [pcx].ScreenSize.x, [pcx].ScreenSize.y
 				invoke bpSetScreenCenter, dwRefData
+			.ENDIF
+			
+		CASE WM_SYSKEYDOWN
+			.IF ([pcx].OnInput)
+				invoke bpInKey, dwRefData, wParam, TRUE
+			.ENDIF
+			
+		CASE WM_SYSKEYUP
+			.IF ([pcx].OnInput)
+				invoke bpInKey, dwRefData, wParam, FALSE
 			.ENDIF
 			
 			

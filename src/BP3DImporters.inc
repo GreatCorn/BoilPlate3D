@@ -1,32 +1,9 @@
 IFNDEF BP3DIMPORTERS_INC
-BP3DIMPORTERS_INC equ <1>
+BP3DIMPORTERS_INC EQU <1>
 
 BP_CLAMP_INTERPOLATION	EQU <1>	; makes no sense to put it here
 
 ; ----- INTERFACE -----
-
-; ----- CONSTANTS -----
-BPT_HEADER EQU 9
-
-BPT_RGB8	EQU 0
-BPT_RGBA8	EQU 1
-BPT_RGB565	EQU 2
-BPT_RGB5A1	EQU 3
-BPT_RGBA4	EQU 4
-BPT_RGB332	EQU 5
-BPT_L8		EQU 6
-
-BPFRAME_PRS		EQU 0
-BPFRAME_MATRIX	EQU 1
-BPFRAME_VERTEX	EQU 2
-
-BPINTERPOLATION_CONSTANT	EQU 0
-BPINTERPOLATION_LINEAR		EQU 1
-BPINTERPOLATION_LOGARITHMIC	EQU 2
-
-BPMESH_INTERPOLATE_VERTEX EQU 1
-BPMESH_INTERPOLATE_TEXCOORD EQU 2
-BPMESH_INTERPOLATE_NORMAL EQU 4
 
 ; ----- TYPES -----
 
@@ -88,12 +65,44 @@ BPAnimPlayer STRUCT
 	MeshUseNormals BPBool TRUE
 BPAnimPlayer ENDS
 
+
+; ----- CONSTANTS -----
+
+BPT_HEADER EQU 9
+
+BPT_RGB8	EQU 0
+BPT_RGBA8	EQU 1
+BPT_RGB565	EQU 2
+BPT_RGB5A1	EQU 3
+BPT_RGBA4	EQU 4
+BPT_RGB332	EQU 5
+BPT_L8		EQU 6
+
+BPFRAME_PRS		EQU 0
+BPFRAME_MATRIX	EQU 1
+BPFRAME_VERTEX	EQU 2
+
+BPINTERPOLATION_CONSTANT	EQU 0
+BPINTERPOLATION_LINEAR		EQU 1
+BPINTERPOLATION_LOGARITHMIC	EQU 2
+
+BPMESH_INTERPOLATE_VERTEX EQU 1
+BPMESH_INTERPOLATE_TEXCOORD EQU 2
+BPMESH_INTERPOLATE_NORMAL EQU 4
+
+.CONST
+IFDEF BP_IMPORTERS_VERBOSE
+	bpErrImpMipmaps	DB "Building texture with gluBuild2DMipmaps failed", 0
+	bpErrImpTexImg	DB "Building texture with glTexImage2D failed", 0
+ENDIF
+
 .DATA
 AnimationFPS	REAL4 30.0
 
 ; ----- IMPLEMENTATION -----
 .CODE
 bpLoadFile PROTO :BPPtr, :BPPtr
+bpTexImage2D PROTO :DWORD, :DWORD, :BYTE, :BPPtr
 
 bpCheckFileInvalid MACRO
 	.IF (pax == INVALID_HANDLE_VALUE)
@@ -405,6 +414,7 @@ bpLoadBPM ENDP
 
 bpLoadBPT PROC EXPORT TexturePTR:BPPtr, FilePath:BPPtr
 	LOCAL buffer:BPPtr, texIndex:DWORD, texType:BYTE, texW:DWORD, texH:DWORD
+	LOCAL texFormat:DWORD, texDataType:DWORD
 	
 	invoke bpLoadFile, FilePath, 0
 	.IF (!pax)
@@ -432,62 +442,65 @@ bpLoadBPT PROC EXPORT TexturePTR:BPPtr, FilePath:BPPtr
 	invoke glTexParameteri, GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST
 	invoke glTexParameteri, GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST
 	
+	.IF (texType == BPT_RGB8)
+		mov texFormat, GL_RGB
+		mov texDataType, GL_UNSIGNED_BYTE
+	.ELSEIF (texType == BPT_RGBA8)
+		mov texFormat, GL_RGBA
+		mov texDataType, GL_UNSIGNED_BYTE
+	.ELSEIF (texType == BPT_RGB565)
+		mov texFormat, GL_RGB
+		mov texDataType, 8363h	; GL_UNSIGNED_SHORT_5_6_5
+	.ELSEIF (texType == BPT_RGB5A1)
+		mov texFormat, GL_RGBA
+		mov texDataType, 8034h	; GL_UNSIGNED_SHORT_5_5_5_1
+	.ELSEIF (texType == BPT_RGBA4)
+		mov texFormat, GL_RGBA
+		mov texDataType, 8033h	; GL_UNSIGNED_SHORT_4_4_4_4
+	.ELSEIF (texType == BPT_RGB332)
+		mov texFormat, GL_RGB
+		mov texDataType, 8032h	; GL_UNSIGNED_BYTE_3_3_2
+	.ELSEIF (texType == BPT_L8)
+		mov texFormat, GL_LUMINANCE
+		mov texDataType, GL_UNSIGNED_BYTE
+	.ENDIF
+	
 	;   On some devices the OpenGL implementation behaves weirdly with mipmaps
 	; and tries to build its own, even when it's not specified in code. This may
 	; result in a lot of lag whenever there are many instances of a texture 
 	; being used. On other devices, however, gluBuild#DMipmaps may not recognize
 	; the extended texture color formats and will result in a GLU_INVALID_ENUM
-	; error. Best-case approach is to parse formats to RGB(A)8, but I'm lazy.
-	.IF (texType == BPT_RGB8)
-		invoke gluBuild2DMipmaps, GL_TEXTURE_2D, 3, texW, texH, GL_RGB, \
-		GL_UNSIGNED_BYTE, buffer
-		.IF (eax)	; Shouldn't really happen as it's within support
-			invoke glTexImage2D, GL_TEXTURE_2D, 0, GL_RGB, texW, texH, 0, \
-			GL_RGB, GL_UNSIGNED_BYTE, buffer
+	; error. Best-case approach is to parse formats to RGB(A)8, but eh.
+	IFDEF BP_FORCE_MANUAL_TEXTURE
+		invoke bpTexImage2D, texW, texH, texType, buffer
+	ELSE
+		.IF (texFormat == GL_RGBA)
+			mov pax, 4
+		.ELSEIF (texFormat == GL_LUMINANCE)
+			mov pax, 1
+		.ELSE
+			mov pax, 3
 		.ENDIF
-	.ELSEIF (texType == BPT_RGBA8)
-		invoke gluBuild2DMipmaps, GL_TEXTURE_2D, 4, texW, texH, GL_RGBA, \
-		GL_UNSIGNED_BYTE, buffer
-		.IF (eax)	; Shouldn't really happen either
-			invoke glTexImage2D, GL_TEXTURE_2D, 0, GL_RGBA, texW, texH, 0, \
-			GL_RGBA, GL_UNSIGNED_BYTE, buffer
+		invoke gluBuild2DMipmaps, GL_TEXTURE_2D, pax, texW, texH, texFormat, \
+		texDataType, buffer
+		push pax
+		invoke glGetError
+		pop pcx
+		.IF (eax || ecx)
+			IFDEF BP_IMPORTERS_VERBOSE
+				print ADDR bpErrImpMipmaps, 13, 10
+			ENDIF
+			invoke glTexImage2D, GL_TEXTURE_2D, 0, texFormat, texW, texH, 0, \
+			texFormat, texDataType, buffer
+			.IF (rv(glGetError))
+				IFDEF BP_IMPORTERS_VERBOSE
+					print ADDR bpErrImpTexImg, 13, 10
+				ENDIF
+				; Fine, I'll do it myself
+				invoke bpTexImage2D, texW, texH, texType, buffer
+			.ENDIF
 		.ENDIF
-	.ELSEIF (texType == BPT_RGB565)
-		invoke gluBuild2DMipmaps, GL_TEXTURE_2D, 3, texW, texH, GL_RGB, \
-		8363h, buffer	; GL_UNSIGNED_SHORT_5_6_5
-		.IF (eax)
-			invoke glTexImage2D, GL_TEXTURE_2D, 0, GL_RGB, texW, texH, 0, \
-			GL_RGB, 8363h, buffer	; GL_UNSIGNED_SHORT_5_6_5
-		.ENDIF
-	.ELSEIF (texType == BPT_RGB5A1)
-		invoke gluBuild2DMipmaps, GL_TEXTURE_2D, 4, texW, texH, GL_RGBA, 8034h,\
-		buffer	; GL_UNSIGNED_SHORT_5_5_5_1
-		.IF (eax)
-			invoke glTexImage2D, GL_TEXTURE_2D, 0, GL_RGBA, texW, texH, 0, \
-			GL_RGBA, 8034h, buffer	; GL_UNSIGNED_SHORT_5_5_5_1
-		.ENDIF
-	.ELSEIF (texType == BPT_RGBA4)
-		invoke gluBuild2DMipmaps, GL_TEXTURE_2D, 4, texW, texH, GL_RGBA, 8033h,\
-		buffer	; GL_UNSIGNED_SHORT_4_4_4_4
-		.IF (eax)
-			invoke glTexImage2D, GL_TEXTURE_2D, 0, GL_RGBA, texW, texH, 0, \
-			GL_RGBA, 8033h, buffer	; GL_UNSIGNED_SHORT_4_4_4_4
-		.ENDIF
-	.ELSEIF (texType == BPT_RGB332)
-		invoke gluBuild2DMipmaps, GL_TEXTURE_2D, 3, texW, texH, GL_RGB, \
-		8032h, buffer	; GL_UNSIGNED_BYTE_3_3_2
-		.IF (eax)
-			invoke glTexImage2D, GL_TEXTURE_2D, 0, GL_RGB, texW, texH, 0, \
-			GL_RGB, 8032h, buffer	; GL_UNSIGNED_BYTE_3_3_2
-		.ENDIF
-	.ELSEIF (texType == BPT_L8)
-		invoke gluBuild2DMipmaps, GL_TEXTURE_2D, 1, texW, texH, GL_LUMINANCE, \
-		GL_UNSIGNED_BYTE, buffer
-		.IF (eax) ; Shouldn't really happen too
-			invoke glTexImage2D, GL_TEXTURE_2D, 0, GL_LUMINANCE, texW, texH, 0,\
-			GL_LUMINANCE, GL_UNSIGNED_BYTE, buffer
-		.ENDIF
-	.ENDIF
+	ENDIF
 	
 	sub buffer, 9
     invoke bpFree, rv(GetProcessHeap), 0, buffer
@@ -538,6 +551,153 @@ bpLoadFile PROC EXPORT FilePath:BPPtr, FileSizePtr:BPPtr
 	mov pax, buffer
 	ret
 bpLoadFile ENDP
+
+bpTexImage2D PROC EXPORT TextureWidth:DWORD, TextureHeight:DWORD, \
+TextureType:BYTE, Buffer:BPPtr
+	LOCAL area:BPPtr, parsed:BPPtr, parsedSize:BPPtr
+	LOCAL col[4]:BYTE, hasAlpha:BPBool
+	
+	mov eax, TextureWidth
+	mov ecx, TextureHeight
+	mul ecx
+	mov area, eax
+	; RGBA
+	.IF (TextureType == BPT_RGB5A1) || (TextureType == BPT_RGBA4)
+		shl eax, 2	; * 4
+		mov hasAlpha, TRUE
+	.ELSE
+		mov ecx, 3
+		mul ecx
+		mov hasAlpha, FALSE
+	.ENDIF
+	mov parsedSize, eax
+	
+	print str$(TextureWidth), 120
+	print str$(TextureHeight), 9
+	print str$(parsedSize), 13, 10
+	
+	mov parsed, rv(bpMalloc, bpDefHeap, 0, parsedSize)
+	push pbx
+	xor pbx, pbx
+	.WHILE (pbx < area)
+		mov pcx, pbx
+		.IF (TextureType == BPT_RGB565) || (TextureType == BPT_RGB5A1) || \
+		(TextureType == BPT_RGBA4)
+			shl pcx, 1	; * 2
+		.ENDIF
+		add pcx, Buffer
+		
+		.IF (TextureType == BPT_RGB565)
+			mov al, BYTE PTR [pcx+1]	; Red
+			shr al, 3
+			;and al, 00011111b
+			shl al, 3	; * 8
+			mov col[0], al
+			
+			mov ax, WORD PTR [pcx]	; Green
+			shr ax, 5
+			and al, 00111111b
+			shl al, 2	; * 4
+			mov col[1], al
+			
+			mov al, BYTE PTR [pcx]	; Blue
+			and al, 00011111b
+			shl al, 3	; * 8
+			mov col[2], al
+		.ELSEIF (TextureType == BPT_RGB5A1)
+			mov al, BYTE PTR [pcx+1]	; Red
+			shr al, 3
+			;and al, 00011111b
+			shl al, 3	; * 8
+			mov col[0], al
+			
+			mov ax, WORD PTR [pcx]	; Green
+			shr ax, 6
+			and al, 00011111b
+			shl al, 3	; * 4
+			mov col[1], al
+			
+			mov al, BYTE PTR [pcx]	; Blue
+			shr al, 1
+			and al, 00011111b
+			shl al, 3	; * 8
+			mov col[2], al
+			
+			mov al, BYTE PTR [pcx]	; Alpha
+			shl al, 7
+			mov col[3], al
+		.ELSEIF (TextureType == BPT_RGBA4)
+			mov al, BYTE PTR [pcx+1]	; Red
+			shr al, 4
+			;and al, 00001111b
+			shl al, 4	; * 16
+			mov col[0], al
+			
+			mov al, BYTE PTR [pcx+1]	; Green
+			shl al, 4	; * 16
+			mov col[1], al
+			
+			mov al, BYTE PTR [pcx]	; Blue
+			shr al, 4
+			;and al, 00001111b
+			shl al, 4	; * 16
+			mov col[2], al
+			
+			mov al, BYTE PTR [pcx]	; Alpha
+			shl al, 4	; * 16
+			mov col[3], al
+		.ELSEIF (TextureType == BPT_RGB332)
+			mov al, BYTE PTR [pcx]	; Red
+			shr al, 5
+			;and al, 00000111b
+			shl al, 5	; * 32
+			mov col[0], al
+			
+			mov al, BYTE PTR [pcx]	; Green
+			shr al, 2
+			and al, 00000111b
+			shl al, 5	; * 32
+			mov col[1], al
+			
+			mov al, BYTE PTR [pcx]	; Blue
+			shl al, 6	; * 64
+			mov col[2], al
+		.ENDIF
+		
+		mov pax, pbx
+		.IF (hasAlpha)
+			shl eax, 2	; * 4
+		.ELSE
+			mov ecx, 3
+			mul ecx
+		.ENDIF
+		add pax, parsed
+		mov cx, WORD PTR col[0]
+		mov BYTE PTR [pax], cl
+		mov BYTE PTR [pax+1], ch
+		mov cx, WORD PTR col[2]
+		mov BYTE PTR [pax+2], cl
+		.IF (hasAlpha)
+			mov BYTE PTR [pax+3], ch
+		.ENDIF
+		
+		inc pbx
+	.ENDW
+	pop pbx
+	
+	.IF (hasAlpha)
+		mov pax, GL_RGBA
+		mov pcx, 4
+	.ELSE
+		mov pax, GL_RGB
+		mov pcx, 3
+	.ENDIF
+	invoke gluBuild2DMipmaps, GL_TEXTURE_2D, pcx, TextureWidth, TextureHeight, \
+	pax, GL_UNSIGNED_BYTE, parsed
+	
+	invoke bpFree, bpDefHeap, 0, parsed
+	ret
+bpTexImage2D ENDP
 
 IFDEF BP3DMATHS_INC AND BP3DVECTORS_INC
 bpProcessAnimPlayer PROC EXPORT BPAnimPlrPTR:BPPtr

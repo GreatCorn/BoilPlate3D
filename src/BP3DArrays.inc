@@ -73,6 +73,8 @@ bp2DArrayGetPosition PROC EXPORT ArrayOffset:BPPtr, ArrayWidth:BPPtr, DataSize:B
 	ret
 bp2DArrayGetPosition ENDP
 
+;   Append data to end of an array and return new reallocated array pointer in 
+; pax (mov pax to ArrayPtr after calling).
 bpArrayAppend PROC EXPORT ArrayPtr:BPPtr, DataPtr:BPPtr, DataSize:BPPtr
 	LOCAL procHeap:BPPtr, retVal:BPPtr
 	mov procHeap, rv(GetProcessHeap)

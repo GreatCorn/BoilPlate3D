@@ -8,9 +8,9 @@ BPTEXTALIGN_BOTTOM EQU BPTEXTALIGN_RIGHT
 bpCurrentFont BPPtr OFFSET bpDefaultFont
 bpDefaultFont DWORD 127 dup (0) 
 
+bpFontWidth REAL4 8.0
 bpFontHeight REAL4 16.0
 bpFontSpacing REAL4 1.25
-bpFontWidth REAL4 8.0
 
 .DATA?
 bpFontQuad DWORD ?

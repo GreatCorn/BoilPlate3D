@@ -218,8 +218,15 @@ BPForm STRUCT			; Windows form (window) structure
 	DefaultFlag		BPBool TRUE	; Flag to trigger default Win32/BP3D event proc
 	DeviceContext	HDC 0		; Form device context
 	GLContext		HANDLE 0	; Form OpenGL context
-	InputFlags			BYTE BP_USE_RAW_MOUSE or BP_USE_JOYSTICK
 	Handle			HWND 0		; Form window handle
+	
+	;   Input flags for configuring input. Can be set before form creation. To
+	; correctly set them after the form has been created, call bpSetInputFlags.
+	;   Possible bits:
+	;   BP_USE_RAW_MOUSE	- use raw mouse input instead of getting cursor info
+	;   BP_USE_JOYSTICK		- use joysticks for registering input (BP_INPUT_JOY)
+	InputFlags		BYTE 0
+	
 	WndProc			BPPtr 0		; WndProc procedure offset
 	
 	; Read-only fields (set by internal BP3D or abstracted by procedures)
@@ -341,9 +348,9 @@ bpFirstFrameSkipped BPBool FALSE
 ; LARGE_INTEGER, but one 32-bit portion of it is enough)
 IFDEF BP_USE_LARGEINTEGER
 	BPDelta TYPEDEF LARGE_INTEGER
-	bpLastTick LARGE_INTEGER <0,0>
-	bpPerfFreq LARGE_INTEGER <0,0>
-	bpTick LARGE_INTEGER <0,0>
+	bpLastTick LARGE_INTEGER <<0,0>>
+	bpPerfFreq LARGE_INTEGER <<0,0>>
+	bpTick LARGE_INTEGER <<0,0>>
 ELSE
 	BPDelta TYPEDEF DWORD
 	bpLastTick DWORD 0
@@ -359,8 +366,9 @@ bpJoysticks		BPJoystick 16 dup (<>)	; BPJoystick array to read info from
 bpJoyThreshold	REAL4 0.06, 0.94		; Joystick axis threshold (min, max)
 
 bpMouseClient 		SDWORD 0, 0	; Local mouse cursor position in the window
-bpMouseClientPrev	SDWORD 0, 0	; Previous mouse cursor position (WM_MOUSEMOVE)
+bpMouseClientPrev	SDWORD 0, 0	; Previous mouse cursor position (cursor input)
 bpMouseScreen		SDWORD 0, 0	; On-screen global mouse cursor position
+bpMouseScreenPrev	SDWORD 0, 0	; Previous global cursor position (cursor input)
 
 ; See BP_MOUSE_TOUCH_COOLDOWN
 bpMouseTouchCooldown	DWORD BP_MOUSE_TOUCH_COOLDOWN
@@ -401,6 +409,7 @@ bpInKey				PROTO :BPPtr, :WPARAM, :BOOL
 bpInMouseButton		PROTO :BPPtr, :BPPtr, :BPBool
 bpInRaw				PROTO :BPPtr, :LPARAM
 bpReadJoysticks		PROTO :BPPtr
+bpSetInputFlags		PROTO :BPPtr, :BYTE
 bpSetMouseMode		PROTO :BPPtr, :BPEnum
 bpSetScreenCenter	PROTO :BPPtr
 bpSetWindowMode		PROTO :BPPtr, :BPEnum
@@ -583,14 +592,16 @@ bpCalculateDelta PROC EXPORT LastTick:BPPtr, DeltaPtr:BPPtr
 		
 		invoke QueryPerformanceCounter, ADDR bpTick
 		IFDEF rax
-			mov rax, bpTick
 			mov rcx, LastTick
-			sub rax, LARGE_INTEGER PTR [rcx]
-			mov diff, rax
+			ASSUME rcx:PTR LARGE_INTEGER
 		
-			.IF (!LARGE_INTEGER PTR [rcx])
+			.IF (![rcx].QuadPart)
 				jmp bpCalculateDeltaSkip
 			.ENDIF
+			
+			mov rax, bpTick.QuadPart
+			sub rax, [rcx].QuadPart
+			mov diff, rax
 		ELSE
 			push ebx
 			mov eax, bpTick.LowPart
@@ -602,7 +613,7 @@ bpCalculateDelta PROC EXPORT LastTick:BPPtr, DeltaPtr:BPPtr
 			sub eax, ebx
 			sbb edx, ecx
 			mov diff.LowPart, eax
-			mov diff[4].HighPart, edx
+			mov diff.HighPart, edx
 			pop ebx
 			
 			mov ecx, LastTick
@@ -618,31 +629,41 @@ bpCalculateDelta PROC EXPORT LastTick:BPPtr, DeltaPtr:BPPtr
 		LOCAL diff:DWORD, testTick:LARGE_INTEGER
 		
 		invoke QueryPerformanceCounter, ADDR testTick
+		
 		mov eax, testTick.LowPart
 		mov bpTick, eax
-		mov ecx, LastTick
-		sub eax, DWORD PTR [ecx]
-		mov diff, eax
 		
+		mov ecx, LastTick
 		.IF (!DWORD PTR [ecx])
 			jmp bpCalculateDeltaSkip
 		.ENDIF
+		
+		sub eax, DWORD PTR [ecx]
+		mov diff, eax
 	ENDIF
 	
 	bpCalculateDeltaProcess:
 	ASSUME ecx:nothing
 	
-	fild diff
+	IFDEF BP_USE_LARGEINTEGER
+		IFDEF rax
+			fild diff.QuadPart
+		ELSE
+			fild QWORD PTR diff
+		ENDIF
+	ELSE
+		fild diff
+	ENDIF
 	fild bpPerfFreq
 	fdiv
 	mov pax, DeltaPtr
 	fstp REAL4 PTR [pax]
 	
 	bpCalculateDeltaSkip:
-	mov pcx, LastTick
 	IFDEF BP_USE_LARGEINTEGER
-		bpm2m64 LARGE_INTEGER PTR [pcx], bpTick
+		invoke RtlMoveMemory, LastTick, ADDR bpTick, SIZEOF LARGE_INTEGER
 	ELSE
+		mov pcx, LastTick
 		m2m DWORD PTR [pcx], bpTick
 	ENDIF
 	ret
@@ -714,23 +735,9 @@ bpCreateForm PROC EXPORT BPFormPtr:BPPtr
 	mov pcx, BPFormPtr
 	.IF ([pcx].DefaultFlag)
 		
-		.IF ([pcx].InputFlags & BP_USE_JOYSTICK)
-			call bpUpdateJoysticks
-		.ENDIF
-		
-		mov pcx, BPFormPtr
-		.IF ([pcx].InputFlags & BP_USE_RAW_MOUSE)
-			mov pcx, BPFormPtr
-			
-			; Register raw mouse input (for no mouse lag on vsync)
-			mov ridMouse.usUsagePage, 1		; Generic desktop
-			mov ridMouse.usUsage, 2			; Mouse
-			mov ridMouse.dwFlags, RIDEV_INPUTSINK
-			m2m ridMouse.hwndTarget, [pcx].Handle
-			
-			invoke RegisterRawInputDevices, ADDR ridMouse, 1, \
-			SIZEOF RAWINPUTDEVICE
-		.ENDIF
+		mov al, [pcx].InputFlags
+		mov [pcx].InputFlags, 0
+		invoke bpSetInputFlags, pcx, al
 		
 		mov pcx, BPFormPtr
 		.IF ([pcx].WindowMode)
@@ -868,9 +875,9 @@ Position:REAL4
 		
 		.IF (Carry?)
 			.IF (Position & 80000000h)
-				mov pos, 3212836864
+				mov pos, 3212836864	; -1.0f
 			.ELSE
-				mov pos, 1065353216
+				mov pos, 1065353216	; 1.0f
 			.ENDIF
 		.ELSE
 			m2m pos, Position
@@ -975,20 +982,20 @@ bpInMouseButton ENDP
 bpInMouseMove PROC BPFormPtr:BPPtr
 	LOCAL bpInStruct:BPInMouseMove
 	
-	m2m bpInStruct.Position.x, bpMouseClient
+	m2m bpInStruct.Position.x, bpMouseClient[0]
 	m2m bpInStruct.Position.y, bpMouseClient[4]
 	
 	ASSUME pcx:PTR BPForm
 	mov pcx, BPFormPtr
 	
-	mov eax, bpMouseClient
-	sub eax, bpMouseClientPrev
+	mov eax, bpMouseClient[0]
+	sub eax, bpMouseClientPrev[0]
 	mov bpInStruct.Relative.x, eax
 	mov eax, bpMouseClient[4]
 	sub eax, bpMouseClientPrev[4]
 	mov bpInStruct.Relative.y, eax
 	
-	m2m bpMouseClientPrev, bpMouseClient
+	m2m bpMouseClientPrev[0], bpMouseClient[0]
 	m2m bpMouseClientPrev[4], bpMouseClient[4]
 	
 	lea pax, bpInStruct
@@ -1024,21 +1031,9 @@ bpInRaw PROC EXPORT BPFormPtr:BPPtr, RawHandle:LPARAM
 		.IF ([pcx].header.dwType == RIM_TYPEMOUSE)
 			.IF (bpMouseTouchCooldown)
 				dec bpMouseTouchCooldown
-			.ELSE
-				.IF ([pcx].data.mouse.usFlags & MOUSE_MOVE_ABSOLUTE)
-					;TODO?
-				.ELSE
-					mov eax, [pcx].data.mouse.lLastX
-					sar eax, 16
-					mov bpInMouseMoveStruct.Relative.x, eax
-					mov eax, [pcx].data.mouse.lLastY
-					sar eax, 16
-					mov bpInMouseMoveStruct.Relative.y, eax
-				.ENDIF
-				
+			.ELSE				
 				mov pcx, lpb
-				xor pax, pax
-				mov ax, [pcx].data.mouse.usButtonData
+				movzx pax, [pcx].data.mouse.usButtonData
 				.IF (ax)
 					SWITCH pax
 						CASE RI_MOUSE_BUTTON_1_DOWN
@@ -1064,11 +1059,58 @@ bpInRaw PROC EXPORT BPFormPtr:BPPtr, RawHandle:LPARAM
 					ENDSW
 				.ENDIF
 				
+				mov pcx, lpb
+				.IF ([pcx].data.mouse.usFlags & MOUSE_MOVE_ABSOLUTE)
+					;TODO?
+				.ELSE
+					.IF !([pcx].data.mouse.lLastX) && !([pcx].data.mouse.lLastY)
+						invoke bpFree, bpDefHeap, 0, lpb
+						ret
+					.ENDIF
+					mov eax, [pcx].data.mouse.lLastX
+					sar eax, 16
+					mov bpInMouseMoveStruct.Relative.x, eax
+					mov eax, [pcx].data.mouse.lLastY
+					sar eax, 16
+					mov bpInMouseMoveStruct.Relative.y, eax
+				.ENDIF
+				
 				; Get global cursor coords
 				invoke GetCursorPos, ADDR bpMouseScreen
 				
 				ASSUME pdx:PTR BPForm
 				mov pdx, BPFormPtr
+				
+				mov eax, [pdx].ScreenCnt.x
+				mov ecx, [pdx].ScreenCnt.y
+				
+				; Fucking whatever idk let's just consider checking for 0 good
+				; enough right now I don't fucking know what the fuck this is.
+				; So basically Wine implements RAWINPUT as an emulated overhead
+				; and SetCursorPos, from what I can gather, sends WM_INPUT cuz
+				; of course it fucking does. But that only happens after the
+				; app is clicked in fullscreen for some reason so maybe I'm
+				; wrong I don't fucking know.
+				; Putting SetCursorPos here doesn't really change anything or
+				; I don't even fucking know it's fucking hard to tell.
+				; Just use a fuckign joystick and go fuck yourself.
+				
+				; upd: fucking hell you cunts at WineHQ really are fucking
+				; braindead. If I want RAWINPUT, I want RAW FUCKING INPUT. I 
+				; don't want any shitty hacked-together cum crusted tricks that
+				; take the software cursor and say "hm that's a good way to
+				; implement raw mouse input". Because you don't fucking do that.
+				; You don't take a software-confined cursor and put it up for a
+				; "raw hardware mouse". You fucking idiots
+				
+				;.IF (bpMouseScreen[0] == eax) && (bpMouseScreen[4] == ecx)
+				;	pushad
+				;	print str$(bpLastTick), 9
+				;	print str$(bpTick), 13, 10
+				;	popad
+				;	invoke bpFree, bpDefHeap, 0, lpb
+				;	ret
+				;.ENDIF
 				
 				m2m bpMouseClient[0], bpMouseScreen[0]
 				m2m bpMouseClient[4], bpMouseScreen[4]
@@ -1082,6 +1124,11 @@ bpInRaw PROC EXPORT BPFormPtr:BPPtr, RawHandle:LPARAM
 				push pax
 				push BP_INPUT_MOUSE_MOVE
 				call [pdx].OnInput
+				
+				mov pdx, BPFormPtr
+				.IF (([pdx].MouseMode == BP_MOUSE_MODE_LOCKED) && [pdx].Focused)
+					invoke SetCursorPos, [pdx].ScreenCnt.x, [pdx].ScreenCnt.y
+				.ENDIF
 				
 				ASSUME pdx:nothing
 			.ENDIF
@@ -1240,6 +1287,47 @@ bpReadJoysticks PROC EXPORT BPFormPtr:BPPtr
 	ret
 bpReadJoysticks ENDP
 
+bpSetInputFlags PROC EXPORT BPFormPtr:BPPtr, InputFlags:BYTE
+	LOCAL ridMouse:RAWINPUTDEVICE
+	ASSUME pcx:PTR BPForm
+	mov pcx, BPFormPtr
+	
+	; Raw mouse flag (no lag raw mouse input, useless on Wine)
+	mov al, [pcx].InputFlags
+	and al, BP_USE_RAW_MOUSE
+	mov ah, InputFlags
+	and ah, BP_USE_RAW_MOUSE
+	.IF (al) != (ah)
+		mov ridMouse.usUsagePage, 1		; Generic desktop
+		mov ridMouse.usUsage, 2			; Mouse
+		m2m ridMouse.hwndTarget, [pcx].Handle
+		.IF (ah)
+			mov ridMouse.dwFlags, RIDEV_INPUTSINK
+		.ELSE
+			mov ridMouse.dwFlags, RIDEV_REMOVE
+		.ENDIF
+		invoke RegisterRawInputDevices, ADDR ridMouse, 1, \
+		SIZEOF RAWINPUTDEVICE
+		mov pcx, BPFormPtr
+	.ENDIF
+	
+	mov al, [pcx].InputFlags
+	and al, BP_USE_JOYSTICK
+	mov ah, InputFlags
+	and ah, BP_USE_JOYSTICK
+	.IF (al) != (ah)
+		.IF (ah)
+			call bpUpdateJoysticks
+			mov pcx, BPFormPtr
+		.ENDIF
+	.ENDIF
+	
+	mov al, InputFlags
+	mov [pcx].InputFlags, al
+	ASSUME pcx:nothing
+	ret
+bpSetInputFlags ENDP
+
 ;   Sets form's mouse mode.
 ;   BPFormPtr:BPPtr - pointer to a form structure.
 ;   MouseMode:BPEnum - mouse mode, represented as a BPMSMODE constant.
@@ -1251,7 +1339,6 @@ bpSetMouseMode PROC EXPORT BPFormPtr:BPPtr, MouseMode:BPEnum
 	
 	mov al, MouseMode
 	mov [pcx].MouseMode, al
-	ASSUME pcx:nothing
 	
 	mov curInfo.cbSize, SIZEOF CURSORINFO
 	invoke GetCursorInfo, ADDR curInfo
@@ -1264,7 +1351,12 @@ bpSetMouseMode PROC EXPORT BPFormPtr:BPPtr, MouseMode:BPEnum
 		.IF (curInfo.flags > 0)
 			invoke ShowCursor, 0
 		.ENDIF
+		.IF (MouseMode == BP_MOUSE_MODE_LOCKED)
+			mov pcx, BPFormPtr
+			invoke SetCursorPos, [pcx].ScreenCnt.x, [pcx].ScreenCnt.y
+		.ENDIF
 	.ENDIF
+	ASSUME pcx:nothing
 	ret
 bpSetMouseMode ENDP
 
@@ -1504,24 +1596,11 @@ bpDefWndProc PROC EXPORT hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
 			
 		CASE WM_KILLFOCUS
 			mov [pcx].Focused, 0
+			;call ReleaseCapture
 		CASE WM_SETFOCUS
 			mov [pcx].Focused, TRUE
+			;invoke SetCapture, [pcx].Handle
 			
-		CASE WM_MOUSEMOVE
-			.IF !([pcx].InputFlags & BP_USE_RAW_MOUSE)
-				.IF ([pcx].OnInput && [pcx].Focused)
-					mov eax, lParam
-					movsx eax, ax
-					mov bpMouseClient, eax
-					mov eax, lParam
-					shr eax, 16
-					movsx eax, ax
-					mov bpMouseClient[4], eax
-					invoke GetCursorPos, ADDR bpMouseScreen
-					invoke bpInMouseMove, dwRefData
-				.ENDIF
-			.ENDIF
-		
 		CASE WM_MOVE
 			mov eax, lParam
 			movsx eax, ax
@@ -1535,10 +1614,35 @@ bpDefWndProc PROC EXPORT hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
 				invoke bpSetScreenCenter, dwRefData
 			.ENDIF
 			
-		CASE WM_PAINT
-			.IF (([pcx].MouseMode == BP_MOUSE_MODE_LOCKED) && [pcx].Focused)
-				invoke SetCursorPos, [pcx].ScreenCnt.x, [pcx].ScreenCnt.y
-				mov pcx, dwRefData
+		CASE WM_PAINT		
+			.IF !([pcx].InputFlags & BP_USE_RAW_MOUSE) && ([pcx].Focused)
+				.IF ([pcx].OnInput)
+					invoke GetCursorPos, ADDR bpMouseScreen
+					mov eax, bpMouseScreenPrev[0]
+					mov edx, bpMouseScreenPrev[4]
+					.IF (bpMouseScreen[0] != eax) || (bpMouseScreen[4] != edx)
+						m2m bpMouseClient[0], bpMouseScreen[0]
+						m2m bpMouseClient[4], bpMouseScreen[4]
+						mov pcx, dwRefData
+						invoke ScreenToClient, [pcx].Handle, ADDR bpMouseClient
+						
+						invoke bpInMouseMove, dwRefData
+					.ENDIF
+					mov pcx, dwRefData
+				.ENDIF
+				.IF ([pcx].MouseMode == BP_MOUSE_MODE_LOCKED)
+					invoke SetCursorPos, [pcx].ScreenCnt.x, [pcx].ScreenCnt.y
+					mov pcx, dwRefData
+					m2m bpMouseScreenPrev[0], [pcx].ScreenCnt.x
+					m2m bpMouseScreenPrev[4], [pcx].ScreenCnt.y
+					m2m bpMouseClientPrev[0], [pcx].ScreenCnt.x
+					m2m bpMouseClientPrev[4], [pcx].ScreenCnt.y
+					invoke ScreenToClient, [pcx].Handle, ADDR bpMouseClientPrev
+					mov pcx, dwRefData
+				.ELSE
+					m2m bpMouseScreenPrev[0], bpMouseScreen[0]
+					m2m bpMouseScreenPrev[4], bpMouseScreen[4]
+				.ENDIF
 			.ENDIF
 			
 			invoke bpCalculateDelta, ADDR bpLastTick, ADDR deltaUnscaled
@@ -1605,7 +1709,7 @@ bpDefWndProc PROC EXPORT hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
 			.ENDIF
 			
 			
-		; This down here is fucking rancid but ReactOS compatibility I guess
+		; This down here is fucking rancid but compatibility I guess
 		CASE WM_LBUTTONDOWN
 			.IF ([pcx].OnInput) && !([pcx].InputFlags & BP_USE_RAW_MOUSE)
 				invoke bpInMouseButton, dwRefData, VK_LBUTTON, TRUE

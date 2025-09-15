@@ -36,18 +36,19 @@ flFifthN	REAL4	-0.2
 flQuarter	REAL4	0.25
 fl03		REAL4	0.3
 fl03N		REAL4	-0.3
-flThird		REAL4	0.333
-flThirdN	REAL4	-0.333
+flThird		REAL4	0.33333333
+flThirdN	REAL4	-0.33333333
 fl04		REAL4	0.4
 flHalf		REAL4	0.5
 flHalfN		REAL4	-0.5
 fl06		REAL4	0.6
-fl066		REAL4	0.666
+fl066		REAL4	0.66666666
 fl07		REAL4	0.7
 fl07N		REAL4	-0.7
 fl075		REAL4	0.75
 fl088		REAL4	0.88
 fl09		REAL4	0.9
+fl099		REAL4	0.99
 fl1		REAL4	1.0
 fl1N	REAL4	-1.0
 fl1n01	REAL4	1.01
@@ -431,7 +432,7 @@ flRandRange PROC EXPORT Min:REAL4, Max:REAL4
 	LOCAL _Val:REAL4
 	
 	invoke nRand, 1000
-	mov _Val, eax
+	mov _Val, eax	; Val * (Max - Min) + Min
 	fld Max
 	fsub Min
 	fild _Val

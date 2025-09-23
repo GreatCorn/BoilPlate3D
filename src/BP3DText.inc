@@ -142,21 +142,23 @@ VerticalAlign:BPEnum
 	fild Y
 	fstp Y
 	invoke glTranslatef, X, Y, 0
-	invoke glScalef, bpFontWidth, bpFontHeight, fl1
+	invoke glScalef, bpFontWidth, bpFontHeight, 1065353216	; 1.0
 	.IF (HorizontalAlign)
 		fild strLength
 		fmul bpFontSpacing
 		.IF (HorizontalAlign == BPTEXTALIGN_CENTER)
-			fmul flHalf
+			push 1056964608	; 0.5
+			fmul REAL4 PTR [psp]
+			pop pax
 		.ENDIF
 		fchs
 		fstp X
 		invoke glTranslatef, X, 0, 0
 	.ENDIF
 	.IF (VerticalAlign == BPTEXTALIGN_CENTER)
-		invoke glTranslatef, 0, flHalfN, 0
+		invoke glTranslatef, 0, 3204448256, 0	; -0.5
 	.ELSEIF (VerticalAlign == BPTEXTALIGN_BOTTOM)
-		invoke glTranslatef, 0, fl1N, 0
+		invoke glTranslatef, 0, 3212836864, 0	; -1.0
 	.ENDIF
 	
 	push pbx

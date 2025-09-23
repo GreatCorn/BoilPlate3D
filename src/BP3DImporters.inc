@@ -183,7 +183,7 @@ bpDrawNormals PROC EXPORT BPMeshPtr:BPPtr
 	invoke glGetIntegerv, GL_TEXTURE_BINDING_2D, ADDR tex
 	
 	invoke glDisable, GL_LIGHTING
-	invoke glColor3f, fl1, 0, 0
+	invoke glColor3f, 1065353216, 0, 0	; 1.0, 0, 0
 	invoke glBindTexture, GL_TEXTURE_2D, 0
 	
 	invoke glBegin, GL_LINES
@@ -930,7 +930,7 @@ bpProcessAnimPlayer PROC EXPORT BPAnimPlrPTR:BPPtr
 			fstp fact
 			IFDEF BP_CLAMP_INTERPOLATION
 				push pax
-				invoke flClamp, fact, 0, fl1
+				invoke flClamp, fact, 0, 1065353216	; fact, 0, 1.0
 				mov fact, eax
 				pop pax
 			ENDIF

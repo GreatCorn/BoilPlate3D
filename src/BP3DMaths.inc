@@ -25,86 +25,45 @@ PI2		REAL4	6.283185307
 flInf	DWORD	FLT_INF
 flInfN	DWORD	FLT_INFN
 
-fl0 REAL4 0.0			; Generic floats (REAL4) to use with FPU and other
-flThousandth	REAL4	0.001
-flHundredth		REAL4	0.01
-flHundredthN	REAL4	-0.01
-flTenth		REAL4	0.1
-flTenthN	REAL4	-0.1
-flFifth		REAL4	0.2
-flFifthN	REAL4	-0.2
-flQuarter	REAL4	0.25
-fl03		REAL4	0.3
-fl03N		REAL4	-0.3
-flThird		REAL4	0.33333333
-flThirdN	REAL4	-0.33333333
-fl04		REAL4	0.4
-flHalf		REAL4	0.5
-flHalfN		REAL4	-0.5
-fl06		REAL4	0.6
-fl066		REAL4	0.66666666
-fl07		REAL4	0.7
-fl07N		REAL4	-0.7
-fl075		REAL4	0.75
-fl088		REAL4	0.88
-fl09		REAL4	0.9
-fl099		REAL4	0.99
-fl1		REAL4	1.0
-fl1N	REAL4	-1.0
-fl1n01	REAL4	1.01
-fl1n1	REAL4	1.1
-fl1n2	REAL4	1.2
-fl1n5	REAL4	1.5
-fl2		REAL4	2.0
-fl2N	REAL4	-2.0
-fl2n5	REAL4	2.5
-fl3		REAL4	3.0
-fl3N	REAL4	-3.0
-fl4		REAL4	4.0
-fl4N	REAL4	-4.0
-fl5		REAL4	5.0
-fl6		REAL4	6.0
-fl7		REAL4	7.0
-fl8		REAL4	8.0
-fl8N	REAL4	-8.0
-fl9		REAL4	9.0
-fl10	REAL4	10.0
-fl12	REAL4	12.0
-fl12N	REAL4	-12.0
-fl13	REAL4	13.0
-fl13N	REAL4	-13.0
-fl14	REAL4	14.0
-fl15	REAL4	15.0
-fl16	REAL4	16.0
-fl18	REAL4	18.0
-fl20	REAL4	20.0
-fl20N	REAL4	-20.0
-fl24	REAL4	24.0
-fl32	REAL4	32.0
-fl48	REAL4	48.0
-fl64	REAL4	64.0
-fl75	REAL4	75.0
-fl90	REAL4	90.0
-fl90N	REAL4	-90.0
-fl96	REAL4	96.0
-fl100	REAL4	100.0
-fl128	REAL4	128.0
-fl180	REAL4	180.0
-fl255	REAL4	255.0
-fl256	REAL4	256.0
-fl360	REAL4	360.0
-fl1000	REAL4	1000.0
-fl2000	REAL4	2000.0
-fl10000	REAL4	10000.0
-fl32768	REAL4	32768.0
-
-flFastATan_1 REAL4 0.2447
-flFastATan_2 REAL4 0.0663
-
 .DATA?
 FPUCW WORD ?
 nRandSeed DWORD ?
 
+;   Immediate REAL4 to reusable data field (format fl+int+n+frac(+N)).
+f MACRO val
+	LOCAL min,dot,num,frac,sym,txt
+	min INSTR <val>,<->	
+	dot INSTR <val>,<.>
+	IF dot
+		num SUBSTR <val>,min+1,dot-min-1
+		frac SUBSTR <val>,dot+1
+	ELSE
+		num SUBSTR <val>,min+1
+		frac EQU <0>
+	ENDIF
+	
+	IF min
+		sym CATSTR <fl>,num,<n>,frac,<N>
+	ELSE
+		sym CATSTR <fl>,num,<n>,frac
+	ENDIF
+	
+	%IFNDEF sym
+		%ECHO Declaring REAL4 variable with name sym
+		.DATA
+		IF dot
+			sym REAL4 val
+		ELSE
+			sym REAL4 val&.0
+		ENDIF
+		.CODE
+	ENDIF
+	
+	EXITM <sym>
+ENDM
+
+;   Float comparison macro. Carry? is cmp1<cmp2. Zero? is cmp==cmp2. If cmp2 is
+; empty, compare against 0.
 fcmp MACRO cmp1:REQ, cmp2
 	LOCAL oa
 	IF @Cpu GE 3423	; .686 has fcomip
@@ -203,10 +162,10 @@ flFastATan PROC EXPORT Val:REAL4
 	fld Val
 	fabs
 	fld st
-	fsub fl1
+	fsub f(1.0)
 	fxch
-	fmul flFastATan_2
-	fadd flFastATan_1
+	fmul f(0.0663)
+	fadd f(0.2447)
 	fmul
 	fmul Val
 	fld Val
@@ -422,7 +381,7 @@ flRand PROC EXPORT
 	invoke nRand, 100
 	mov _Val, eax
 	fild _Val
-	fmul flHundredth
+	fmul f(0.01)
 	fstp _Val
 	mov eax, _Val
 	ret
@@ -436,7 +395,7 @@ flRandRange PROC EXPORT Min:REAL4, Max:REAL4
 	fld Max
 	fsub Min
 	fild _Val
-	fmul flThousandth
+	fmul f(0.001)
 	fmul
 	fadd Min
 	fstp _Val
@@ -465,7 +424,7 @@ flRepeat ENDP
 
 flSqrt PROC EXPORT
 	fld st			; st(1) = number		(y)
-	fmul flHalf		; st(0) = number * 0.5	(x2)
+	fmul f(0.5)		; st(0) = number * 0.5	(x2)
 	fxch			; st(0) = y; st(1) = x2
 	
 	sub esp, 4
@@ -481,30 +440,30 @@ flSqrt PROC EXPORT
 	fld st	; st(0) = y; st(1) = y; st(2) = x2		| esp = y
 	fmul	; st(0) = y*y; st(1) = x2
 	fmul
-	fsubr fl1n5
+	fsubr f(1.5)
 	fmul REAL4 PTR [esp]
 	add esp, 4
-	fdivr fl1
+	fdivr f(1.0)
 	
 	ret
 flSqrt ENDP
 
 flSign PROC EXPORT Val:REAL4
 	.IF (Val & FLT_NEG)
-		mov eax, fl1N
+		mov eax, f(-1.0)
 		ret
 	.ELSE
-		mov eax, fl1
+		mov eax, f(1.0)
 	.ENDIF
 	ret
 	fcmp Val
 	.IF (Carry?)
-		mov eax, fl1N	; -1.0
+		mov eax, f(-1.0); -1.0
 		ret
 	.ENDIF
 	fcmp Val
 	.IF (!Carry?)
-		mov eax, fl1	; 1.0
+		mov eax, f(1.0)	; 1.0
 		ret
 	.ELSE
 		xor eax, eax	; 0.0
@@ -562,6 +521,21 @@ intRandRange PROC EXPORT Min:SDWORD, Max:SDWORD
 	ret
 intRandRange ENDP
 
+intSign PROC EXPORT Val:SDWORD
+	mov eax, Val
+	cmp eax, 0
+	jg intSignG
+		mov eax, 1
+		ret
+	intSignG:
+	jl intSignS
+		mov eax, -1
+		ret
+	intSignS:
+	xor eax, eax
+	ret
+intSign ENDP
+
 ;   MASM32 Park Miller random number algorithm implementation (nrandom), written
 ; by Jaymeson Trudgen (NaN), optimized by Rickey Bowers Jr. (bitRAKE).
 nRand PROC EXPORT Base:DWORD
@@ -591,6 +565,11 @@ nRand PROC EXPORT Base:DWORD
 	mov eax, edx
 	ret
 nRand ENDP
+
+nRandomize PROC EXPORT
+	mov nRandSeed, rv(GetTickCount)
+	ret
+nRandomize ENDP
 
 ELSE
 	ECHO BP3D: Duplicate include file BP3DMaths.inc

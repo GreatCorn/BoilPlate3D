@@ -83,7 +83,7 @@ bpArrayAppend PROC EXPORT ArrayPtr:BPPtr, DataPtr:BPPtr, DataSize:BPPtr
 		invoke HeapSize, procHeap, 0, ArrayPtr
 		push pax
 		add pax, DataSize
-		invoke bpReAlloc, procHeap, HEAP_ZERO_MEMORY, ArrayPtr, pax
+		invoke bpReAlloc, procHeap, 0, ArrayPtr, pax
 		mov retVal, pax
 		pop pax
 		add pax, retVal

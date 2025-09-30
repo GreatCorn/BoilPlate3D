@@ -1,15 +1,27 @@
-IFNDEF BP3DMATHS_INC
-BP3DMATHS_INC equ <1>
+;
+;   BP3DMaths.inc
+;   Version 0.7ac1
+;   BP3D maths extension.
+;
+;   Copyright (c) 2025 Yevhenii Ionenko (aka GreatCorn). All rights reserved.
+;   Licensed under the terms of the MIT license (see ..\LICENSE.txt).
+;
+
+IFNDEF BP3D_MATHS_INC
+BP3D_MATHS_INC EQU <1>
 
 ; -----	INTERFACE -----
 
-FPU_TRUNC	EQU 0000110000000000b
-FPU_CEIL	EQU 0000100000000000b
-FPU_FLOOR	EQU 0000010000000000b
-FPU_ROUND	EQU 0000000000000000b
-FLT_INF		EQU 7F800000h
-FLT_INFN	EQU 0FF800000h
-FLT_NEG		EQU 80000000h
+; FPU codeword rounding control field values
+FPU_TRUNC	EQU 0000110000000000b	; Truncate (toward 0)
+FPU_CEIL	EQU 0000100000000000b	; Round up (toward +infinity)
+FPU_FLOOR	EQU 0000010000000000b	; Round down (toward -infinity)
+FPU_ROUND	EQU 0000000000000000b	; Round to nearest (default)
+
+; IEEE 754 float constants
+FLT_INF		EQU 7F800000h	; +Infinity
+FLT_INFN	EQU 0FF800000h	; -Infinity
+FLT_NEG		EQU 80000000h	; -0 (negative flag, useful for cmp)
 
 .CONST
 D2R		REAL4	0.0174532	; Degrees to radians multiplier
@@ -49,7 +61,7 @@ f MACRO val
 	ENDIF
 	
 	%IFNDEF sym
-		%ECHO Declaring REAL4 variable with name sym
+		;%ECHO Declaring REAL4 variable with name sym
 		.DATA
 		IF dot
 			sym REAL4 val

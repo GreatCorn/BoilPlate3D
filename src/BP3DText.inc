@@ -117,6 +117,8 @@ bpLoadFont PROC EXPORT DirPath:BPPtr, FontPTR:BPPtr
 		mul pcx
 		add pax, FontPTR
 		invoke bpLoadBPT, pax, stringBuf
+		invoke glTexParameteri, GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR
+		invoke glTexParameteri, GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR
 		
 		inc pbx
 	.ENDW

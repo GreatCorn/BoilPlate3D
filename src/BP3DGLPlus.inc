@@ -162,7 +162,7 @@ gluOrtho2Dui PROC EXPORT left:DWORD, right:DWORD, bottom:DWORD, top:DWORD
 	ret
 gluOrtho2Dui ENDP
 
-IFDEF BP3DMATHS_INC
+IFDEF BP3D_MATHS_INC
 glRotatefr PROC EXPORT angle:REAL4, x:REAL4, y:REAL4, z:REAL4
 	fld angle
 	fmul R2D
@@ -191,7 +191,7 @@ glRotate3fv PROC EXPORT v:BPPtr
 	ret
 glRotate3fv ENDP
 
-IFDEF BP3DMATHS_INC
+IFDEF BP3D_MATHS_INC
 glRotate2fvr PROC EXPORT v:BPPtr
 	LOCAL _Val:REAL4
 	mov pax, v

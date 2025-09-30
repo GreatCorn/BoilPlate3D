@@ -600,7 +600,7 @@ Vector4Sub PROC EXPORT A:BPPtr, B:BPPtr
 	ret
 Vector4Sub ENDP
 
-IFDEF BP3DMATHS_INC
+IFDEF BP3D_MATHS_INC
 Vector3Euler PROC EXPORT A:BPPtr
 	mov pcx, A
 	invoke flEuler, REAL4 PTR [pcx]

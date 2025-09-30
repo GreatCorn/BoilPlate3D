@@ -1,5 +1,6 @@
 ;
 ;   BP3D.asm
+;   Version 0.7ac1
 ;   BP3D (short for BoilPlate3D) framework main base unit.
 ;
 ;   Copyright (c) 2025 Yevhenii Ionenko (aka GreatCorn). All rights reserved.
@@ -26,8 +27,7 @@ includelib user32.lib
 include include\winmm.inc
 includelib winmm.lib
 
-
-include macros\macros.asm
+include macros\macros.asm	; Should it be rewritten to omit MASM's macros?
 
 ; -----	INTERFACE -----
 
@@ -70,8 +70,8 @@ ENDIF
 
 ; ----- TYPES -----
 ;   MASM has some bad headers, fixed redefinitions are here. The ones that have
-; unions in them are the ones that are fucked, with the exception of the 
-; joystick, ones which are of an entirely different size due to microcock 
+; unions in them are the ones that are messed up, with the exception of the 
+; joystick, ones which are of an entirely different size due to Microsoft 
 ; switching UINT size from WORD to DWORD (symbolic field prefixes are still w).
 DEVMODEA STRUCT
 	dmDeviceName	BYTE	CCHDEVICENAME dup(?)
@@ -359,13 +359,14 @@ BP_WINDOW_MODE_MAXIMIZED		EQU 2	; Form is a maximized window
 BP_WINDOW_MODE_FULLSCREEN		EQU 3	; Form is a 'fullscreen window'
 BP_WINDOW_MODE_FULLSCREEN_EX	EQU 4	; Form uses exclusive fullscreen
 
+; Mouse wheel virtual-key codes (returned in BP_INPUT_MOUSE_BUTTON)
 VK_MWHEEL_UP	EQU 7
 VK_MWHEEL_DOWN	EQU 8
 
 .CONST
 bpDefCaption	DB "BP3D", 0		; Default window caption
 bpDefClassMain	DB "BPFMain", 0		; Default window class name
-bpFixedInterval REAL4 0.01666666
+bpFixedInterval REAL4 0.01666666	; BPForm OnFixed interval (in seconds)
 bpJoyMaxValue	DWORD 1191182336	; Value to divide the joystick DW by (32768)
 
 .DATA
@@ -425,25 +426,26 @@ IFDEF BP_TRACEABLE_HEAP
 	ENDIF
 ENDIF
 
-bpCalculateDelta	PROTO :BPPtr, :BPPtr
-bpCreateForm		PROTO :BPPtr
-bpDestroyForm		PROTO :BPPtr
-bpInitGLContext		PROTO :BPPtr
-bpInJoyAxis			PROTO :BPPtr, :DWORD, :BPPtr, :REAL4
-bpInJoyButton		PROTO :BPPtr, :DWORD, :BPPtr, :BOOL
-bpInKey				PROTO :BPPtr, :WPARAM, :BOOL
-bpInMouseButton		PROTO :BPPtr, :BPPtr, :BPBool
-bpInRaw				PROTO :BPPtr, :LPARAM
-bpReadJoysticks		PROTO :BPPtr
-bpSetInputFlags		PROTO :BPPtr, :BYTE
-bpSetMouseMode		PROTO :BPPtr, :BPEnum
-bpSetScreenCenter	PROTO :BPPtr
-bpSetWindowMode		PROTO :BPPtr, :BPEnum
-bpSetWindowSize		PROTO :BPPtr, :DWORD, :DWORD
-bpUpdateJoysticks	PROTO
-bpUpdateWindowPos	PROTO :BPPtr
-bpDefFixedProc		PROTO :LPVOID
-bpDefWndProc		PROTO :HWND, :UINT, :WPARAM, :LPARAM
+bpCalculateDelta		PROTO :BPPtr, :BPPtr
+bpCreateForm			PROTO :BPPtr
+bpDestroyForm			PROTO :BPPtr
+bpInitGLContext			PROTO :BPPtr
+bpInJoyAxis				PROTO :BPPtr, :DWORD, :BPPtr, :REAL4
+bpInJoyButton			PROTO :BPPtr, :DWORD, :BPPtr, :BOOL
+bpInKey					PROTO :BPPtr, :WPARAM, :BOOL
+bpInMouseButton			PROTO :BPPtr, :BPPtr, :BPBool
+bpInRaw					PROTO :BPPtr, :LPARAM
+bpReadJoysticks			PROTO :BPPtr
+bpScreenToWindowSize	PROTO :BPPtr, :BPPtr
+bpSetInputFlags			PROTO :BPPtr, :BYTE
+bpSetMouseMode			PROTO :BPPtr, :BPEnum
+bpSetScreenCenter		PROTO :BPPtr
+bpSetWindowMode			PROTO :BPPtr, :BPEnum
+bpSetWindowSize			PROTO :BPPtr, :DWORD, :DWORD
+bpUpdateJoysticks		PROTO
+bpUpdateWindowPos		PROTO :BPPtr
+bpDefFixedProc			PROTO :LPVOID
+bpDefWndProc			PROTO :HWND, :UINT, :WPARAM, :LPARAM
 
 IFDEF BP_TRACEABLE_HEAP
 ;   Traceable memory free macro (maps to Win32 HeapFree).
@@ -1130,33 +1132,10 @@ bpInRaw PROC EXPORT BPFormPtr:BPPtr, RawHandle:LPARAM
 				mov eax, [pdx].ScreenCnt.x
 				mov ecx, [pdx].ScreenCnt.y
 				
-				; Fucking whatever idk let's just consider checking for 0 good
-				; enough right now I don't fucking know what the fuck this is.
-				; So basically Wine implements RAWINPUT as an emulated overhead
-				; and SetCursorPos, from what I can gather, sends WM_INPUT cuz
-				; of course it fucking does. But that only happens after the
-				; app is clicked in fullscreen for some reason so maybe I'm
-				; wrong I don't fucking know.
-				; Putting SetCursorPos here doesn't really change anything or
-				; I don't even fucking know it's fucking hard to tell.
-				; Just use a fuckign joystick and go fuck yourself.
-				
-				; upd: fucking hell you cunts at WineHQ really are fucking
-				; braindead. If I want RAWINPUT, I want RAW FUCKING INPUT. I 
-				; don't want any shitty hacked-together cum crusted tricks that
-				; take the software cursor and say "hm that's a good way to
-				; implement raw mouse input". Because you don't fucking do that.
-				; You don't take a software-confined cursor and put it up for a
-				; "raw hardware mouse". You fucking idiots
-				
-				;.IF (bpMouseScreen[0] == eax) && (bpMouseScreen[4] == ecx)
-				;	pushad
-				;	print str$(bpLastTick), 9
-				;	print str$(bpTick), 13, 10
-				;	popad
-				;	invoke bpFree, bpDefHeap, 0, lpb
-				;	ret
-				;.ENDIF
+				;   Wine implements (implemented?) "raw mouse" through cursor.
+				; There was a very specific problem, where clicking on a
+				; fullscreen (BP_WINDOW_MODE_FULLSCREEN) window would make
+				; SetCursorPos send WM_INPUT events due to that implementation.
 				
 				m2m bpMouseClient[0], bpMouseScreen[0]
 				m2m bpMouseClient[4], bpMouseScreen[4]
@@ -1334,6 +1313,11 @@ bpReadJoysticks PROC EXPORT BPFormPtr:BPPtr
 	ret
 bpReadJoysticks ENDP
 
+;   Converts screen (client area) size to the window size required to contain 
+; that area, with proper border and caption adjustments.
+;   BPFormPtr:BPPtr - pointer to a form structure.
+;   SizePtr:BPPtr - pointer to the DWORD screen width and height stored 
+; consecutively. The resulting window size will be returned into this pointer.
 bpScreenToWindowSize PROC EXPORT BPFormPtr:BPPtr, SizePtr:BPPtr
 	LOCAL rect:RECT
 	ASSUME pcx:PTR BPForm
@@ -1437,7 +1421,15 @@ bpSetMouseMode PROC EXPORT BPFormPtr:BPPtr, MouseMode:BPEnum
 	ret
 bpSetMouseMode ENDP
 
-bpSetResolution PROC EXPORT ResPtr:BPPtr
+;   Sets current display's resolution to specified values in a DWORD[2] pointer,
+; or to the closest available resolution. Returns TRUE, if the exact resolution
+; was set, FALSE if the closest available had to be picked.
+;   ResPtr:BPPtr - pointer to the new DWORD width and height values stored 
+; consecutively. If these exact values cannot be used, the closest available
+; resolution will be picked and the width and height will be returned into this
+; pointer.
+;   CmpAspect:BPBool - compare aspect when picking best available resolution.
+bpSetResolution PROC EXPORT ResPtr:BPPtr, CmpAspect:BPBool
 	LOCAL devMode:DEVMODEA
 	LOCAL sizeDiff[2]:DWORD, aspect:REAL4, aspectDiff:DWORD, bestScore:DWORD
 	LOCAL found:BPBool, best:DEVMODEA
@@ -1448,16 +1440,15 @@ bpSetResolution PROC EXPORT ResPtr:BPPtr
 	m2m devMode.dmPelsWidth, DWORD PTR [pax]
 	m2m devMode.dmPelsHeight, DWORD PTR [pax+4]
 	
-	print str$(devMode.dmPelsWidth), 9
-	print str$(devMode.dmPelsHeight), 13, 10
-	
 	invoke ChangeDisplaySettingsA, ADDR devMode, CDS_FULLSCREEN
 	.IF (eax != DISP_CHANGE_SUCCESSFUL)
 		; Change unsuccessfull, pick closest best resolution
-		mov pax, ResPtr
-		fild DWORD PTR [pax]
-		fidiv DWORD PTR [pax+4]
-		fstp aspect
+		.IF (CmpAspect)	; Get desired aspect
+			mov pax, ResPtr
+			fild DWORD PTR [pax]
+			fidiv DWORD PTR [pax+4]
+			fstp aspect
+		.ENDIF
 		
 		mov found, FALSE
 		
@@ -1481,18 +1472,21 @@ bpSetResolution PROC EXPORT ResPtr:BPPtr
 			.ENDIF
 			mov sizeDiff[4], eax
 			
-			fild devMode.dmPelsWidth
-			fidiv devMode.dmPelsHeight
-			fsub aspect
-			fabs
-			push 1000
-			fimul BPPtr PTR [psp]
-			pop eax
-			fistp aspectDiff
+			.IF (CmpAspect)
+				fild devMode.dmPelsWidth
+				fidiv devMode.dmPelsHeight
+				fsub aspect
+				fabs
+				push 1000
+				fimul BPPtr PTR [psp]
+				pop eax
+				fistp aspectDiff
 			
-			;mov eax, aspectDiff
-			;add eax, sizeDiff[0]
-			mov eax, sizeDiff[0]
+				mov eax, aspectDiff
+				add eax, sizeDiff[0]
+			.ELSE
+				mov eax, sizeDiff[0]
+			.ENDIF
 			add eax, sizeDiff[4]
 			
 			.IF (!found || eax < bestScore)
@@ -1505,14 +1499,15 @@ bpSetResolution PROC EXPORT ResPtr:BPPtr
 			jmp bpSetResolutionEnum
 		.ENDIF
 		pop pbx
-		print "Found best resolution of "
-		print str$(best.dmPelsWidth), 120
-		print str$(best.dmPelsHeight), 13, 10
+		
 		mov pax, ResPtr
 		m2m DWORD PTR [pax], best.dmPelsWidth
 		m2m DWORD PTR [pax+4], best.dmPelsHeight
 		invoke ChangeDisplaySettingsA, ADDR best, CDS_FULLSCREEN
+		mov pax, FALSE
+		ret
 	.ENDIF
+	mov pax, TRUE
 	ret
 bpSetResolution ENDP
 
@@ -1551,6 +1546,11 @@ bpSetScreenCenter PROC EXPORT BPFormPtr:BPPtr
 	ret
 bpSetScreenCenter ENDP
 
+;   Sets screen size (window client area) of a form to specified value. Calls
+; bpSetWindowSize with adjusted size.
+;   BPFormPtr:BPPtr - pointer to a form structure.
+;   X:DWORD - new screen width.
+;   Y:DWORD - new screen height.
 bpSetScreenSize PROC EXPORT BPFormPtr:BPPtr, X:DWORD, Y:DWORD	
 	ASSUME pcx:PTR BPForm
 	mov pcx, BPFormPtr
@@ -1573,11 +1573,6 @@ bpSetScreenSize ENDP
 bpSetWindowMode PROC EXPORT BPFormPtr:BPPtr, WindowMode:BPEnum
 	ASSUME pcx:PTR BPForm
 	mov pcx, BPFormPtr
-	
-	pushad
-	print ubyte$(WindowMode), 32
-	print "window mode", 13, 10
-	popad
 	
 	.IF ([pcx].WindowMode == BP_WINDOW_MODE_FULLSCREEN)
 		; Dubiously necessary
@@ -1623,7 +1618,7 @@ bpSetWindowMode PROC EXPORT BPFormPtr:BPPtr, WindowMode:BPEnum
 		.ENDIF
 		
 		mov pcx, BPFormPtr
-		invoke bpSetResolution, ADDR [pcx].ScreenSize
+		invoke bpSetResolution, ADDR [pcx].ScreenSize, FALSE
 		
 		mov pcx, BPFormPtr
 		invoke SetWindowLongA, [pcx].Handle, GWL_STYLE, WS_POPUP
@@ -1641,18 +1636,18 @@ bpSetWindowMode PROC EXPORT BPFormPtr:BPPtr, WindowMode:BPEnum
 	ret
 bpSetWindowMode ENDP
 
+;   Sets window size (unadjusted for client) of a form to specified value.
+;   BPFormPtr:BPPtr - pointer to a form structure.
+;   X:DWORD - new screen width.
+;   Y:DWORD - new screen height.
 bpSetWindowSize PROC EXPORT BPFormPtr:BPPtr, X:DWORD, Y:DWORD
 	ASSUME pcx:PTR BPForm
 	mov pcx, BPFormPtr
 	m2m [pcx].WindowSize.x, X
 	m2m [pcx].WindowSize.y, Y
 	
-	print "Settings window size to "
-	print str$(X), 120
-	print str$(Y), 13, 10
-	
 	mov pcx, BPFormPtr
-	; Just don't call this fucking cunt in OnCreate shit will go wild
+	; Just don't call this asshole in OnCreate
 	invoke SetWindowPos, [pcx].Handle, HWND_TOPMOST, 0, 0, X, Y, \
 	SWP_NOMOVE or SWP_NOZORDER or SWP_SHOWWINDOW
 	
@@ -1912,11 +1907,6 @@ bpDefWndProc PROC EXPORT hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
 			.ENDIF
 			
 			mov pcx, dwRefData
-			print str$([pcx].ScreenSize.x), 120
-			mov pcx, dwRefData
-			print str$([pcx].ScreenSize.y), 13, 10
-			
-			mov pcx, dwRefData
 			.IF ([pcx].DefaultFlag)
 				.IF ([pcx].GLContext)
 					invoke glViewport, 0, 0, [pcx].ScreenSize.x, [pcx].ScreenSize.y
@@ -1935,7 +1925,7 @@ bpDefWndProc PROC EXPORT hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
 			.ENDIF
 			
 			
-		; This down here is fucking rancid but compatibility I guess
+		; This down here is rancid but compatibility I guess
 		CASE WM_LBUTTONDOWN
 			.IF ([pcx].OnInput) && !([pcx].InputFlags & BP_IF_RAW_MOUSE)
 				invoke bpInMouseButton, dwRefData, VK_LBUTTON, TRUE

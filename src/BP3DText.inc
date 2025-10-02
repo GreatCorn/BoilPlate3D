@@ -10,7 +10,8 @@ bpDefaultFont DWORD 127 dup (0)
 
 bpFontWidth REAL4 8.0
 bpFontHeight REAL4 16.0
-bpFontSpacing REAL4 1.25
+bpFontSpacing REAL4 1.15
+bpFontNL BYTE 0
 
 .DATA?
 bpFontQuad DWORD ?
@@ -163,6 +164,7 @@ VerticalAlign:BPEnum
 		invoke glTranslatef, 0, 3212836864, 0	; -1.0
 	.ENDIF
 	
+	call glPushMatrix
 	push pbx
 	xor pbx, pbx
 	.WHILE (pbx < strLength)
@@ -170,8 +172,15 @@ VerticalAlign:BPEnum
 		xor pax, pax
 		mov al, BYTE PTR [pcx+pbx]
 		
-		mov pcx, 4
-		mul pcx
+		.IF (bpFontNL) && (al == bpFontNL)
+			call glPopMatrix
+			invoke glTranslatef, 0, bpFontSpacing, 0
+			call glPushMatrix
+			inc pbx
+			.CONTINUE
+		.ENDIF
+		
+		shl pax, 2
 		
 		mov pcx, bpCurrentFont
 		.IF (DWORD PTR [pcx+pax])
@@ -183,7 +192,7 @@ VerticalAlign:BPEnum
 		inc pbx
 	.ENDW
 	pop pbx
-	
+	call glPopMatrix
 	call glPopMatrix
 	ret
 bpRenderText ENDP

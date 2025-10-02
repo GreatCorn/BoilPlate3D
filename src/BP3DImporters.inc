@@ -704,7 +704,7 @@ bpProcessAnimPlayer PROC EXPORT BPAnimPlrPTR:BPPtr
 	LOCAL floatVal:REAL4, animSpd:REAL4, fact:REAL4
 	LOCAL frameAddr:BPPtr
 	LOCAL timeOffset:BPPtr, intFrameSize:BPPtr, intStructSize:BPPtr
-	LOCAL resFrame:BPBool
+	LOCAL resFrame:BPPtr
 	
 	mov resFrame, FALSE
 	
@@ -906,14 +906,14 @@ bpProcessAnimPlayer PROC EXPORT BPAnimPlrPTR:BPPtr
 	bpAnimExit:
 	ASSUME pcx:nothing
 	
-	mov al, resFrame
+	mov pax, resFrame
 	ret
 	
 	bpAnimInterpolateLinear:
-		mov pdx, pbx	; pbx is the current frame's value
+		mov pdx, pbx			; pbx is the current frame's value
 		sub pdx, intFrameSize	; Get previous frame value in pdx
 		
-		push pbx	; Calculate time distance between two frames
+		push pbx			; Calculate time distance between two frames
 		push pdx
 		sub pbx, timeOffset	; The offset from first 4 bytes = Frame.Time
 		sub pdx, timeOffset

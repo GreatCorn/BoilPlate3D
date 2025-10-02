@@ -603,11 +603,11 @@ Vector4Sub ENDP
 IFDEF BP3D_MATHS_INC
 Vector3Euler PROC EXPORT A:BPPtr
 	mov pcx, A
-	invoke flEuler, REAL4 PTR [pcx]
+	invoke flAngle, REAL4 PTR [pcx]
 	mov REAL4 PTR [pcx], pax
-	invoke flEuler, REAL4 PTR [pcx+4]
+	invoke flAngle, REAL4 PTR [pcx+4]
 	mov REAL4 PTR [pcx+4], pax
-	invoke flEuler, REAL4 PTR [pcx+8]
+	invoke flAngle, REAL4 PTR [pcx+8]
 	mov REAL4 PTR [pcx+8], pax
 	ret
 Vector3Euler ENDP
@@ -620,7 +620,7 @@ Vector3LerpAngle PROC EXPORT A:BPPtr, B:BPPtr, T:REAL4	;REDO WITH flLerpAngle
 	fld REAL4 PTR [pcx]
 	fsub REAL4 PTR [pdx]
 	fstp _Ang
-	invoke flEuler, _Ang
+	invoke flAngle, _Ang
 	mov _Ang, pax
 	fld _Ang
 	fmul T
@@ -630,7 +630,7 @@ Vector3LerpAngle PROC EXPORT A:BPPtr, B:BPPtr, T:REAL4	;REDO WITH flLerpAngle
 	fld REAL4 PTR [pcx+4]
 	fsub REAL4 PTR [pdx+4]
 	fstp _Ang
-	invoke flEuler, _Ang
+	invoke flAngle, _Ang
 	mov _Ang, pax
 	fld _Ang
 	fmul T
@@ -640,7 +640,7 @@ Vector3LerpAngle PROC EXPORT A:BPPtr, B:BPPtr, T:REAL4	;REDO WITH flLerpAngle
 	fld REAL4 PTR [pcx+8]
 	fsub REAL4 PTR [pdx+8]
 	fstp _Ang
-	invoke flEuler, _Ang
+	invoke flAngle, _Ang
 	mov _Ang, pax
 	fld _Ang
 	fmul T

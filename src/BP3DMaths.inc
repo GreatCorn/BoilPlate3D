@@ -1,7 +1,7 @@
 ;
 ;   BP3DMaths.inc
 ;   Version 0.7ac1
-;   BP3D maths extension.
+;   BP3D common math (REAL4 (x87 FPU) & SDWORD) functions extension.
 ;
 ;   Copyright (c) 2025 Yevhenii Ionenko (aka GreatCorn). All rights reserved.
 ;   Licensed under the terms of the MIT license (see ..\LICENSE.txt).
@@ -21,24 +21,23 @@ FPU_ROUND	EQU 0000000000000000b	; Round to nearest (default)
 ; IEEE 754 float constants
 FLT_INF		EQU 7F800000h	; +Infinity
 FLT_INFN	EQU 0FF800000h	; -Infinity
-FLT_NEG		EQU 80000000h	; -0 (negative flag, useful for cmp)
+FLT_NEG		EQU 80000000h	; -0 (negative flag, useful for cmp without FPU)
 
 .CONST
-D2R		REAL4	0.0174532	; Degrees to radians multiplier
-R2D		REAL4	57.29578	; Radians to degrees multiplier
-R2I		REAL4	0.6366197	; Radians to integer
-PI		REAL4	3.141592653
-PIN		REAL4	-3.141592653
-PIHalf	REAL4	1.570796326
-PIHalfN	REAL4	-1.570796326
-PIQuarter	REAL4	0.765398163
-PIQuarterN	REAL4	-0.765398163
-PI2		REAL4	6.283185307
-flInf	DWORD	FLT_INF
-flInfN	DWORD	FLT_INFN
+D2R		REAL4	0.0174532		; Degrees to radians multiplier
+R2D		REAL4	57.29578		; Radians to degrees multiplier
+R2I		REAL4	0.6366197		; Radians to integer
+PI		REAL4	3.141592653		; Pi	(180 deg)
+PIN		REAL4	-3.141592653	; -Pi	(-180 deg)
+PIHalf	REAL4	1.570796326		; Pi/2	(90 deg)
+PIHalfN	REAL4	-1.570796326	; -Pi/2	(-90 deg)
+PIQuarter	REAL4	0.765398163	; Pi/4	(45 deg)
+PIQuarterN	REAL4	-0.765398163; -Pi/4	(-45 deg)
+PI2		REAL4	6.283185307		; Pi*2	(360 deg)
+flInf	DWORD	FLT_INF			; Data field of FLT_INF
+flInfN	DWORD	FLT_INFN		; Data field of FLT_INFN
 
 .DATA?
-FPUCW WORD ?
 nRandSeed DWORD ?
 
 ;   Immediate REAL4 to reusable data field (format fl+int+n+frac(+N)).
@@ -111,6 +110,8 @@ ENDM
 flSign PROTO :REAL4
 nRand PROTO :DWORD
 
+;   Compares FPU st(0) with st(1). Is called if CPU is < 686 by fcmp. See fcmp
+; for flag results.
 fcmpP PROC EXPORT
 	fcompp
 	fstsw ax
@@ -126,6 +127,58 @@ fcmpP PROC EXPORT
 	ret
 fcmpP ENDP
 
+flAcos PROC EXPORT Val:REAL4
+	fld Val
+	fld1
+	fld st(1)
+	fmul st, st
+	fsub
+	fsqrt
+	fxch
+	fpatan
+	fstp Val
+	mov eax, Val
+	ret
+flAcos ENDP
+
+flAsin PROC EXPORT Val:REAL4
+	fld Val
+	fld1
+	fld st(1)
+	fmul st, st
+	fsub
+	fsqrt
+	fpatan
+	fstp Val
+	mov eax, Val
+	ret
+flAsin ENDP
+
+;   Wrap an angle (-PI - PI, in radians) and return in eax. Useful for angle 
+; interpolation.
+;   Val:REAL4 - angle (in radians) to wrap.
+flAngle PROC EXPORT Val:REAL4
+	fcmp Val, PI
+	.IF (!Carry?)	; Val > PI
+		fld Val
+		fsub PI2
+		fstp Val
+	.ENDIF
+	fcmp Val, PIN
+	.IF (Carry?)	; Val < -PI
+		fld Val
+		fadd PI2
+		fstp Val
+	.ENDIF
+	
+	mov eax, Val
+	ret
+flAngle ENDP
+
+;   Clamp Val to range of [Min - Max] and return result in eax.
+;   Val:REAL4 - value to clamp.
+;   Min:REAL4 - minimum clamp range value.
+;   Max:REAL4 - maximum clamp range value.
 flClamp PROC EXPORT Val:REAL4, Min:REAL4, Max:REAL4
 	fcmp Val, Max
 	.IF (!Carry?)		; X > X1
@@ -143,6 +196,9 @@ flClamp PROC EXPORT Val:REAL4, Min:REAL4, Max:REAL4
 	ret
 flClamp ENDP
 
+;   Calculate scalar distance between From and To and return result in eax.
+;   From:REAL4 - the first point, to calculate the distance from.
+;   To:REAL4 - the second point, to calculate the distance to.
 flDistance PROC EXPORT From:REAL4, To:REAL4
 	fld From
 	fsub To
@@ -152,152 +208,14 @@ flDistance PROC EXPORT From:REAL4, To:REAL4
 	ret
 flDistance ENDP
 
-flEuler PROC EXPORT Val:REAL4
-	fcmp Val, PI
-	.IF (!Carry?)	; Val > PI
-		fld Val
-		fsub PI2
-		fstp Val
-	.ENDIF
-	fcmp Val, PIN
-	.IF (Carry?)	; Val < -PI
-		fld Val
-		fadd PI2
-		fstp Val
-	.ENDIF
-	
-	mov eax, Val
-	ret
-flEuler ENDP
-
-flFastATan PROC EXPORT Val:REAL4
-	fld Val
-	fabs
-	fld st
-	fsub f(1.0)
-	fxch
-	fmul f(0.0663)
-	fadd f(0.2447)
-	fmul
-	fmul Val
-	fld Val
-	fmul PIQuarter
-	fsubr
-	fstp Val
-	mov eax, Val
-	ret
-flFastATan ENDP
-
-flFastATan2 PROC EXPORT Y:REAL4, X:REAL4
-	.IF (X & FLT_NEG)		; x <= 0
-		.IF (Y & FLT_NEG)	; y <= 0
-			xor Y, FLT_NEG
-			fcmp Y, X
-			.IF (Carry?)		; -y < x ; -PI/4 .. 0
-				xor Y, FLT_NEG
-				fld Y
-				fdiv X
-				fstp X
-				invoke flFastATan, X
-				ret
-			.ELSE
-				xor Y, FLT_NEG
-				fld X
-				fdiv Y
-				fstp X
-				mov X, rv(flFastATan, X)
-				fld X
-				fsubr PIHalfN
-				fstp X
-				mov eax, X
-				ret
-			.ENDIF
-		.ELSE
-			fcmp Y, X
-			.IF (Carry?)		; y < x ; -PI/4 .. 0
-				fld Y
-				fdiv X
-				fstp X
-				invoke flFastATan, X
-				ret
-			.ELSE
-				fld X
-				fdiv Y
-				fstp X
-				mov X, rv(flFastATan, X)
-				fld X
-				fsubr PIHalf
-				fstp X
-				mov eax, X
-				ret
-			.ENDIF
-		.ENDIF
-	.ELSE
-		.IF (Y & FLT_NEG)	; y <= 0
-			xor X, FLT_NEG
-			xor Y, FLT_NEG
-			fcmp Y, X
-			.IF (Carry?)		; -y < -x
-				xor X, FLT_NEG
-				xor Y, FLT_NEG
-				fld Y
-				fdiv X
-				fstp X
-				mov X, rv(flFastATan, X)
-				fld X
-				fsub PI
-				fstp X
-				mov eax, X
-				ret
-			.ELSE
-				xor X, FLT_NEG
-				xor Y, FLT_NEG
-				fld X
-				fdiv Y
-				fstp X
-				mov X, rv(flFastATan, X)
-				fld X
-				fsubr PIHalfN
-				fstp X
-				mov eax, X
-				ret
-			.ENDIF
-		.ELSE
-			xor X, FLT_NEG
-			fcmp Y, X
-			.IF (Carry?)		; y < -x 
-				xor X, FLT_NEG
-				fld Y
-				fdiv X
-				fstp X
-				mov X, rv(flFastATan, X)
-				fld X
-				fadd PI
-				fstp X
-				mov eax, X
-				ret
-			.ELSE
-				xor X, FLT_NEG
-				fld X
-				fdiv Y
-				fstp X
-				mov X, rv(flFastATan, X)
-				fld X
-				fsubr PIHalf
-				fstp X
-				mov eax, X
-				ret
-			.ENDIF
-		.ENDIF
-	
-	.ENDIF
-	ret
-flFastATan2 ENDP
-
+;   Separate the fractional part of a value and return in eax.
+;   Val:REAL4 - value to take the fractional part from.
 flFrac PROC EXPORT Val:REAL4
-	fstcw FPUCW
-	or FPUCW, FPU_FLOOR
-	fldcw FPUCW
+	LOCAL cw:WORD
+	
+	fstcw cw
+	or cw, FPU_FLOOR
+	fldcw cw
 	
 	fld Val
 	fld st
@@ -305,13 +223,18 @@ flFrac PROC EXPORT Val:REAL4
 	fsub
 	fstp Val
 	
-	xor FPUCW, FPU_FLOOR
-	fldcw FPUCW
+	xor cw, FPU_FLOOR
+	fldcw cw
 	
 	mov eax, Val
 	ret
 flFrac ENDP
 
+;   Check if Val is in the range of [Min - Max] and return result in pax (TRUE /
+; FALSE).
+;   Val:REAL4 - value to check.
+;   Min:REAL4 - minimum range value.
+;   Max:REAL4 - maximum range value.
 flInRange PROC EXPORT Val:REAL4, Min:REAL4, Max:REAL4
 	fcmp Val, Min
 	.IF (!Carry?)
@@ -325,6 +248,10 @@ flInRange PROC EXPORT Val:REAL4, Min:REAL4, Max:REAL4
 	ret
 flInRange ENDP
 
+;   Linearly interpolate between A and B by T and return result in eax.
+;   A:REAL4 - starting value.
+;   B:REAL4 - destination value.
+;   T:REAL4 - interpolation value between the two.
 flLerp PROC EXPORT A:REAL4, B:REAL4, T:REAL4
 	fld B
 	fsub A
@@ -336,12 +263,17 @@ flLerp PROC EXPORT A:REAL4, B:REAL4, T:REAL4
 	ret
 flLerp ENDP
 
+;   Linearly interpolate between A and B by T with proper angle wrapping (in
+; radians) and return result in eax.
+;   A:REAL4 - starting value.
+;   B:REAL4 - destination value.
+;   T:REAL4 - interpolation value between the two.
 flLerpAngle PROC EXPORT A:REAL4, B:REAL4, T:REAL4
 	LOCAL _Ang:REAL4
 	fld B
 	fsub A
 	fstp _Ang
-	invoke flEuler, _Ang
+	invoke flAngle, _Ang
 	mov _Ang, pax
 	fld _Ang
 	fmul T
@@ -352,6 +284,10 @@ flLerpAngle PROC EXPORT A:REAL4, B:REAL4, T:REAL4
 	ret
 flLerpAngle ENDP
 
+;   Move From toward To by T and return result in eax.
+;   From:REAL4 - starting value.
+;   To:REAL4 - destination value.
+;   T:REAL4 - the amount to move by.
 flMove PROC EXPORT From:REAL4, To:REAL4, T:REAL4
 	LOCAL Dist:REAL4	
 	invoke flDistance, From, To
@@ -376,6 +312,9 @@ flMove PROC EXPORT From:REAL4, To:REAL4, T:REAL4
 	ret
 flMove ENDP
 
+;   Return the minimum of the A and B values in eax.
+;   A:REAL4 - first value.
+;   B:REAL4 - second value.
 flMin PROC EXPORT A:REAL4, B:REAL4
 	fcmp A, B
 	.IF (Carry?)
@@ -386,19 +325,22 @@ flMin PROC EXPORT A:REAL4, B:REAL4
 	ret
 flMin ENDP
 
-; Returns a random REAL4 in range [0.0, 1.0]
+;   Returns a random REAL4 in range [0.0 - 1.0] (thousandth precision) in eax.
 flRand PROC EXPORT
 	LOCAL _Val:REAL4
 	
-	invoke nRand, 100
+	invoke nRand, 1000
 	mov _Val, eax
 	fild _Val
-	fmul f(0.01)
+	fmul f(0.001)
 	fstp _Val
 	mov eax, _Val
 	ret
 flRand ENDP
 
+;   Returns a random REAL4 in range [Min - Max] in eax.
+;   Min:REAL4 - minimum random range value.
+;   Max:REAL4 - maximum random range value.
 flRandRange PROC EXPORT Min:REAL4, Max:REAL4
 	LOCAL _Val:REAL4
 	
@@ -415,10 +357,14 @@ flRandRange PROC EXPORT Min:REAL4, Max:REAL4
 	ret
 flRandRange ENDP
 
+;   Repeat Val through the range of [0.0 - Max] and return result in eax.
+;   Val:REAL4 - value to be repeated.
+;   Max:REAL4 - maximum range value.
 flRepeat PROC EXPORT Val:REAL4, Max:REAL4
-	fstcw FPUCW
-	or FPUCW, FPU_FLOOR
-	fldcw FPUCW
+	LOCAL cw:WORD
+	fstcw cw
+	or cw, FPU_FLOOR
+	fldcw cw
 	
 	fld Val
 	fdiv Max
@@ -427,40 +373,20 @@ flRepeat PROC EXPORT Val:REAL4, Max:REAL4
 	fmul Max
 	fstp Val
 	
-	xor FPUCW, FPU_FLOOR
-	fldcw FPUCW
+	xor cw, FPU_FLOOR
+	fldcw cw
 	
 	invoke flClamp, Val, 0, Max
 	ret
 flRepeat ENDP
 
-flSqrt PROC EXPORT
-	fld st			; st(1) = number		(y)
-	fmul f(0.5)		; st(0) = number * 0.5	(x2)
-	fxch			; st(0) = y; st(1) = x2
-	
-	sub esp, 4
-	fstp REAL4 PTR [esp]	; st(0) = x2
-	pop eax			; i = * (long *) &y;
-	
-	shr eax, 1
-	mov ecx, 5f3759dfh
-	sub ecx, eax	; 0x5f3759df - (i >> 1)
-	
-	push ecx
-	fld REAL4 PTR [esp]	; st(0) = y; st(1) = x2
-	fld st	; st(0) = y; st(1) = y; st(2) = x2		| esp = y
-	fmul	; st(0) = y*y; st(1) = x2
-	fmul
-	fsubr f(1.5)
-	fmul REAL4 PTR [esp]
-	add esp, 4
-	fdivr f(1.0)
-	
-	ret
-flSqrt ENDP
-
+;   Return the sign (-1.0 | 0.0 | 1.0) of Val in eax.
+;   Val:REAL4 - value to get the sign of.
 flSign PROC EXPORT Val:REAL4
+	.IF (Val == FLT_NEG) || !(Val)
+		xor eax, eax
+		ret
+	.ENDIF
 	.IF (Val & FLT_NEG)
 		mov eax, f(-1.0)
 		ret
@@ -483,6 +409,8 @@ flSign PROC EXPORT Val:REAL4
 	ret
 flSign ENDP
 
+;   Return the absolute of Val in eax.
+;   Val:SDWORD - value to get the absolute of.
 intAbs PROC EXPORT Val:SDWORD
 	mov eax, Val
 	cmp eax, 0
@@ -492,6 +420,10 @@ intAbs PROC EXPORT Val:SDWORD
 	ret
 intAbs ENDP
 
+;   Clamp Val to range of [Min - Max] and return result in eax.
+;   Val:SDWORD - value to clamp.
+;   Min:SDWORD - minimum clamp range value.
+;   Max:SDWORD - maximum clamp range value.
 intClamp PROC EXPORT Val:SDWORD, Min:SDWORD, Max:SDWORD
 	mov eax, Val
 	cmp eax, Min
@@ -505,6 +437,9 @@ intClamp PROC EXPORT Val:SDWORD, Min:SDWORD, Max:SDWORD
 	ret
 intClamp ENDP
 
+;   Calculate distance between From and To and return result in eax.
+;   From:SDWORD - the first point, to calculate the distance from.
+;   To:SDWORD - the second point, to calculate the distance to.
 intDistance PROC EXPORT From:SDWORD, To:SDWORD
 	mov eax, From
 	sub eax, To
@@ -512,6 +447,11 @@ intDistance PROC EXPORT From:SDWORD, To:SDWORD
 	ret
 intDistance ENDP
 
+;   Check if Val is in the range of [Min - Max] and return result in pax (TRUE /
+; FALSE).
+;   Val:SDWORD - value to check.
+;   Min:SDWORD - minimum range value.
+;   Max:SDWORD - maximum range value.
 intInRange PROC EXPORT Val:SDWORD, Min:SDWORD, Max:SDWORD
 	mov eax, Val
 	cmp eax, Min
@@ -525,6 +465,9 @@ intInRange PROC EXPORT Val:SDWORD, Min:SDWORD, Max:SDWORD
 	ret
 intInRange ENDP
 
+;   Returns a random SDWORD in range [Min - Max] in eax.
+;   Min:SDWORD - minimum random range value.
+;   Max:SDWORD - maximum random range value.
 intRandRange PROC EXPORT Min:SDWORD, Max:SDWORD
 	mov eax, Max
 	sub eax, Min
@@ -533,6 +476,8 @@ intRandRange PROC EXPORT Min:SDWORD, Max:SDWORD
 	ret
 intRandRange ENDP
 
+;   Return the sign (-1 | 0 | 1) of Val in eax.
+;   Val:SDWORD - value to get the sign of.
 intSign PROC EXPORT Val:SDWORD
 	mov eax, Val
 	cmp eax, 0
@@ -549,7 +494,9 @@ intSign PROC EXPORT Val:SDWORD
 intSign ENDP
 
 ;   MASM32 Park Miller random number algorithm implementation (nrandom), written
-; by Jaymeson Trudgen (NaN), optimized by Rickey Bowers Jr. (bitRAKE).
+; by Jaymeson Trudgen (NaN), optimized by Rickey Bowers Jr. (bitRAKE). Returns
+; a random number in the range of [0 - Base). Uses nRandSeed value as seed.
+;   Base:DWORD - random algorithm base, the maximum exclusive range.
 nRand PROC EXPORT Base:DWORD
 	mov eax, nRandSeed
 
@@ -578,6 +525,7 @@ nRand PROC EXPORT Base:DWORD
 	ret
 nRand ENDP
 
+;   Randomize the nRandSeed for nRand (set nRandSeed to current tick count).
 nRandomize PROC EXPORT
 	mov nRandSeed, rv(GetTickCount)
 	ret

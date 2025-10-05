@@ -234,7 +234,17 @@ ENDIF
 ; Miscellaneous types for argument generalization
 BPBool TYPEDEF BYTE		; Boolean type
 BPEnum TYPEDEF BYTE		; Enumerator type
-	
+
+BPDisplayDevice STRUCT
+	Active		BPBool FALSE
+	DPI			DWORD ?
+	Orientation	BPEnum ?
+	RefreshRate	DWORD ?
+	ScreenPos	POINT <?, ?>
+	ScreenSize	POINT <?, ?>
+	RawName		BYTE 32 dup (?)
+BPDisplayDevice ENDS
+
 BPForm STRUCT			; Windows form (window) structure
 	Caption			BPPtr OFFSET bpDefCaption		; Form caption/title
 	ClassName		BPPtr OFFSET bpDefClassMain		; Form registered class name
@@ -248,13 +258,15 @@ BPForm STRUCT			; Windows form (window) structure
 	
 	WindowStyle		LONG WS_OVERLAPPEDWINDOW
 	
-	WndProc			BPPtr 0		; WndProc procedure offset
+	WndProc			BPPtr OFFSET bpDefWndProc	; WndProc procedure offset
 	
 	; Read-only fields (set by internal BP3D or abstracted by procedures)
 	Aspect			REAL4 0.0	; Form width divided by height (for GL viewport)
+	DisplayDevice	DWORD 0		; Display device, set with bpSetDisplayDevice
 	Focused			BPBool TRUE	; Is the form in focus
 	MouseMode		BPEnum BP_MOUSE_MODE_VISIBLE	; Set with bpSetMouseMode
 	WindowMode		BPEnum BP_WINDOW_MODE_WINDOWED	; Set with bpSetWindowMode
+	
 	ScreenCnt		POINT <0, 0>					; Global screen center
 	ScreenPos		POINT <CW_USEDEFAULT, CW_USEDEFAULT>
 	ScreenSize		POINT <CW_USEDEFAULT, CW_USEDEFAULT>
@@ -262,40 +274,68 @@ BPForm STRUCT			; Windows form (window) structure
 	WindowSize		POINT <CW_USEDEFAULT, CW_USEDEFAULT>
 	
 	; Event procedures
-	OnCreate		BPPtr 0	; OnCreate	PROC
-	OnDestroy		BPPtr 0	; OnDestroy	PROC
-	OnFixed			BPPtr 0	; OnFixed	PROC
-	OnInput			BPPtr 0	; OnInput	PROC BPInType:BPEnum, BPInStruct:BPPtr
-	OnRender		BPPtr 0	; OnRender	PROC
-	OnResize		BPPtr 0	; OnResize	PROC
+	;   OnCreate PROC
+	;   Gets called after the form has just been created (bpCreateForm).
+	OnCreate		BPPtr 0
+	
+	;   OnDestroy	PROC
+	;   Gets called after the form has just been destroyed (WM_DESTROY).
+	OnDestroy		BPPtr 0
+	
+	;   OnFixed		PROC
+	;   Gets called in a separate asynchronous thread every bpFixedInterval 
+	; seconds (default 0.01666666 s = 60 times/s).
+	OnFixed			BPPtr 0
+	
+	;   OnInput		PROC BPInType:BPEnum, BPInStruct:BPPtr
+	;   Gets called whenever captured input gets sent to the form (see 
+	; InputFlags).
+	;   BPInType:BPEnum - a BP_INPUT_* constant that signifies the type of input
+	; sent to the callback function.
+	;   BPInStruct:BPPtr - pointer to a BPIn* struct corresponding to BPInType.
+	OnInput			BPPtr 0
+	
+	;   OnRender	PROC
+	;   Gets called whenever the form is drawn (WM_PAINT). If DefaultFlag is on,
+	; doesn't send DefWindowProc to maintain a loop. For frame-independence
+	; deltaTime should be used.
+	OnRender		BPPtr 0
+	
+	;   OnResize	PROC
+	;   Gets called whenever the form is resized (WM_SIZE). Window size and
+	; client size are return in WindowSize and ScreenSize respectively.
+	OnResize		BPPtr 0
+	
+	;   OnStart		PROC
+	;   Gets called after one frame has passed after form creation.
 	OnStart			BPPtr 0	; OnStart	PROC
 BPForm ENDS
 
 BPInJoyAxis STRUCT		; Joystick axis input structure
-	JoyNum		DWORD ?
-	Axis		BPPtr ?
-	Position	REAL4 ?
+	JoyNum		DWORD ?		; Joystick index
+	Axis		BPPtr ?		; Axis index (BP_JOY_AXIS_*)
+	Position	REAL4 ?		; Axis position [-1.0 - 1.0]
 BPInJoyAxis ENDS
 
 BPInJoyButton STRUCT	; Joystick button input structure
-	JoyNum		DWORD ?
-	Button		BPPtr ?
-	Pressed		BPBool ?
+	JoyNum		DWORD ?		; Joystick index
+	Button		BPPtr ?		; Button index
+	Pressed		BPBool ?	; Is the button pressed or released
 BPInJoyButton ENDS
 
 BPInKey STRUCT			; Keyboard input structure
-	Keycode		BPPtr ?
-	Pressed		BPBool ?
+	Keycode		BPPtr ?		; Virtual-key code
+	Pressed		BPBool ?	; Is the key pressed or released
 BPInKey ENDS
 
 BPInMouseButton STRUCT	; Mouse button input structure
-	Button		BPPtr ?
-	Pressed		BPBool ?
+	Button		BPPtr ?		; Mouse button (uses virtual-key constants)
+	Pressed		BPBool ?	; Is the button pressed or released
 BPInMouseButton ENDS
 
 BPInMouseMove STRUCT	; Mouse movement input structure
-	Position	POINT <?, ?>
-	Relative	POINT <?, ?>
+	Position	POINT <?, ?>	; Absolute on-screen mouse cursor position
+	Relative	POINT <?, ?>	; Relative mouse movement
 BPInMouseMove ENDS
 
 BPInTouch STRUCT		; Touch input structure
@@ -308,10 +348,15 @@ BPJoystick STRUCT		; Joystick info abstraction structure (for bpJoysticks)
 	ProductId	WORD		?
 	NumAxes		DWORD		?
 	NumButtons	DWORD		?
-	RawName		BYTE		MAXPNAMELEN dup (?)
+	RawName		BYTE		32 dup (?)
 BPJoystick ENDS
 
 ; ----- CONSTANTS -----
+BP_ORIENTATION_LANDSCAPE		EQU 0
+BP_ORIENTATION_PORTRAIT			EQU 1
+BP_ORIENTATION_LANDSCAPE_REV	EQU 2
+BP_ORIENTATION_PORTRAIT_REV		EQU 3
+
 BP_FIXED_INTERVAL		EQU 1000 / 60	; OnFixed signal interval (ms)
 
 ;   BPForm.InputFlags bits for configuring input. Can be set before form
@@ -357,7 +402,9 @@ BP_WINDOW_MODE_WINDOWED			EQU 0	; Form is a draggable (sizeable) window
 BP_WINDOW_MODE_MINIMIZED		EQU 1	; Form is minimized into tray
 BP_WINDOW_MODE_MAXIMIZED		EQU 2	; Form is a maximized window
 BP_WINDOW_MODE_FULLSCREEN		EQU 3	; Form is a 'fullscreen window'
-BP_WINDOW_MODE_FULLSCREEN_EX	EQU 4	; Form uses exclusive fullscreen
+BP_WINDOW_MODE_FULLSCREEN_EX	EQU 4	; Form uses exclusive fullscreen,
+										; display resolution will be set to
+										; BPForm.ScreenSize.
 
 ; Mouse wheel virtual-key codes (returned in BP_INPUT_MOUSE_BUTTON)
 VK_MWHEEL_UP	EQU 7
@@ -366,7 +413,6 @@ VK_MWHEEL_DOWN	EQU 8
 .CONST
 bpDefCaption	DB "BP3D", 0		; Default window caption
 bpDefClassMain	DB "BPFMain", 0		; Default window class name
-bpFixedInterval REAL4 0.01666666	; BPForm OnFixed interval (in seconds)
 bpJoyMaxValue	DWORD 1191182336	; Value to divide the joystick DW by (32768)
 
 .DATA
@@ -384,8 +430,13 @@ ELSE
 	bpPerfFreq BPDelta 0
 ENDIF
 
+bpDisplayDeviceCount	DWORD 0
+bpDisplayDevices		BPDisplayDevice 16 dup (<>)
+
 ; Set to TRUE after first frame, then allows OnRender execution
 bpFirstFrameSkipped BPBool FALSE
+
+bpFixedInterval REAL4 0.01666666	; BPForm OnFixed interval (in seconds)
 
 bpJoyCount		DWORD 0					; Total amount of joysticks available
 bpJoyInfoEx		JOYINFOEX 16 dup (<>)	; JOYINFOEX array for comparing states
@@ -441,6 +492,7 @@ bpSetInputFlags			PROTO :BPPtr, :BYTE
 bpSetMouseMode			PROTO :BPPtr, :BPEnum
 bpSetScreenCenter		PROTO :BPPtr
 bpSetWindowMode			PROTO :BPPtr, :BPEnum
+bpSetWindowPos			PROTO :BPPtr, :SDWORD, :SDWORD
 bpSetWindowSize			PROTO :BPPtr, :DWORD, :DWORD
 bpUpdateJoysticks		PROTO
 bpUpdateWindowPos		PROTO :BPPtr
@@ -694,7 +746,6 @@ bpCreateForm PROC EXPORT BPFormPtr:BPPtr
 	
 	mov wc.cbSize, SIZEOF WNDCLASSEX
 	mov wc.style, CS_HREDRAW or CS_VREDRAW
-	mov wc.lpfnWndProc, OFFSET bpDefWndProc
 	mov wc.cbClsExtra, NULL
 	mov wc.cbWndExtra, NULL
 	mov	wc.hbrBackground, COLOR_WINDOW
@@ -702,8 +753,9 @@ bpCreateForm PROC EXPORT BPFormPtr:BPPtr
 	
 	mov pcx, BPFormPtr
 	
-	mov pax, [pcx].ClassName
-	mov wc.lpszClassName, pax	; Dubious, MSDN states it's a 32-bit pointer
+	m2m wc.lpszClassName, [pcx].ClassName	; MSDN says it's a 32-bit pointer ?
+	m2m wc.lpfnWndProc, [pcx].WndProc
+	
 	
 	invoke GetModuleHandle, NULL
 	mov	wc.hInstance, pax
@@ -725,37 +777,39 @@ bpCreateForm PROC EXPORT BPFormPtr:BPPtr
 	mov [pcx].Handle, pax
 	invoke SetWindowLong, pax, GWLP_USERDATA, BPFormPtr
 	
+	; Get some system info
 	IFDEF BP_USE_LARGE_INTEGER
 		invoke QueryPerformanceFrequency, ADDR bpPerfFreq
 	ELSE
 		invoke QueryPerformanceFrequency, ADDR testFreq
 		m2m bpPerfFreq, testFreq.LowPart
 	ENDIF
+	call bpUpdateDisplayDevices
 	
+	; Populate WindowPos, WindowSize
+	mov pcx, BPFormPtr
+	invoke GetWindowRect, [pcx].Handle, ADDR rect
+	mov pcx, BPFormPtr
+	mov eax, rect.left
+	mov [pcx].WindowPos.x, eax
+	sub rect.right, eax
+	m2m [pcx].WindowSize.x, rect.right
+	mov eax, rect.top
+	mov [pcx].WindowPos.y, eax
+	sub rect.bottom, eax
+	m2m [pcx].WindowSize.y, rect.bottom
 	
-		
-		mov pcx, BPFormPtr
-		invoke GetWindowRect, [pcx].Handle, ADDR rect
-		mov pcx, BPFormPtr
-		mov eax, rect.left
-		mov [pcx].WindowPos.x, eax
-		sub rect.right, eax
-		m2m [pcx].WindowSize.x, rect.right
-		mov eax, rect.top
-		mov [pcx].WindowPos.y, eax
-		sub rect.bottom, eax
-		m2m [pcx].WindowSize.y, rect.bottom
-		
-		invoke GetClientRect, [pcx].Handle, ADDR rect
-		mov pcx, BPFormPtr
-		mov eax, rect.left
-		mov [pcx].ScreenPos.x, eax
-		sub rect.right, eax
-		m2m [pcx].ScreenSize.x, rect.right
-		mov eax, rect.top
-		mov [pcx].ScreenPos.y, eax
-		sub rect.bottom, eax
-		m2m [pcx].ScreenSize.y, rect.bottom
+	; Populate ScreenPos, ScreenSize
+	invoke GetClientRect, [pcx].Handle, ADDR rect
+	mov pcx, BPFormPtr
+	mov eax, rect.left
+	mov [pcx].ScreenPos.x, eax
+	sub rect.right, eax
+	m2m [pcx].ScreenSize.x, rect.right
+	mov eax, rect.top
+	mov [pcx].ScreenPos.y, eax
+	sub rect.bottom, eax
+	m2m [pcx].ScreenSize.y, rect.bottom
 	
 	mov pcx, BPFormPtr
 	mov [pcx].DefaultFlag, TRUE
@@ -764,7 +818,6 @@ bpCreateForm PROC EXPORT BPFormPtr:BPPtr
 	.ENDIF
 	mov pcx, BPFormPtr
 	.IF ([pcx].DefaultFlag)
-		
 		mov al, [pcx].InputFlags
 		mov [pcx].InputFlags, 0
 		invoke bpSetInputFlags, pcx, al
@@ -1342,6 +1395,41 @@ bpScreenToWindowSize PROC EXPORT BPFormPtr:BPPtr, SizePtr:BPPtr
 	ret
 bpScreenToWindowSize ENDP
 
+bpSetDisplayDevice PROC EXPORT BPFormPtr:BPPtr, DisplayDevice:DWORD
+	LOCAL winMode:BPEnum
+	
+	ASSUME pcx:PTR BPForm
+	
+	mov pax, DisplayDevice
+	mov pdx, SIZEOF BPDisplayDevice
+	mul pdx
+	mov pdx, pax
+	
+	.IF !(bpDisplayDevices[pdx].Active)
+		ret
+	.ENDIF
+	
+	mov pcx, BPFormPtr
+	m2m [pcx].DisplayDevice, DisplayDevice
+	
+	
+	mov pcx, BPFormPtr
+	mov al, [pcx].WindowMode
+	mov winMode, al
+	push pdx
+	invoke bpSetWindowMode, pcx, BP_WINDOW_MODE_WINDOWED
+	pop pdx
+	
+	mov pcx, BPFormPtr
+	invoke bpSetWindowPos, pcx, \
+	bpDisplayDevices[pdx].ScreenPos.x, bpDisplayDevices[pdx].ScreenPos.y
+	
+	invoke bpSetWindowMode, BPFormPtr, winMode
+	
+	ASSUME pcx:nothing
+	ret
+bpSetDisplayDevice ENDP
+
 ;   Update input configurations for a BPForm according to passed InputFlags and
 ; set the form's InputFlags to that. See possible input flags at BP_IF_*.
 ;   BPFormPtr:BPPtr - pointer to a form structure.
@@ -1421,26 +1509,37 @@ bpSetMouseMode PROC EXPORT BPFormPtr:BPPtr, MouseMode:BPEnum
 	ret
 bpSetMouseMode ENDP
 
-;   Sets current display's resolution to specified values in a DWORD[2] pointer,
-; or to the closest available resolution. Returns TRUE, if the exact resolution
-; was set, FALSE if the closest available had to be picked.
+;   Sets form's current display's resolution to specified values in a DWORD[2] 
+; pointer, or to the closest available resolution. Returns TRUE, if the exact 
+; resolution was set, FALSE if the closest available had to be picked.
+;   BPFormPtr:BPPtr - pointer to a form structure.
 ;   ResPtr:BPPtr - pointer to the new DWORD width and height values stored 
 ; consecutively. If these exact values cannot be used, the closest available
 ; resolution will be picked and the width and height will be returned into this
 ; pointer.
 ;   CmpAspect:BPBool - compare aspect when picking best available resolution.
-bpSetResolution PROC EXPORT ResPtr:BPPtr, CmpAspect:BPBool
-	LOCAL devMode:DEVMODEA
+bpSetResolution PROC EXPORT BPFormPtr:BPPtr, ResPtr:BPPtr, CmpAspect:BPBool
+	LOCAL devMode:DEVMODEA, namePtr:BPPtr
 	LOCAL sizeDiff[2]:DWORD, aspect:REAL4, aspectDiff:DWORD, bestScore:DWORD
 	LOCAL found:BPBool, best:DEVMODEA
 	
+	ASSUME pcx:PTR BPForm
+	mov pcx, BPFormPtr
+	mov pax, [pcx].DisplayDevice
+	mov pcx, SIZEOF BPDisplayDevice
+	mul pcx
+	lea pax, bpDisplayDevices[pax].RawName
+	mov namePtr, pax
+	ASSUME pcx:nothing
+	
 	mov devMode.dmSize, SIZEOF DEVMODEA
-	invoke EnumDisplaySettingsA, NULL, ENUM_CURRENT_SETTINGS, ADDR devMode
+	invoke EnumDisplaySettingsA, namePtr, ENUM_CURRENT_SETTINGS, ADDR devMode
 	mov pax, ResPtr
 	m2m devMode.dmPelsWidth, DWORD PTR [pax]
 	m2m devMode.dmPelsHeight, DWORD PTR [pax+4]
 	
-	invoke ChangeDisplaySettingsA, ADDR devMode, CDS_FULLSCREEN
+	invoke ChangeDisplaySettingsExA, namePtr, ADDR devMode, NULL, \
+	CDS_FULLSCREEN, NULL
 	.IF (eax != DISP_CHANGE_SUCCESSFUL)
 		; Change unsuccessfull, pick closest best resolution
 		.IF (CmpAspect)	; Get desired aspect
@@ -1455,7 +1554,7 @@ bpSetResolution PROC EXPORT ResPtr:BPPtr, CmpAspect:BPBool
 		push pbx
 		xor ebx, ebx
 		bpSetResolutionEnum:
-		invoke EnumDisplaySettingsA, NULL, ebx, ADDR devMode
+		invoke EnumDisplaySettingsA, namePtr, ebx, ADDR devMode
 		.IF (eax)
 			; Resolution difference
 			mov pcx, ResPtr
@@ -1571,22 +1670,32 @@ bpSetScreenSize ENDP
 ;   BPFormPtr:BPPtr - pointer to a form structure.
 ;   WindowMode:BPEnum - window mode, represented as a BPWINMODE constant.
 bpSetWindowMode PROC EXPORT BPFormPtr:BPPtr, WindowMode:BPEnum
+	LOCAL scrSize:POINT
 	ASSUME pcx:PTR BPForm
 	mov pcx, BPFormPtr
 	
 	.IF ([pcx].WindowMode == BP_WINDOW_MODE_FULLSCREEN)
 		; Dubiously necessary
 		; I stole the modes from Godot but didn't even check how they work smh
-		.IF (WindowMode == BP_WINDOW_MODE_MINIMIZED) || \
-		(WindowMode == BP_WINDOW_MODE_MAXIMIZED)
+		.IF (WindowMode != BP_WINDOW_MODE_WINDOWED)
 			invoke bpSetWindowMode, pcx, BP_WINDOW_MODE_WINDOWED
 			mov pcx, BPFormPtr
 		.ENDIF
 	.ELSEIF ([pcx].WindowMode == BP_WINDOW_MODE_FULLSCREEN_EX)
 		invoke SetWindowLongA, [pcx].Handle, GWL_STYLE, [pcx].WindowStyle
 		invoke ChangeDisplaySettingsA, NULL, 0
+		; the proper? way to change back would be:
+		;mov pcx, BPFormPtr
+		;mov pax, [pcx].DisplayDevice
+		;mov pcx, SIZEOF BPDisplayDevice
+		;mul pcx
+		;lea pax, bpDisplayDevices[pax].ScreenSize
+		;invoke bpSetResolution, BPFormPtr, pax, FALSE
 		mov pcx, BPFormPtr
 	.ENDIF
+	
+	mov al, WindowMode
+	mov [pcx].WindowMode, al
 	
 	.IF (WindowMode == BP_WINDOW_MODE_WINDOWED)
 		invoke SetWindowLongA, [pcx].Handle, GWL_STYLE, [pcx].WindowStyle
@@ -1594,47 +1703,60 @@ bpSetWindowMode PROC EXPORT BPFormPtr:BPPtr, WindowMode:BPEnum
 		invoke SetWindowPos, [pcx].Handle, HWND_TOPMOST, [pcx].WindowPos.x, \
 		[pcx].WindowPos.y, [pcx].WindowSize.x, [pcx].WindowSize.y, \
 		SWP_NOZORDER or SWP_FRAMECHANGED or SWP_SHOWWINDOW
+		mov pcx, BPFormPtr
+		invoke ShowWindow, [pcx].Handle, SW_RESTORE
 	.ELSEIF (WindowMode == BP_WINDOW_MODE_MINIMIZED)
 		invoke ShowWindow, [pcx].Handle, SW_MINIMIZE
 	.ELSEIF (WindowMode == BP_WINDOW_MODE_MAXIMIZED)
 		invoke ShowWindow, [pcx].Handle, SW_MAXIMIZE
-	.ELSEIF (WindowMode == BP_WINDOW_MODE_FULLSCREEN)
+	.ELSEIF (WindowMode == BP_WINDOW_MODE_FULLSCREEN) || \
+	(WindowMode == BP_WINDOW_MODE_FULLSCREEN_EX)
 		.IF ([pcx].WindowMode != BP_WINDOW_MODE_MAXIMIZED)
-			invoke bpUpdateWindowPos, BPFormPtr
+			invoke bpUpdateWindowPos, BPFormPtr	; pcx still is BPFormPtr
+		.ENDIF
+		
+		.IF (WindowMode == BP_WINDOW_MODE_FULLSCREEN_EX)
+			invoke bpSetResolution, BPFormPtr, ADDR [pcx].ScreenSize, FALSE
+			mov pcx, BPFormPtr
 		.ENDIF
 	
+		m2m scrSize.x, [pcx].ScreenSize.x
+		m2m scrSize.y, [pcx].ScreenSize.y
+		; This here sends a WM_SIZE with weird additions
 		invoke SetWindowLongA, [pcx].Handle, GWL_STYLE, WS_POPUP
-		invoke GetSystemMetrics, SM_CXSCREEN
-		push eax
-		invoke GetSystemMetrics, SM_CYSCREEN
-		mov edx, eax
-		pop eax
+		
 		mov pcx, BPFormPtr
-		invoke SetWindowPos, [pcx].Handle, HWND_TOPMOST, 0, 0, eax, edx, \
-		SWP_NOZORDER or SWP_FRAMECHANGED or SWP_SHOWWINDOW
-	.ELSEIF (WindowMode == BP_WINDOW_MODE_FULLSCREEN_EX)
-		.IF ([pcx].WindowMode != BP_WINDOW_MODE_MAXIMIZED)
-			invoke bpUpdateWindowPos, BPFormPtr
+		mov pax, [pcx].DisplayDevice
+		mov pdx, SIZEOF BPDisplayDevice
+		mul pdx
+		
+		.IF (WindowMode == BP_WINDOW_MODE_FULLSCREEN)
+			m2m scrSize.x, bpDisplayDevices[pax].ScreenSize.x
+			m2m scrSize.y, bpDisplayDevices[pax].ScreenSize.y
 		.ENDIF
 		
-		mov pcx, BPFormPtr
-		invoke bpSetResolution, ADDR [pcx].ScreenSize, FALSE
-		
-		mov pcx, BPFormPtr
-		invoke SetWindowLongA, [pcx].Handle, GWL_STYLE, WS_POPUP
-		mov pcx, BPFormPtr
-		invoke SetWindowPos, [pcx].Handle, HWND_TOPMOST, 0, 0, \
-		[pcx].ScreenSize.x, [pcx].ScreenSize.y, \
-		SWP_NOZORDER or SWP_FRAMECHANGED or SWP_SHOWWINDOW
+		invoke SetWindowPos, [pcx].Handle, HWND_TOPMOST, \
+		bpDisplayDevices[pax].ScreenPos.x, bpDisplayDevices[pax].ScreenPos.y, \
+		scrSize.x, scrSize.y, SWP_NOZORDER or SWP_FRAMECHANGED or SWP_SHOWWINDOW
 	.ENDIF
 	
-	mov pcx, BPFormPtr
-	
-	mov al, WindowMode
-	mov [pcx].WindowMode, al
 	ASSUME pcx:nothing
 	ret
 bpSetWindowMode ENDP
+
+bpSetWindowPos PROC EXPORT BPFormPtr:BPPtr, X:SDWORD, Y:SDWORD
+	ASSUME pcx:PTR BPForm
+	mov pcx, BPFormPtr
+	m2m [pcx].WindowPos.x, X
+	m2m [pcx].WindowPos.y, Y
+	
+	mov pcx, BPFormPtr
+	invoke SetWindowPos, [pcx].Handle, HWND_TOPMOST, X, Y, 0, 0, \
+	SWP_NOSIZE or SWP_NOZORDER or SWP_SHOWWINDOW
+	
+	ASSUME pcx:nothing
+	ret
+bpSetWindowPos ENDP
 
 ;   Sets window size (unadjusted for client) of a form to specified value.
 ;   BPFormPtr:BPPtr - pointer to a form structure.
@@ -1655,6 +1777,57 @@ bpSetWindowSize PROC EXPORT BPFormPtr:BPPtr, X:DWORD, Y:DWORD
 	ret
 bpSetWindowSize ENDP
 
+;   Update bpDisplayDevices.
+bpUpdateDisplayDevices PROC EXPORT
+	LOCAL devMode:DEVMODEA, dispDev:DISPLAY_DEVICEA
+	
+	mov bpDisplayDeviceCount, 0
+	mov devMode.dmSize, SIZEOF DEVMODEA
+	mov dispDev.cb, SIZEOF DISPLAY_DEVICEA
+	
+	bpUpdateDisplayDevicesEnum:
+	invoke EnumDisplayDevicesA, NULL, bpDisplayDeviceCount, ADDR dispDev, \
+	EDD_GET_DEVICE_INTERFACE_NAME 
+	.IF (al)
+		.IF (dispDev.StateFlags & DISPLAY_DEVICE_ACTIVE)
+			invoke EnumDisplaySettingsA, ADDR dispDev.DeviceName, \
+			ENUM_REGISTRY_SETTINGS, ADDR devMode
+			
+			mov pax, bpDisplayDeviceCount
+			mov pcx, SIZEOF BPDisplayDevice
+			mul pcx
+			mov bpDisplayDevices[pax].Active, TRUE
+			
+			; Need a portrait-default monitor to test this, but should be ok
+			mov ecx, devMode.dmPelsWidth
+			.IF (ecx > devMode.dmPelsHeight)
+				mov bpDisplayDevices[pax].Orientation, BP_ORIENTATION_LANDSCAPE
+			.ELSE
+				mov bpDisplayDevices[pax].Orientation, BP_ORIENTATION_PORTRAIT
+			.ENDIF
+			.IF (devMode.dmDisplayOrientation == DMDO_180)
+				add bpDisplayDevices[pax].Orientation, 2
+			.ENDIF
+			
+			m2m bpDisplayDevices[pax].RefreshRate, devMode.dmDisplayFrequency
+			m2m bpDisplayDevices[pax].ScreenPos.x, devMode.dmPosition.x
+			m2m bpDisplayDevices[pax].ScreenPos.y, devMode.dmPosition.y
+			m2m bpDisplayDevices[pax].ScreenSize.x, devMode.dmPelsWidth
+			m2m bpDisplayDevices[pax].ScreenSize.y, devMode.dmPelsHeight
+			lea pcx, bpDisplayDevices[pax].RawName
+			invoke RtlMoveMemory, pcx, ADDR dispDev.DeviceName, 32
+		.ELSE
+			mov pax, bpDisplayDeviceCount
+			mov pcx, SIZEOF BPDisplayDevice
+			mul pcx
+			mov bpDisplayDevices[pax].Active, FALSE
+		.ENDIF
+		inc bpDisplayDeviceCount
+		jmp bpUpdateDisplayDevicesEnum
+	.ENDIF
+	ret
+bpUpdateDisplayDevices ENDP
+
 ;   Update bpJoysticks (and respective bpJoyInfoEx) to then capture their input.
 bpUpdateJoysticks PROC EXPORT
 	LOCAL joyInfo:JOYINFOFIX, joyCaps:JOYCAPSAFIX
@@ -1666,19 +1839,18 @@ bpUpdateJoysticks PROC EXPORT
 	.WHILE (pbx < bpJoyCount)
 		invoke joyGetPos, pbx, ADDR joyInfo
 		.IF (pax == JOYERR_NOERROR)
+			invoke joyGetDevCapsA, pbx, ADDR joyCaps, SIZEOF JOYCAPSAFIX
+			
 			mov pax, pbx
 			mov pcx, SIZEOF BPJoystick
 			mul pcx
 			mov bpJoysticks[pax].Active, TRUE
-			push pax
-			invoke joyGetDevCapsA, pbx, ADDR joyCaps, SIZEOF JOYCAPSAFIX
-			pop pax
 			m2m bpJoysticks[pax].VendorId, joyCaps.wMid
 			m2m bpJoysticks[pax].ProductId, joyCaps.wPid
 			m2m bpJoysticks[pax].NumAxes, joyCaps.wNumAxes
 			m2m bpJoysticks[pax].NumButtons, joyCaps.wNumButtons
-			invoke RtlMoveMemory, ADDR joyCaps.szPname, \
-			ADDR bpJoysticks[pax].RawName, MAXPNAMELEN
+			invoke RtlMoveMemory, ADDR bpJoysticks[pax].RawName, \
+			ADDR joyCaps.szPname, 32
 		.ELSE
 			mov pax, pbx
 			mov pcx, SIZEOF BPJoystick
@@ -1693,7 +1865,7 @@ bpUpdateJoysticks ENDP
 
 ;   Updates the BPForm window size and position parameters.
 ;   BPFormPtr:BPPtr - pointer to a form structure.
-bpUpdateWindowPos PROC EXPORT BPFormPtr: BPPtr
+bpUpdateWindowPos PROC EXPORT BPFormPtr:BPPtr
 	LOCAL winRect:RECT
 	ASSUME pcx:PTR BPForm
 	mov pcx, BPFormPtr
@@ -1783,6 +1955,7 @@ bpDefWndProc PROC EXPORT hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
 		CASE WM_DEVICECHANGE
 			.IF ([pcx].InputFlags & BP_IF_JOYSTICK)
 				.IF (wParam == 7)	; DBT_DEVNODES_CHANGED
+					call bpUpdateDisplayDevices
 					call bpUpdateJoysticks
 				.ENDIF
 			.ENDIF
@@ -1802,13 +1975,14 @@ bpDefWndProc PROC EXPORT hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
 			.ENDIF
 			
 		CASE WM_KILLFOCUS
-			mov [pcx].Focused, 0
-			;call ReleaseCapture
+			mov [pcx].Focused, FALSE
 		CASE WM_SETFOCUS
 			mov [pcx].Focused, TRUE
-			;invoke SetCapture, [pcx].Handle
 			
 		CASE WM_MOVE
+			.IF ([pcx].WindowMode == BP_WINDOW_MODE_WINDOWED)
+				invoke bpUpdateWindowPos, dwRefData
+			.ENDIF
 			mov eax, lParam
 			movsx eax, ax
 			mov [pcx].ScreenPos.x, eax
@@ -1890,7 +2064,10 @@ bpDefWndProc PROC EXPORT hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
 					CASE SIZE_MAXIMIZED
 						mov [pcx].WindowMode, BP_WINDOW_MODE_MAXIMIZED
 				ENDSW
+			.ELSEIF ([pcx].WindowMode == BP_WINDOW_MODE_WINDOWED)
+				invoke bpUpdateWindowPos, dwRefData
 			.ENDIF
+			
 			mov eax, lParam
 			movsx eax, ax
 			mov [pcx].ScreenSize.x, eax

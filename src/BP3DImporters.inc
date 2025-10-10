@@ -699,7 +699,8 @@ TextureType:BYTE, Buffer:BPPtr
 	ret
 bpTexImage2D ENDP
 
-IFDEF BP3D_MATHS_INC AND BP3DVECTORS_INC
+IFDEF BP3D_MATHS_INC
+IFDEF BP3DVECTORS_INC 
 bpProcessAnimPlayer PROC EXPORT BPAnimPlrPTR:BPPtr
 	LOCAL floatVal:REAL4, animSpd:REAL4, fact:REAL4
 	LOCAL frameAddr:BPPtr
@@ -947,6 +948,7 @@ bpProcessAnimPlayer PROC EXPORT BPAnimPlrPTR:BPPtr
 		pop pax	; pop label from stack
 		jmp pax
 bpProcessAnimPlayer ENDP
+ENDIF
 ENDIF
 
 ELSE

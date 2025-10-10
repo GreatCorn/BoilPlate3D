@@ -1366,6 +1366,31 @@ bpReadJoysticks PROC EXPORT BPFormPtr:BPPtr
 	ret
 bpReadJoysticks ENDP
 
+;   Converts screen (client area) position to the window position with proper 
+; border and caption adjustments.
+;   BPFormPtr:BPPtr - pointer to a form structure.
+;   PosPtr:BPPtr - pointer to the DWORD screen X and Y stored consecutively. 
+; The resulting window position will be returned into this pointer.
+bpScreenToWindowPos PROC EXPORT BPFormPtr:BPPtr, PosPtr:BPPtr
+	LOCAL rect:RECT
+	ASSUME pcx:PTR BPForm
+	
+	mov pax, PosPtr
+	m2m rect.left,		DWORD PTR [pax]
+	m2m rect.top,		DWORD PTR [pax+4]
+	mov rect.right,		0
+	mov rect.bottom,	0
+	
+	mov pcx, BPFormPtr
+	invoke AdjustWindowRect, ADDR rect, [pcx].WindowStyle, 0
+	mov pax, PosPtr
+	m2m DWORD PTR [pax], 	rect.left
+	m2m DWORD PTR [pax+4], 	rect.top
+	
+	ASSUME pcx:nothing
+	ret
+bpScreenToWindowPos ENDP
+
 ;   Converts screen (client area) size to the window size required to contain 
 ; that area, with proper border and caption adjustments.
 ;   BPFormPtr:BPPtr - pointer to a form structure.
@@ -1417,13 +1442,17 @@ bpSetDisplayDevice PROC EXPORT BPFormPtr:BPPtr, DisplayDevice:DWORD
 	mov al, [pcx].WindowMode
 	mov winMode, al
 	push pdx
-	invoke bpSetWindowMode, pcx, BP_WINDOW_MODE_WINDOWED
+	; This horrid random bullshit is neccessary to make it work with Xorg
+	invoke bpSetWindowMode, BPFormPtr, BP_WINDOW_MODE_WINDOWED
+	invoke bpSetWindowMode, BPFormPtr, BP_WINDOW_MODE_MINIMIZED
 	pop pdx
 	
 	mov pcx, BPFormPtr
 	invoke bpSetWindowPos, pcx, \
 	bpDisplayDevices[pdx].ScreenPos.x, bpDisplayDevices[pdx].ScreenPos.y
 	
+	mov pcx, BPFormPtr
+	invoke ShowWindow, [pcx].Handle, SW_RESTORE
 	invoke bpSetWindowMode, BPFormPtr, winMode
 	
 	ASSUME pcx:nothing
@@ -1532,11 +1561,13 @@ bpSetResolution PROC EXPORT BPFormPtr:BPPtr, ResPtr:BPPtr, CmpAspect:BPBool
 	mov namePtr, pax
 	ASSUME pcx:nothing
 	
+	
 	mov devMode.dmSize, SIZEOF DEVMODEA
 	invoke EnumDisplaySettingsA, namePtr, ENUM_CURRENT_SETTINGS, ADDR devMode
 	mov pax, ResPtr
 	m2m devMode.dmPelsWidth, DWORD PTR [pax]
 	m2m devMode.dmPelsHeight, DWORD PTR [pax+4]
+	
 	
 	invoke ChangeDisplaySettingsExA, namePtr, ADDR devMode, NULL, \
 	CDS_FULLSCREEN, NULL
@@ -1602,7 +1633,10 @@ bpSetResolution PROC EXPORT BPFormPtr:BPPtr, ResPtr:BPPtr, CmpAspect:BPBool
 		mov pax, ResPtr
 		m2m DWORD PTR [pax], best.dmPelsWidth
 		m2m DWORD PTR [pax+4], best.dmPelsHeight
-		invoke ChangeDisplaySettingsA, ADDR best, CDS_FULLSCREEN
+		invoke ChangeDisplaySettingsExA, namePtr, ADDR best, NULL, \
+		CDS_FULLSCREEN, NULL
+		
+		;print namePtr, 13, 10
 		mov pax, FALSE
 		ret
 	.ENDIF
@@ -1739,6 +1773,9 @@ bpSetWindowMode PROC EXPORT BPFormPtr:BPPtr, WindowMode:BPEnum
 		bpDisplayDevices[pax].ScreenPos.x, bpDisplayDevices[pax].ScreenPos.y, \
 		scrSize.x, scrSize.y, SWP_NOZORDER or SWP_FRAMECHANGED or SWP_SHOWWINDOW
 	.ENDIF
+	
+	mov pcx, BPFormPtr
+	invoke UpdateWindow, [pcx].Handle
 	
 	ASSUME pcx:nothing
 	ret

@@ -1,6 +1,17 @@
 IFNDEF BP3DIMPORTERS_INC
 BP3DIMPORTERS_INC EQU <1>
 
+IFNDEF BP_GLU
+BP_GLU EQU <1>
+IFDEF BP_WININC
+	include include\gl\glu.inc
+	includelib glu32.lib
+ELSEIFNDEF BP_CUSTOM_INCLUDES
+	include include\glu32.inc
+	includelib glu32.lib
+ENDIF
+ENDIF
+
 BP_CLAMP_INTERPOLATION	EQU <1>	; makes no sense to put it here
 
 ; ----- INTERFACE -----
@@ -51,18 +62,23 @@ BPAnimPlayer STRUCT
 	FrameType BPEnum BPFRAME_PRS
 	
 	; Case FrameType of BPFRAME_PRS
-	Position	BPPtr 0
-	Rotation	BPPtr 0
-	Scale 		BPPtr 0
+	;UNION
+		Position	BPPtr 0
+		Rotation	BPPtr 0
+		Scale 		BPPtr 0
+	;ENDS
 	
 	; Case FrameType of BPFRAME_MATRIX
-	Matrix		BPPtr 0
+	;UNION
+		Matrix		BPPtr 0
+	;ENDS
 	
 	; Case FrameType of BPFRAME_VERTEX
-	Mesh		BPPtr 0
-	MeshFrameSize BPPtr 0
-	;MeshInterpolate BPEnum BPMESH_INTERPOLATE_VERTEX ; the product of an insane man
-	MeshUseNormals BPBool TRUE
+	;UNION
+		Mesh		BPPtr 0
+		MeshFrameSize BPPtr 0
+		MeshUseNormals BPBool TRUE
+	;ENDS
 BPAnimPlayer ENDS
 
 
@@ -91,13 +107,10 @@ BPMESH_INTERPOLATE_TEXCOORD EQU 2
 BPMESH_INTERPOLATE_NORMAL EQU 4
 
 .CONST
-IFDEF BP_IMPORTERS_VERBOSE
-	bpErrImpMipmaps	DB "Building texture with gluBuild2DMipmaps failed", 0
-	bpErrImpTexImg	DB "Building texture with glTexImage2D failed", 0
-ENDIF
 
 .DATA
-AnimationFPS	REAL4 30.0
+bpAnimationFPS		REAL4 30.0
+bpTextureFiltering	BPBool FALSE
 
 ; ----- IMPLEMENTATION -----
 .CODE
@@ -106,18 +119,28 @@ bpTexImage2D PROTO :DWORD, :DWORD, :BYTE, :BPPtr
 
 bpCheckFileInvalid MACRO
 	.IF (pax == INVALID_HANDLE_VALUE)
-		print "File "
-		print FilePath
-		print " not found!", 13, 10
+		IFDEF print
+			print "File "
+			print FilePath
+			print " not found!", 13, 10
+		ENDIF
 		xor pax, pax
 		ret
 	.ENDIF
 ENDM
 
+s MACRO qStr:REQ
+	LOCAL strDb
+	.DATA
+		strDb DB qStr,0
+	.CODE
+	EXITM <ADDR strDb>
+ENDM
+
 ;   Load barebones animation track implementation - sequence of 28-byte frames: WRONGr 
 ; Time:DWORD, Position:Vector3, Rotation:Vector3.
 LoadBPA MACRO BPAnimPTR:REQ, FilePath:REQ
-	invoke bpLoadBPA, BPAnimPTR, expand_prefix(reparg(FilePath))
+	invoke bpLoadBPA, BPAnimPTR, s(FilePath)
 ENDM
 
 ;   Load a file storing interleaved sequences of UV (x, y), normal (x, y, z) and
@@ -125,7 +148,7 @@ ENDM
 ;   GLListPTR - pointer to an uninitialized OpenGL list.
 ;   FilePath - quoted file path string.
 LoadBPL MACRO GLListPTR:REQ, FilePath:REQ
-	invoke bpLoadBPL, GLListPTR, expand_prefix(reparg(FilePath))
+	invoke bpLoadBPL, GLListPTR, s(FilePath)
 ENDM
 
 ;   Load a file storing sequences of vertex (x, y, z), UV (x, y), and normal
@@ -134,7 +157,7 @@ ENDM
 ;   BPMeshPTR - pointer to a BPMesh structure.
 ;   FilePath - quoted file path string.
 LoadBPM MACRO BPMeshPTR:REQ, FilePath:REQ
-	invoke bpLoadBPM, BPMeshPTR, expand_prefix(reparg(FilePath))
+	invoke bpLoadBPM, BPMeshPTR, s(FilePath)
 ENDM
 
 ;   Load a Boil Plate texture - a raw image file with a BPT_HEADER-byte header
@@ -142,14 +165,14 @@ ENDM
 ;   TexturePTR - pointer to an uninitialized OpenGL texture.
 ;   FilePath - quoted file path string.
 LoadBPT MACRO TexturePTR:REQ, FilePath:REQ
-	invoke bpLoadBPT, TexturePTR, expand_prefix(reparg(FilePath))
+	invoke bpLoadBPT, TexturePTR, s(FilePath)
 ENDM
 
 ;   Load a file's entire contents and return the allocated buffer in pax. 
 ; Returns 0 if file is not found.
 ;   FilePath - quoted file path string.
 LoadFile MACRO FilePath:REQ
-	invoke bpLoadFile, expand_prefix(reparg(FilePath)), 0
+	invoke bpLoadFile, s(FilePath), 0
 ENDM
 
 ;   Unified vertex, texcoord and normal drawing procedure for BPMesh structure.
@@ -222,9 +245,8 @@ bpDrawNormals ENDP
 bpFreeBPA PROC EXPORT BPAnimPTR:BPPtr
 	ASSUME pcx:PTR BPAnimTrack
 	
-	call GetProcessHeap
 	mov pcx, BPAnimPTR
-	invoke bpFree, pax, 0, [pcx].Frames
+	invoke bpFree, bpDefHeap, 0, [pcx].Frames
 	
 	ASSUME pcx:nothing
 	ret
@@ -235,9 +257,9 @@ bpFreeBPM PROC EXPORT BPMeshPTR:BPPtr
 	ASSUME pbx:PTR BPMesh
 	mov pbx, BPMeshPTR
 	
-	invoke bpFree, rv(GetProcessHeap), 0, [pbx].Vertices
-	invoke bpFree, rv(GetProcessHeap), 0, [pbx].TexCoords
-	invoke bpFree, rv(GetProcessHeap), 0, [pbx].Normals
+	invoke bpFree, bpDefHeap, 0, [pbx].Vertices
+	invoke bpFree, bpDefHeap, 0, [pbx].TexCoords
+	invoke bpFree, bpDefHeap, 0, [pbx].Normals
 	ASSUME pbx:nothing
 	pop pbx
 	ret
@@ -256,14 +278,15 @@ bpLoadBPA PROC EXPORT BPAnimPTR:BPPtr, FilePath:BPPtr
 
     invoke GetFileSize, hFile, ADDR dwHighSize
     mov dwFileSize, eax
-	invoke bpMalloc, rv(GetProcessHeap), 0, dwFileSize
+	invoke bpMalloc, bpDefHeap, 0, dwFileSize
 	mov pcx, BPAnimPTR
 	mov [pcx].Frames, pax
-	m2m [pcx].ByteSize, dwFileSize
+	bpMPM [pcx].ByteSize, dwFileSize
 	
 	invoke ReadFile, hFile, [pcx].Frames, dwFileSize, ADDR dwBytesRead, 0
 		
 	IFDEF BP_IMPORTERS_VERBOSE
+	IFDEF print
 		push pax
 		print FilePath, 9
 		print "ReadFile value:", 32
@@ -278,11 +301,7 @@ bpLoadBPA PROC EXPORT BPAnimPTR:BPPtr, FilePath:BPPtr
 		print str$(dwFileSize), 13, 10
 		pop pax
 	ENDIF
-	.IF !(eax)
-		print "ERROR:"
-		invoke GetLastError
-		print str$(eax), 9
-	.ENDIF
+	ENDIF
 	
     invoke CloseHandle, hFile
 	
@@ -329,7 +348,7 @@ bpLoadBPL PROC EXPORT GLListPTR:BPPtr, FilePath:BPPtr
 	invoke glEnd
 	invoke glEndList
 	
-    invoke bpFree, rv(GetProcessHeap), 0, buffer
+    invoke bpFree, bpDefHeap, 0, buffer
 	
 	mov pax, GLListPTR
 	mov ecx, listIndex
@@ -367,21 +386,21 @@ bpLoadBPM PROC EXPORT BPMeshPTR:BPPtr, FilePath:BPPtr
 	mov ecx, 3				; Allocate the Vertices array
 	mul ecx
 	mov v3Size, eax
-	invoke bpMalloc, rv(GetProcessHeap), 0, v3Size
+	invoke bpMalloc, bpDefHeap, 0, v3Size
 	mov pcx, BPMeshPTR
 	mov [pcx].Vertices, pax
-	m2m [pcx].V3Size, v3Size
+	bpMPM [pcx].V3Size, v3Size
 	
 	mov eax, dwArraySize	; Allocate the TexCoords array
 	mov ecx, 2
 	mul ecx
 	mov v2Size, eax
-	invoke bpMalloc, rv(GetProcessHeap), 0, v2Size
+	invoke bpMalloc, bpDefHeap, 0, v2Size
 	mov pcx, BPMeshPTR
 	mov [pcx].TexCoords, pax
-	m2m [pcx].V2Size, v2Size
+	bpMPM [pcx].V2Size, v2Size
 	
-	invoke bpMalloc, rv(GetProcessHeap), 0, v3Size	; Allocate the Normals array
+	invoke bpMalloc, bpDefHeap, 0, v3Size	; Allocate the Normals array
 	mov pcx, BPMeshPTR
 	mov [pcx].Normals, pax
 	
@@ -393,6 +412,7 @@ bpLoadBPM PROC EXPORT BPMeshPTR:BPPtr, FilePath:BPPtr
 	
 	
 	IFDEF BP_IMPORTERS_VERBOSE
+	IFDEF print
 		pushad
 		print FilePath, 9
 		print "ReadFile value:", 32
@@ -404,6 +424,7 @@ bpLoadBPM PROC EXPORT BPMeshPTR:BPPtr, FilePath:BPPtr
 		print str$(dwBytesRead), 9
 		print "file size:", 32
 		print str$(dwFileSize), 13, 10
+	ENDIF
 	ENDIF
 	
     invoke CloseHandle, hFile
@@ -439,8 +460,13 @@ bpLoadBPT PROC EXPORT TexturePTR:BPPtr, FilePath:BPPtr
 	
 	invoke glGenTextures, 1, ADDR texIndex
 	invoke glBindTexture, GL_TEXTURE_2D, texIndex
-	invoke glTexParameteri, GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST
-	invoke glTexParameteri, GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST
+	.IF (bpTextureFiltering)
+		invoke glTexParameteri, GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR
+		invoke glTexParameteri, GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR
+	.ELSE
+		invoke glTexParameteri, GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST
+		invoke glTexParameteri, GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST
+	.ENDIF
 	
 	.IF (texType == BPT_RGB8)
 		mov texFormat, GL_RGB
@@ -470,7 +496,8 @@ bpLoadBPT PROC EXPORT TexturePTR:BPPtr, FilePath:BPPtr
 	; result in a lot of lag whenever there are many instances of a texture 
 	; being used. On other devices, however, gluBuild#DMipmaps may not recognize
 	; the extended texture color formats and will result in a GLU_INVALID_ENUM
-	; error. Best-case approach is to parse formats to RGB(A)8, but eh.
+	; error. On some older ones, neither gluBuild#DMipmaps or glTexImage2D will
+	; be able to use the formats, so manual parsing must be done instead.
 	IFDEF BP_FORCE_MANUAL_TEXTURE
 		invoke bpTexImage2D, texW, texH, texType, buffer
 	ELSE
@@ -487,15 +514,10 @@ bpLoadBPT PROC EXPORT TexturePTR:BPPtr, FilePath:BPPtr
 		invoke glGetError
 		pop pcx
 		.IF (eax || ecx)
-			IFDEF BP_IMPORTERS_VERBOSE
-				print ADDR bpErrImpMipmaps, 13, 10
-			ENDIF
 			invoke glTexImage2D, GL_TEXTURE_2D, 0, texFormat, texW, texH, 0, \
 			texFormat, texDataType, buffer
-			.IF (rv(glGetError))
-				IFDEF BP_IMPORTERS_VERBOSE
-					print ADDR bpErrImpTexImg, 13, 10
-				ENDIF
+			call glGetError
+			.IF (eax)
 				; Fine, I'll do it myself
 				invoke bpTexImage2D, texW, texH, texType, buffer
 			.ENDIF
@@ -503,7 +525,7 @@ bpLoadBPT PROC EXPORT TexturePTR:BPPtr, FilePath:BPPtr
 	ENDIF
 	
 	sub buffer, 9
-    invoke bpFree, rv(GetProcessHeap), 0, buffer
+    invoke bpFree, bpDefHeap, 0, buffer
 	
 	mov pax, TexturePTR
 	mov ecx, texIndex
@@ -527,12 +549,13 @@ bpLoadFile PROC EXPORT FilePath:BPPtr, FileSizePtr:BPPtr
 		mov pcx, FileSizePtr
 		mov DWORD PTR [pcx], eax
 	.ENDIF
-	invoke bpMalloc, rv(GetProcessHeap), 0, dwFileSize
+	invoke bpMalloc, bpDefHeap, 0, dwFileSize
 	mov buffer, pax
 
     invoke ReadFile, hFile, buffer, dwFileSize, ADDR dwBytesRead, 0
 	
 	IFDEF BP_IMPORTERS_VERBOSE
+	IFDEF print
 		pushad
 		print FilePath, 9
 		print "ReadFile value:", 32
@@ -544,6 +567,7 @@ bpLoadFile PROC EXPORT FilePath:BPPtr, FileSizePtr:BPPtr
 		print str$(dwBytesRead), 9
 		print "file size:", 32
 		print str$(dwFileSize), 13, 10
+	ENDIF
 	ENDIF
 	
     invoke CloseHandle, hFile
@@ -572,11 +596,8 @@ TextureType:BYTE, Buffer:BPPtr
 	.ENDIF
 	mov parsedSize, eax
 	
-	print str$(TextureWidth), 120
-	print str$(TextureHeight), 9
-	print str$(parsedSize), 13, 10
-	
-	mov parsed, rv(bpMalloc, bpDefHeap, 0, parsedSize)
+	invoke bpMalloc, bpDefHeap, 0, parsedSize
+	mov parsed, pax
 	push pbx
 	xor pbx, pbx
 	.WHILE (pbx < area)
@@ -727,7 +748,7 @@ bpProcessAnimPlayer PROC EXPORT BPAnimPlrPTR:BPPtr
 		ASSUME pdx:PTR BPAnimTrack
 		
 		fld [pcx].Speed
-		fmul AnimationFPS
+		fmul bpAnimationFPS
 		fmul deltaTime
 		fstp animSpd
 		
@@ -829,7 +850,7 @@ bpProcessAnimPlayer PROC EXPORT BPAnimPlrPTR:BPPtr
 					mov pcx, [pcx].Matrix
 					xor pax, pax
 					.WHILE (pax < SIZEOF REAL4 * 16)
-						m2m REAL4 PTR [pcx+pax], REAL4 PTR [pbx+pax]
+						bpMPM REAL4 PTR [pcx+pax], REAL4 PTR [pbx+pax]
 						add pax, 4
 					.ENDW
 				.ELSEIF ([pcx].Interpolation == BPINTERPOLATION_LINEAR)
@@ -849,7 +870,7 @@ bpProcessAnimPlayer PROC EXPORT BPAnimPlrPTR:BPPtr
 			add pbx, 4
 			
 			.IF ([pcx].Mesh)
-				m2m intStructSize, [pcx].MeshFrameSize	; The mesh itself
+				bpMPM intStructSize, [pcx].MeshFrameSize	; The mesh itself
 				sub intStructSize, 4
 				.IF ([pcx].MeshUseNormals)	; The frame data is twice as large
 					push pcx
@@ -869,7 +890,7 @@ bpProcessAnimPlayer PROC EXPORT BPAnimPlrPTR:BPPtr
 						mov BPPtr PTR [pax+4+SIZEOF BPPtr*2], pbx	; Normals
 					.ENDIF
 				.ELSEIF ([pcx].Interpolation == BPINTERPOLATION_LINEAR)
-					m2m intFrameSize, [pcx].MeshFrameSize	; Time + mesh
+					bpMPM intFrameSize, [pcx].MeshFrameSize	; Time + mesh
 					
 					mov timeOffset, 4
 					mov pcx, [pcx].Mesh

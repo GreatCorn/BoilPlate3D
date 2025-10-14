@@ -1,9 +1,24 @@
-GL_CLAMP_TO_EDGE EQU 33071
-GL_MULTISAMPLE EQU 32925
-GL_UNSIGNED_BYTE_3_3_2 EQU 32818
-GL_UNSIGNED_SHORT_5_6_5 EQU 33635
+IFNDEF BP_GLU
+BP_GLU EQU <1>
+IFDEF BP_WININC
+	include include\gl\glu.inc
+	includelib glu32.lib
+ELSEIFNDEF BP_CUSTOM_INCLUDES
+	include include\glu32.inc
+	includelib glu32.lib
+ENDIF
+ENDIF
+
+
+GL_CLAMP_TO_EDGE			EQU 33071
+GL_MULTISAMPLE				EQU 32925
+GL_SAMPLE_ALPHA_TO_COVERAGE	EQU 32926
+GL_UNSIGNED_BYTE_3_3_2		EQU 32818
+GL_UNSIGNED_SHORT_5_6_5		EQU 33635
 
 .CONST
+bpGLPlusR2D	REAL4 57.29578
+
 clBlack		REAL4	0.0,  0.0,  0.0,  1.0		; Some GL 0.0-1.0 colors
 clBlue		REAL4	0.0,  0.0,  1.0,  1.0
 clBrown		REAL4	0.5,  0.2,  0.0,  1.0
@@ -18,30 +33,48 @@ clWhite		REAL4	1.0,  1.0,  1.0,  1.0
 clHalf		REAL4	1.0,  1.0,  1.0,  0.5		; Alpha colors
 
 .DATA?
-bp3DDbl REAL8 ?
+IFNDEF BP_MULTITHREADED_CONTEXT
+	bp3DDbl REAL8 ?
+ENDIF
 
 .CODE
 
+;   Push Float as Double macro. Converts a float (single-precision/REAL4) value
+; to a double-precision floating point value (REAL8) and pushes onto the stack,
+; splitting it into two, if the stack is 32-bit.
 pfad MACRO Single:REQ
 	fld Single
 	fstp bp3DDbl
-	push DWORD PTR bp3DDbl+4
-	push DWORD PTR bp3DDbl
+	
+	IFDEF rax
+		push bp3DDbl
+	ELSE
+		push DWORD PTR bp3DDbl+4
+		push DWORD PTR bp3DDbl
+	ENDIF
 ENDM
+
+;   Push Integer as Double macro. Converts an integer (SDWORD) value to a 
+; double-precision floating point value (REAL8) and pushes onto the stack, 
+; splitting it into two, if the stack is 32-bit.
 piad MACRO Integer:REQ
 	fild Integer
 	fstp bp3DDbl
-	push DWORD PTR bp3DDbl+4
-	push DWORD PTR bp3DDbl
+	
+	IFDEF rax
+		push bp3DDbl
+	ELSE
+		push DWORD PTR bp3DDbl+4
+		push DWORD PTR bp3DDbl
+	ENDIF
 ENDM
 
 glClearDepthf PROC EXPORT depth:REAL4
-	IFDEF rax
-	
-	ELSE
-		pfad depth
-		call glClearDepth
+	IFDEF BP_MULTITHREADED_CONTEXT
+		LOCAL bp3DDbl:REAL8
 	ENDIF
+	pfad depth
+	call glClearDepth
 	ret
 glClearDepthf ENDP
 
@@ -67,17 +100,16 @@ glClearColor4fv ENDP
 
 glOrthof PROC EXPORT left:REAL4, right:REAL4, bottom:REAL4, top:REAL4, \
 nearVal:REAL4, farVal:REAL4
-	IFDEF rax
-	
-	ELSE
-		pfad farVal
-		pfad nearVal
-		pfad top
-		pfad bottom
-		pfad right
-		pfad left
-		call glOrtho
+	IFDEF BP_MULTITHREADED_CONTEXT
+		LOCAL bp3DDbl:REAL8
 	ENDIF
+	pfad farVal
+	pfad nearVal
+	pfad top
+	pfad bottom
+	pfad right
+	pfad left
+	call glOrtho
 	ret
 glOrthof ENDP
 
@@ -107,72 +139,83 @@ glTranslatei ENDP
 
 gluLookAtf PROC EXPORT eyeX:REAL4, eyeY:REAL4, eyeZ:REAL4, centerX:REAL4, \
 centerY:REAL4, centerZ:REAL4, upX:REAL4, upY:REAL4, upZ:REAL4
-	IFDEF rax
-		
-	ELSE
-		pfad upZ
-		pfad upY
-		pfad upX
-		pfad centerZ
-		pfad centerY
-		pfad centerX
-		pfad eyeZ
-		pfad eyeY
-		pfad eyeX
-		call gluLookAt
+	IFDEF BP_MULTITHREADED_CONTEXT
+		LOCAL bp3DDbl:REAL8
 	ENDIF
+	pfad upZ
+	pfad upY
+	pfad upX
+	pfad centerZ
+	pfad centerY
+	pfad centerX
+	pfad eyeZ
+	pfad eyeY
+	pfad eyeX
+	call gluLookAt
 gluLookAtf ENDP
 
-gluPerspectivef PROC EXPORT fovy:REAL4, aspect:REAL4, zNear:REAL4, zFar:REAL4
-	IFDEF rax
-	
-	ELSE
-		pfad zFar
-		pfad zNear
-		pfad aspect
-		pfad fovy
-		call gluPerspective
+gluLookAtfv PROC EXPORT eyePos:BPPtr, centerPos:BPPtr, upPos:BPPtr
+	IFDEF BP_MULTITHREADED_CONTEXT
+		LOCAL bp3DDbl:REAL8
 	ENDIF
+	mov pax, upPos
+	pfad REAL4 PTR [pax+8]
+	pfad REAL4 PTR [pax+4]
+	pfad REAL4 PTR [pax]
+	mov pax, centerPos
+	pfad REAL4 PTR [pax+8]
+	pfad REAL4 PTR [pax+4]
+	mov pax, eyePos
+	pfad REAL4 PTR [pax+8]
+	pfad REAL4 PTR [pax+4]
+	pfad REAL4 PTR [pax]
+	call gluLookAt
+gluLookAtfv ENDP
+
+gluPerspectivef PROC EXPORT fovy:REAL4, aspect:REAL4, zNear:REAL4, zFar:REAL4
+	IFDEF BP_MULTITHREADED_CONTEXT
+		LOCAL bp3DDbl:REAL8
+	ENDIF
+	pfad zFar
+	pfad zNear
+	pfad aspect
+	pfad fovy
+	call gluPerspective
 	ret
 gluPerspectivef ENDP
 
 gluOrtho2Df PROC EXPORT left:REAL4, right:REAL4, bottom:REAL4, top:REAL4
-	IFDEF rax
-	
-	ELSE
-		pfad top
-		pfad bottom
-		pfad right
-		pfad left
-		call gluOrtho2D
+	IFDEF BP_MULTITHREADED_CONTEXT
+		LOCAL bp3DDbl:REAL8
 	ENDIF
+	pfad top
+	pfad bottom
+	pfad right
+	pfad left
+	call gluOrtho2D
 	ret
 gluOrtho2Df ENDP
 
-gluOrtho2Dui PROC EXPORT left:DWORD, right:DWORD, bottom:DWORD, top:DWORD
-	IFDEF rax
-	
-	ELSE
-		piad top
-		piad bottom
-		piad right
-		piad left
-		call gluOrtho2D
+gluOrtho2Di PROC EXPORT left:SDWORD, right:SDWORD, bottom:SDWORD, top:SDWORD
+	IFDEF BP_MULTITHREADED_CONTEXT
+		LOCAL bp3DDbl:REAL8
 	ENDIF
+	piad top
+	piad bottom
+	piad right
+	piad left
+	call gluOrtho2D
 	ret
-gluOrtho2Dui ENDP
+gluOrtho2Di ENDP
 
-IFDEF BP3D_MATHS_INC
 glRotatefr PROC EXPORT angle:REAL4, x:REAL4, y:REAL4, z:REAL4
 	fld angle
-	fmul R2D
+	fmul bpGLPlusR2D
 	fstp angle
 	invoke glRotatef, angle, x, y, z
 	ret
 glRotatefr ENDP
-ENDIF
 
-IFDEF BP3DVECTORS_INC
 glRotate2fv PROC EXPORT v:BPPtr
 	mov pax, v
 	invoke glRotatef, REAL4 PTR [pax], 1065353216, 0, 0
@@ -180,6 +223,21 @@ glRotate2fv PROC EXPORT v:BPPtr
 	invoke glRotatef, REAL4 PTR [pax+4], 0, 1065353216, 0
 	ret
 glRotate2fv ENDP
+
+glRotate2fvr PROC EXPORT v:BPPtr
+	LOCAL _Val:REAL4
+	mov pax, v
+	fld REAL4 PTR [pax]
+	fmul bpGLPlusR2D
+	fstp _Val
+	invoke glRotatef, _Val, 1065353216, 0, 0
+	mov pax, v
+	fld REAL4 PTR [pax+4]
+	fmul bpGLPlusR2D
+	fstp _Val
+	invoke glRotatef, _Val, 0, 1065353216, 0
+	ret
+glRotate2fvr ENDP
 
 glRotate3fv PROC EXPORT v:BPPtr
 	mov pax, v
@@ -191,46 +249,28 @@ glRotate3fv PROC EXPORT v:BPPtr
 	ret
 glRotate3fv ENDP
 
-IFDEF BP3D_MATHS_INC
-glRotate2fvr PROC EXPORT v:BPPtr
-	LOCAL _Val:REAL4
-	mov pax, v
-	fld REAL4 PTR [pax]
-	fmul R2D
-	fstp _Val
-	invoke glRotatef, _Val, 1065353216, 0, 0
-	mov pax, v
-	fld REAL4 PTR [pax+4]
-	fmul R2D
-	fstp _Val
-	invoke glRotatef, _Val, 0, 1065353216, 0
-	ret
-glRotate2fvr ENDP
-
 glRotate3fvr PROC EXPORT v:BPPtr
 	LOCAL _Val:REAL4
 	mov pax, v
 	fld REAL4 PTR [pax+8]
-	fmul R2D
+	fmul bpGLPlusR2D
 	fstp _Val
 	invoke glRotatef, _Val, 0, 0, 1065353216
 	mov pax, v
 	fld REAL4 PTR [pax]
-	fmul R2D
+	fmul bpGLPlusR2D
 	fstp _Val
 	invoke glRotatef, _Val, 1065353216, 0, 0
 	mov pax, v
 	fld REAL4 PTR [pax+4]
-	fmul R2D
+	fmul bpGLPlusR2D
 	fstp _Val
 	invoke glRotatef, _Val, 0, 1065353216, 0
 	ret
 glRotate3fvr ENDP
-ENDIF
 
 glTranslate3fv PROC EXPORT v:BPPtr
 	mov pax, v
 	invoke glTranslatef, REAL4 PTR [pax], REAL4 PTR [pax+4], REAL4 PTR [pax+8]
 	ret
 glTranslate3fv ENDP
-ENDIF

@@ -1,25 +1,24 @@
-BPTEXTALIGN_LEFT EQU 0
-BPTEXTALIGN_CENTER EQU 1
-BPTEXTALIGN_RIGHT EQU 2
-BPTEXTALIGN_TOP EQU BPTEXTALIGN_LEFT
-BPTEXTALIGN_BOTTOM EQU BPTEXTALIGN_RIGHT
+BP_ALIGN_LEFT	EQU 0
+BP_ALIGN_CENTER	EQU 1
+BP_ALIGN_RIGHT	EQU 2
+BP_ALIGN_TOP	EQU BP_ALIGN_LEFT
+BP_ALIGN_BOTTOM	EQU BP_ALIGN_RIGHT
 
 .DATA
-bpCurrentFont BPPtr OFFSET bpDefaultFont
-bpDefaultFont DWORD 127 dup (0) 
+bpCurrentFont	BPPtr OFFSET bpDefaultFont
+bpDefaultFont	DWORD 127 dup (0) 
 
-bpFontWidth REAL4 8.0
-bpFontHeight REAL4 16.0
-bpFontSpacing REAL4 1.15
-bpFontNL BYTE 0
+bpFontWidth		REAL4 8.0
+bpFontHeight	REAL4 16.0
+bpFontSpacing	REAL4 1.15
+bpFontQuad		DWORD 0
+bpTextNL		BYTE 0
 
 .DATA?
-bpFontQuad DWORD ?
 
 .CODE
 
 IFDEF BP3DIMPORTERS_INC
-
 LoadFont MACRO DirPath:REQ, FontPTR
 	IFB <FontPTR>
 		invoke bpLoadFont, expand_prefix(reparg(DirPath)), OFFSET bpDefaultFont
@@ -27,16 +26,19 @@ LoadFont MACRO DirPath:REQ, FontPTR
 		invoke bpLoadFont, expand_prefix(reparg(DirPath)), FontPTR
 	ENDIF
 ENDM
+ENDIF
+
 RenderText MACRO TextString:REQ, X:=<0>, Y:=<0>, \
-HorizontalAlign:=<BPTEXTALIGN_LEFT>, VerticalAlign:=<BPTEXTALIGN_TOP>
+HorizontalAlign:=<BP_ALIGN_LEFT>, VerticalAlign:=<BP_ALIGN_TOP>
 	invoke bpRenderText, expand_prefix(reparg(TextString)), X, Y, \
 	HorizontalAlign, VerticalAlign
 ENDM
 
 
 bpBuildFontQuad PROC EXPORT
-	mov bpFontQuad, rv(glGenLists, 1)
-	invoke glNewList, bpFontQuad, GL_COMPILE_AND_EXECUTE
+	invoke glGenLists, 1
+	mov bpFontQuad, eax
+	invoke glNewList, bpFontQuad, GL_COMPILE
 	invoke glBegin, GL_QUADS
 		invoke glTexCoord2i, 0, 1
 		invoke glVertex2i, 0, 1
@@ -51,33 +53,31 @@ bpBuildFontQuad PROC EXPORT
 	ret
 bpBuildFontQuad ENDP
 
+IFDEF BP3DIMPORTERS_INC
 bpLoadFont PROC EXPORT DirPath:BPPtr, FontPTR:BPPtr
 	LOCAL dirLen:BPPtr, stringBuf:BPPtr
 	
-	print "Loading font from "
-	print DirPath, 13, 10
-	
-	invoke StrLen, DirPath
+	mov pax, DirPath
+	.WHILE (BYTE PTR [pax])
+		inc pax
+	.ENDW
+	sub pax, DirPath
 	mov dirLen, pax
-	add pax, 7
-	invoke bpMalloc, rv(GetProcessHeap), HEAP_ZERO_MEMORY, pax
+	
+	add pax, 8
+	invoke bpMalloc, bpDefHeap, HEAP_ZERO_MEMORY, pax
 	mov stringBuf, pax
 	
+	invoke RtlMoveMemory, stringBuf, DirPath, dirLen
+	
 	push pbx
-	xor pbx, pbx
-	mov pcx, DirPath
-	.WHILE (pbx <= dirLen)
-		mov dl, BYTE PTR [pcx+pbx]
-		mov BYTE PTR [pax+pbx], dl
-		inc pbx
-	.ENDW
+	mov pbx, dirLen
 	
-	mov BYTE PTR [pax+pbx+2], "."
-	mov BYTE PTR [pax+pbx+3], "b"
-	mov BYTE PTR [pax+pbx+4], "p"
-	mov BYTE PTR [pax+pbx+5], "t"
-	
-	print stringBuf, 13, 10
+	mov pax, stringBuf
+	mov BYTE PTR [pax+pbx+3], "."
+	mov BYTE PTR [pax+pbx+4], "b"
+	mov BYTE PTR [pax+pbx+5], "p"
+	mov BYTE PTR [pax+pbx+6], "t"
 	
 	xor pbx, pbx
 	.WHILE (pbx < 128)
@@ -118,50 +118,71 @@ bpLoadFont PROC EXPORT DirPath:BPPtr, FontPTR:BPPtr
 		mul pcx
 		add pax, FontPTR
 		invoke bpLoadBPT, pax, stringBuf
-		invoke glTexParameteri, GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR
-		invoke glTexParameteri, GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR
 		
 		inc pbx
 	.ENDW
 	pop pbx
 	
-	invoke bpFree, rv(GetProcessHeap), 0, stringBuf
+	invoke bpFree, bpDefHeap, 0, stringBuf
 	
 	.IF (!bpFontQuad)
 		call bpBuildFontQuad
 	.ENDIF
 	ret
 bpLoadFont ENDP
+ENDIF
 
-bpRenderText PROC EXPORT TextString:DWORD, X:SDWORD, Y:SDWORD, HorizontalAlign:BPEnum,\
-VerticalAlign:BPEnum
-	LOCAL strLength:BPPtr
+bpRenderText PROC EXPORT TextString:BPPtr, X:SDWORD, Y:SDWORD, \
+HorizontalAlign:BPEnum, VerticalAlign:BPEnum
+	LOCAL pos[2]:REAL4, strLength:BPPtr, lines:DWORD
 	
-	mov strLength, rv(StrLen, TextString)
-
+	mov strLength, 0
+	mov lines, 1
+	push pbx
+	mov pbx, TextString
+	.WHILE (BYTE PTR [pbx])
+		mov al, BYTE PTR [pbx]
+		.IF (al == bpTextNL)
+			inc lines
+		.ENDIF
+		.IF (lines == 1)
+			inc strLength
+		.ENDIF
+		inc pbx
+	.ENDW
+	pop pbx
+	
 	call glPushMatrix
 	fild X
-	fstp X
+	fstp pos[0]
 	fild Y
-	fstp Y
-	invoke glTranslatef, X, Y, 0
+	fstp pos[4]
+	invoke glTranslatef, pos[0], pos[4], 0
 	invoke glScalef, bpFontWidth, bpFontHeight, 1065353216	; 1.0
 	.IF (HorizontalAlign)
 		fild strLength
 		fmul bpFontSpacing
-		.IF (HorizontalAlign == BPTEXTALIGN_CENTER)
+		.IF (HorizontalAlign == BP_ALIGN_CENTER)
 			push 1056964608	; 0.5
 			fmul REAL4 PTR [psp]
 			pop pax
 		.ENDIF
 		fchs
-		fstp X
-		invoke glTranslatef, X, 0, 0
+		fstp pos[0]
+		invoke glTranslatef, pos[0], 0, 0
 	.ENDIF
-	.IF (VerticalAlign == BPTEXTALIGN_CENTER)
-		invoke glTranslatef, 0, 3204448256, 0	; -0.5
-	.ELSEIF (VerticalAlign == BPTEXTALIGN_BOTTOM)
-		invoke glTranslatef, 0, 3212836864, 0	; -1.0
+	.IF (VerticalAlign)
+		fild lines
+		.IF (VerticalAlign == BP_ALIGN_CENTER)
+			push 3204448256	; -0.5
+			fmul REAL4 PTR [esp]
+			add esp, 4
+			fstp pos[4]
+		.ELSEIF (VerticalAlign == BP_ALIGN_BOTTOM)
+			fchs
+			fstp pos[4]
+		.ENDIF
+		invoke glTranslatef, 0, pos[4], 0
 	.ENDIF
 	
 	call glPushMatrix
@@ -171,14 +192,6 @@ VerticalAlign:BPEnum
 		mov pcx, TextString
 		xor pax, pax
 		mov al, BYTE PTR [pcx+pbx]
-		
-		.IF (bpFontNL) && (al == bpFontNL)
-			call glPopMatrix
-			invoke glTranslatef, 0, bpFontSpacing, 0
-			call glPushMatrix
-			inc pbx
-			.CONTINUE
-		.ENDIF
 		
 		shl pax, 2
 		
@@ -194,6 +207,21 @@ VerticalAlign:BPEnum
 	pop pbx
 	call glPopMatrix
 	call glPopMatrix
+	
+	.IF (lines > 1)
+		fld bpFontHeight
+		fiadd Y
+		.IF (VerticalAlign)
+			fld pos[4]
+			fmul bpFontHeight
+			fadd
+		.ELSE
+		.ENDIF
+		fistp Y
+		mov pax, strLength
+		inc pax
+		add TextString, pax
+		invoke bpRenderText, TextString, X, Y, HorizontalAlign, 0
+	.ENDIF
 	ret
 bpRenderText ENDP
-ENDIF

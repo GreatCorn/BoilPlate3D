@@ -12,11 +12,24 @@ BP3D_MATHS_INC EQU <1>
 
 ; -----	INTERFACE -----
 
+; FPU codeword interrupt mask field flags
+FPU_EXCEPTION_PRECISION		EQU 0000000000100000b	; Precision mask
+FPU_EXCEPTION_UNDERFLOW		EQU 0000000000010000b	; Underflow mask
+FPU_EXCEPTION_OVERFLOW		EQU 0000000000001000b	; Overflow mask
+FPU_EXCEPTION_ZERO_DIVIDE	EQU 0000000000000100b	; Zero divide mask
+FPU_EXCEPTION_DENORMALIZED	EQU 0000000000000010b	; Denormalized operand mask
+FPU_EXCEPTION_INVALID		EQU 0000000000000001b	; Invalid operation mask
+
+; FPU codeword precision control field values
+FPU_PRECISION_REAL4		EQU 0000000000000000b	; REAL4 (24 bits)
+FPU_PRECISION_REAL8		EQU 0000001000000000b	; REAL8 (53 bits)
+FPU_PRECISION_REAL10	EQU 0000001100000000b	; REAL10 (64 bits) 
+
 ; FPU codeword rounding control field values
-FPU_TRUNC	EQU 0000110000000000b	; Truncate (toward 0)
-FPU_CEIL	EQU 0000100000000000b	; Round up (toward +infinity)
-FPU_FLOOR	EQU 0000010000000000b	; Round down (toward -infinity)
-FPU_ROUND	EQU 0000000000000000b	; Round to nearest (default)
+FPU_ROUND_TRUNC	EQU 0000110000000000b	; Truncate (toward 0)
+FPU_ROUND_CEIL	EQU 0000100000000000b	; Round up (toward +infinity)
+FPU_ROUND_FLOOR	EQU 0000010000000000b	; Round down (toward -infinity)
+FPU_ROUND_ROUND	EQU 0000000000000000b	; Round to nearest (default)
 
 ; IEEE 754 float constants
 FLT_INF		EQU 7F800000h	; +Infinity
@@ -24,21 +37,57 @@ FLT_INFN	EQU 0FF800000h	; -Infinity
 FLT_NEG		EQU 80000000h	; -0 (negative flag, useful for cmp without FPU)
 
 .CONST
-D2R		REAL4	0.0174532		; Degrees to radians multiplier
-R2D		REAL4	57.29578		; Radians to degrees multiplier
-R2I		REAL4	0.6366197		; Radians to integer
-PI		REAL4	3.141592653		; Pi	(180 deg)
-PIN		REAL4	-3.141592653	; -Pi	(-180 deg)
-PIHalf	REAL4	1.570796326		; Pi/2	(90 deg)
-PIHalfN	REAL4	-1.570796326	; -Pi/2	(-90 deg)
-PIQuarter	REAL4	0.765398163	; Pi/4	(45 deg)
-PIQuarterN	REAL4	-0.765398163; -Pi/4	(-45 deg)
-PI2		REAL4	6.283185307		; Pi*2	(360 deg)
-flInf	DWORD	FLT_INF			; Data field of FLT_INF
-flInfN	DWORD	FLT_INFN		; Data field of FLT_INFN
+D2R			REAL4	0.0174532		; Degrees to radians multiplier
+R2D			REAL4	57.29578		; Radians to degrees multiplier
+R2I			REAL4	0.6366197		; Radians to integer
+PI			REAL4	3.141592653		; Pi	(180 deg)
+PIN			REAL4	-3.141592653	; -Pi	(-180 deg)
+PIHalf		REAL4	1.570796326		; Pi/2	(90 deg)
+PIHalfN		REAL4	-1.570796326	; -Pi/2	(-90 deg)
+PIQuarter	REAL4	0.765398163		; Pi/4	(45 deg)
+PIQuarterN	REAL4	-0.765398163	; -Pi/4	(-45 deg)
+PI2			REAL4	6.283185307		; Pi*2	(360 deg)
+flInf		DWORD	FLT_INF			; Data field of FLT_INF
+flInfN		DWORD	FLT_INFN		; Data field of FLT_INFN
 
 .DATA?
 nRandSeed DWORD ?
+
+; ----- IMPLEMENTATION -----
+.CODE
+
+; Prototype procedure declarations (for potential forward usage in unit)
+fcmpP			PROTO
+flAcos			PROTO :REAL4
+flAsin			PROTO :REAL4
+flAngle			PROTO :REAL4
+flClamp			PROTO :REAL4, :REAL4, :REAL4
+flDistance		PROTO :REAL4, :REAL4
+flFrac			PROTO :REAL4
+flInRange		PROTO :REAL4, :REAL4, :REAL4
+flLerp			PROTO :REAL4, :REAL4, :REAL4
+flLerpAngle		PROTO :REAL4, :REAL4, :REAL4
+flMax			PROTO :REAL4, :REAL4
+flMin			PROTO :REAL4, :REAL4
+flMove			PROTO :REAL4, :REAL4, :REAL4
+flRand			PROTO
+flRandRange		PROTO :REAL4, :REAL4
+flRepeat		PROTO :REAL4, :REAL4
+flSign			PROTO :REAL4
+fpuGetException	PROTO
+fpuGetStackTop	PROTO
+fpuSetInterrupt	PROTO :WORD
+fpuSetPrecision	PROTO :WORD
+fpuSetRounding	PROTO :WORD
+nRand			PROTO :DWORD
+intAbs 			PROTO :SDWORD
+intClamp 		PROTO :SDWORD, :SDWORD, :SDWORD
+intDistance 	PROTO :SDWORD, :SDWORD
+intInRange	 	PROTO :SDWORD, :SDWORD, :SDWORD
+intRandRange 	PROTO :SDWORD, :SDWORD
+intSign 		PROTO :SDWORD
+nRand 			PROTO :DWORD
+nRandomize 		PROTO
 
 ;   Immediate REAL4 to reusable data field (format fl+int+n+frac(+N)).
 f MACRO val
@@ -74,7 +123,7 @@ f MACRO val
 ENDM
 
 ;   Float comparison macro. Carry? is cmp1<cmp2. Zero? is cmp==cmp2. If cmp2 is
-; empty, compare against 0.
+; empty, compare against 0. 'Inspired' by jj2007's macro.
 fcmp MACRO cmp1:REQ, cmp2
 	LOCAL oa
 	IF @Cpu GE 3423	; .686 has fcomip
@@ -106,15 +155,11 @@ fcmp MACRO cmp1:REQ, cmp2
 	ENDIF
 ENDM
 
-.CODE
-flSign PROTO :REAL4
-nRand PROTO :DWORD
-
 ;   Compares FPU st(0) with st(1). Is called if CPU is < 686 by fcmp. See fcmp
 ; for flag results.
 fcmpP PROC EXPORT
 	fcompp
-	fstsw ax
+	fnstsw ax
 	
 	push pax
 	and ax, 4000h
@@ -127,6 +172,8 @@ fcmpP PROC EXPORT
 	ret
 fcmpP ENDP
 
+;   Calculate arccosine of Val.
+;   Val:REAL4 - angle to find the arccosine of.
 flAcos PROC EXPORT Val:REAL4
 	fld Val
 	fld1
@@ -141,6 +188,8 @@ flAcos PROC EXPORT Val:REAL4
 	ret
 flAcos ENDP
 
+;   Calculate arcsine of Val.
+;   Val:REAL4 - angle to find the arcsine of.
 flAsin PROC EXPORT Val:REAL4
 	fld Val
 	fld1
@@ -213,8 +262,9 @@ flDistance ENDP
 flFrac PROC EXPORT Val:REAL4
 	LOCAL cw:WORD
 	
-	fstcw cw
-	or cw, FPU_FLOOR
+	fnstcw cw
+	push cw
+	or cw, FPU_ROUND_FLOOR
 	fldcw cw
 	
 	fld Val
@@ -223,7 +273,7 @@ flFrac PROC EXPORT Val:REAL4
 	fsub
 	fstp Val
 	
-	xor cw, FPU_FLOOR
+	pop cw
 	fldcw cw
 	
 	mov eax, Val
@@ -284,6 +334,32 @@ flLerpAngle PROC EXPORT A:REAL4, B:REAL4, T:REAL4
 	ret
 flLerpAngle ENDP
 
+;   Return the maximum of the A and B values in eax.
+;   A:REAL4 - first value.
+;   B:REAL4 - second value.
+flMax PROC EXPORT A:REAL4, B:REAL4
+	fcmp A, B
+	.IF (Carry?)
+		mov eax, B
+	.ELSE
+		mov eax, A
+	.ENDIF
+	ret
+flMax ENDP
+
+;   Return the minimum of the A and B values in eax.
+;   A:REAL4 - first value.
+;   B:REAL4 - second value.
+flMin PROC EXPORT A:REAL4, B:REAL4
+	fcmp A, B
+	.IF (Carry?)
+		mov eax, A
+	.ELSE
+		mov eax, B
+	.ENDIF
+	ret
+flMin ENDP
+
 ;   Move From toward To by T and return result in eax.
 ;   From:REAL4 - starting value.
 ;   To:REAL4 - destination value.
@@ -311,19 +387,6 @@ flMove PROC EXPORT From:REAL4, To:REAL4, T:REAL4
 	mov eax, Dist
 	ret
 flMove ENDP
-
-;   Return the minimum of the A and B values in eax.
-;   A:REAL4 - first value.
-;   B:REAL4 - second value.
-flMin PROC EXPORT A:REAL4, B:REAL4
-	fcmp A, B
-	.IF (Carry?)
-		mov eax, A
-	.ELSE
-		mov eax, B
-	.ENDIF
-	ret
-flMin ENDP
 
 ;   Returns a random REAL4 in range [0.0 - 1.0] (thousandth precision) in eax.
 flRand PROC EXPORT
@@ -362,8 +425,9 @@ flRandRange ENDP
 ;   Max:REAL4 - maximum range value.
 flRepeat PROC EXPORT Val:REAL4, Max:REAL4
 	LOCAL cw:WORD
-	fstcw cw
-	or cw, FPU_FLOOR
+	fnstcw cw
+	push cw
+	or cw, FPU_ROUND_FLOOR
 	fldcw cw
 	
 	fld Val
@@ -373,7 +437,7 @@ flRepeat PROC EXPORT Val:REAL4, Max:REAL4
 	fmul Max
 	fstp Val
 	
-	xor cw, FPU_FLOOR
+	pop cw
 	fldcw cw
 	
 	invoke flClamp, Val, 0, Max
@@ -408,6 +472,61 @@ flSign PROC EXPORT Val:REAL4
 	.ENDIF
 	ret
 flSign ENDP
+
+;   Return the FPU exceptions status (FPU_EXCEPTION_* flags bitmask) in eax.
+fpuGetException PROC EXPORT
+	xor eax, eax
+	fnstsw ax
+	and ax, 0000000000111111b
+	ret
+fpuGetException ENDP
+
+;   Return the FPU stack top register (st) index in eax.
+fpuGetStackTop PROC EXPORT
+	xor eax, eax
+	fnstsw ax
+	and ax, 0011100000000000b
+	shr ax, 11
+	ret
+fpuGetStackTop ENDP
+
+;   Set the FPU interrupt masks (from FPU_EXCEPTION_*).
+;   IM:WORD - bitmask of ORed FPU_EXCEPTION_* flags, gets inverted before FLDCW.
+fpuSetInterrupt PROC EXPORT IM:WORD
+	LOCAL cw:WORD
+	fnstcw cw
+	and cw, 1111111111100000b
+	mov ax, IM
+	not ax
+	and ax, 0000000000011111b
+	or cw, ax
+	fldcw cw
+	ret
+fpuSetInterrupt ENDP
+
+;   Set the FPU precision mode (from FPU_PRECISION_*).
+;   PC:WORD - the FPU precision mode.
+fpuSetPrecision PROC EXPORT PC:WORD
+	LOCAL cw:WORD
+	fnstcw cw
+	and cw, 1111110011111111b
+	mov ax, PC
+	or cw, ax
+	fldcw cw
+	ret
+fpuSetPrecision ENDP
+
+;   Set the FPU rounding mode (from FPU_ROUND_*).
+;   RC:WORD - the FPU rounding mode.
+fpuSetRounding PROC EXPORT RC:WORD
+	LOCAL cw:WORD
+	fnstcw cw
+	and cw, 1111001111111111b
+	mov ax, RC
+	or cw, ax
+	fldcw cw
+	ret
+fpuSetRounding ENDP
 
 ;   Return the absolute of Val in eax.
 ;   Val:SDWORD - value to get the absolute of.
@@ -527,7 +646,8 @@ nRand ENDP
 
 ;   Randomize the nRandSeed for nRand (set nRandSeed to current tick count).
 nRandomize PROC EXPORT
-	mov nRandSeed, rv(GetTickCount)
+	call GetTickCount
+	mov nRandSeed, eax
 	ret
 nRandomize ENDP
 

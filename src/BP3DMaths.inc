@@ -324,7 +324,7 @@ flLerpAngle PROC EXPORT A:REAL4, B:REAL4, T:REAL4
 	fsub A
 	fstp _Ang
 	invoke flAngle, _Ang
-	mov _Ang, pax
+	mov _Ang, eax
 	fld _Ang
 	fmul T
 	fadd A

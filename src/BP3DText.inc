@@ -21,18 +21,18 @@ bpTextNL		BYTE 0
 IFDEF BP3DIMPORTERS_INC
 LoadFont MACRO DirPath:REQ, FontPTR
 	IFB <FontPTR>
-		invoke bpLoadFont, expand_prefix(reparg(DirPath)), OFFSET bpDefaultFont
+		invoke bpLoadFont, s(DirPath), OFFSET bpDefaultFont
 	ELSE
-		invoke bpLoadFont, expand_prefix(reparg(DirPath)), FontPTR
+		invoke bpLoadFont, s(DirPath), FontPTR
 	ENDIF
 ENDM
-ENDIF
 
 RenderText MACRO TextString:REQ, X:=<0>, Y:=<0>, \
 HorizontalAlign:=<BP_ALIGN_LEFT>, VerticalAlign:=<BP_ALIGN_TOP>
-	invoke bpRenderText, expand_prefix(reparg(TextString)), X, Y, \
+	invoke bpRenderText, s(TextString), X, Y, \
 	HorizontalAlign, VerticalAlign
 ENDM
+ENDIF
 
 
 bpBuildFontQuad PROC EXPORT

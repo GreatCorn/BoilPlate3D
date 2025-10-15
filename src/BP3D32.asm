@@ -15,7 +15,7 @@
 ; compiler not being a direct inc path is for MASM32 macros loading support.
 IFDEF BP_WININC
 	; ----- WININC INCLUDES -----
-	;   Remember to generate the .lib files.
+	;   Remember to generate the .lib files with MAKELIBS.BAT and OPENGL32.BAT
 	_WIN32_WINNT EQU <0502h>
 	WINVER EQU <0502h>
 	include include\windows.inc
@@ -229,11 +229,6 @@ RAWINPUT ENDS
 ENDIF
 ENDIF
 
-;   Cross-architecture compatibility is possible but very shitty to pull off and
-; may quickly become an ungodly mess. I don't understand the people that prefer
-; 64-bit assembly over 32-bit. For now I couldn't get JWlink to recognize the
-; LIB files and ML64 is unusable with any kind of headers I threw at it. FFS
-; just use 32-bit as long as 32-bit binaries are supported on 64-bit systems.
 IFDEF rax	; Cross-architecture compatibility (WIP)
 	ECHO BP3D: Compiling in 64-bit mode.
 	BPPtr		TYPEDEF QWORD	; Pointer type
@@ -344,23 +339,23 @@ BPForm ENDS
 
 BPInJoyAxis STRUCT		; Joystick axis input structure
 	JoyNum		DWORD ?		; Joystick index
-	Axis		DWORD ?		; Axis index (BP_JOY_AXIS_*)
+	Axis		BPPtr ?		; Axis index (BP_JOY_AXIS_*)
 	Position	REAL4 ?		; Axis position [-1.0 - 1.0]
 BPInJoyAxis ENDS
 
 BPInJoyButton STRUCT	; Joystick button input structure
 	JoyNum		DWORD ?		; Joystick index
-	Button		DWORD ?		; Button index
+	Button		BPPtr ?		; Button index
 	Pressed		BPBool ?	; Is the button pressed or released
 BPInJoyButton ENDS
 
 BPInKey STRUCT			; Keyboard input structure
-	Keycode		DWORD ?		; Virtual-key code
+	Keycode		BPPtr ?		; Virtual-key code
 	Pressed		BPBool ?	; Is the key pressed or released
 BPInKey ENDS
 
 BPInMouseButton STRUCT	; Mouse button input structure
-	Button		DWORD ?		; Mouse button (uses virtual-key constants)
+	Button		BPPtr ?		; Mouse button (uses virtual-key constants)
 	Pressed		BPBool ?	; Is the button pressed or released
 BPInMouseButton ENDS
 
@@ -514,10 +509,10 @@ bpCreateForm			PROTO :BPPtr
 bpDestroyForm			PROTO :BPPtr
 bpError					PROTO :BPPtr, :BPPtr
 bpInitGLContext			PROTO :BPPtr
-bpInJoyAxis				PROTO :BPPtr, :DWORD, :DWORD, :REAL4
-bpInJoyButton			PROTO :BPPtr, :DWORD, :DWORD, :BOOL
+bpInJoyAxis				PROTO :BPPtr, :DWORD, :BPPtr, :REAL4
+bpInJoyButton			PROTO :BPPtr, :DWORD, :BPPtr, :BOOL
 bpInKey					PROTO :BPPtr, :WPARAM, :BOOL
-bpInMouseButton			PROTO :BPPtr, :DWORD, :BPBool
+bpInMouseButton			PROTO :BPPtr, :BPPtr, :BPBool
 bpInMouseMove 			PROTO :BPPtr
 bpInRaw					PROTO :BPPtr, :LPARAM
 bpReadJoysticks			PROTO :BPPtr
@@ -539,32 +534,9 @@ bpDefFixedProc			PROTO :LPVOID
 bpDefWndProc			PROTO :HWND, :UINT, :WPARAM, :LPARAM
 
 ;   Memory to memory through stack macro (like MASM m2m).
-bpMPM MACRO m1:REQ, m2:REQ
+bpMPM MACRO m1, m2
 	push m2
 	pop m1
-ENDM
-
-bpMEM32 MACRO m1:REQ, m2:REQ
-	mov eax, m2
-	mov m1, eax
-ENDM
-
-bpPop32 MACRO m1:REQ
-	IFDEF rax
-		pop rax
-		mov m1, eax
-	ELSE
-		pop m1
-	ENDIF
-ENDM
-
-bpPush32 MACRO m1:REQ
-	IFDEF rax
-		mov eax, m1
-		push rax
-	ELSE
-		push m1
-	ENDIF
 ENDM
 
 IFDEF BP_TRACEABLE_HEAP
@@ -776,18 +748,18 @@ bpCalculateDelta PROC EXPORT LastTick:BPPtr, DeltaPtr:BPPtr
 		
 		invoke QueryPerformanceCounter, ADDR tick
 		
-		mov pcx, LastTick
-		.IF (!DWORD PTR [pcx])
+		mov ecx, LastTick
+		.IF (!DWORD PTR [ecx])
 			jmp bpCalculateDeltaSkip
 		.ENDIF
 		
 		mov eax, tick.LowPart
-		sub eax, DWORD PTR [pcx]
+		sub eax, DWORD PTR [ecx]
 		mov diff, eax
 	ENDIF
 	
 	bpCalculateDeltaProcess:
-	ASSUME pcx:nothing
+	ASSUME ecx:nothing
 	
 	IFDEF BP_USE_LARGE_INTEGER
 		IFDEF rax
@@ -808,7 +780,7 @@ bpCalculateDelta PROC EXPORT LastTick:BPPtr, DeltaPtr:BPPtr
 		invoke RtlMoveMemory, LastTick, ADDR tick, SIZEOF LARGE_INTEGER
 	ELSE
 		mov pcx, LastTick
-		bpMEM32 DWORD PTR [pcx], tick.LowPart
+		bpMPM DWORD PTR [pcx], tick.LowPart
 	ENDIF
 	ret
 bpCalculateDelta ENDP
@@ -849,34 +821,21 @@ bpCreateForm PROC EXPORT BPFormPtr:BPPtr
 	invoke RegisterClassEx, ADDR wc
 	
 	mov pcx, BPFormPtr
-	push NULL
-	push wc.hInstance
-	push NULL
-	push NULL
-	bpPush32 [pcx].WindowSize.y
-	bpPush32 [pcx].WindowSize.x
-	bpPush32 [pcx].WindowPos.y
-	bpPush32 [pcx].WindowPos.x
-	bpPush32 [pcx].WindowStyle
-	push [pcx].Caption
-	push [pcx].ClassName
-	push 0
-	call CreateWindowEx
+	invoke CreateWindowEx, 0, [pcx].ClassName, [pcx].Caption, \
+	[pcx].WindowStyle, \
+	[pcx].WindowPos.x,[pcx].WindowPos.y, [pcx].WindowSize.x,[pcx].WindowSize.y,\
+	NULL, NULL, wc.hInstance, NULL
 	
 	mov pcx, BPFormPtr
 	mov [pcx].Handle, pax
-	IFDEF SetWindowLongPtrA
-		invoke SetWindowLongPtrA, pax, GWLP_USERDATA, BPFormPtr
-	ELSE
-		invoke SetWindowLongA, pax, GWLP_USERDATA, BPFormPtr
-	ENDIF
+	invoke SetWindowLong, pax, GWLP_USERDATA, BPFormPtr
 	
 	; Get some system info
 	IFDEF BP_USE_LARGE_INTEGER
 		invoke QueryPerformanceFrequency, ADDR bpPerfFreq
 	ELSE
 		invoke QueryPerformanceFrequency, ADDR testFreq
-		bpMEM32 bpPerfFreq, testFreq.LowPart
+		bpMPM bpPerfFreq, testFreq.LowPart
 	ENDIF
 	call bpUpdateDisplayDevices
 	
@@ -887,11 +846,11 @@ bpCreateForm PROC EXPORT BPFormPtr:BPPtr
 	mov eax, rect.left
 	mov [pcx].WindowPos.x, eax
 	sub rect.right, eax
-	bpMEM32 [pcx].WindowSize.x, rect.right
+	bpMPM [pcx].WindowSize.x, rect.right
 	mov eax, rect.top
 	mov [pcx].WindowPos.y, eax
 	sub rect.bottom, eax
-	bpMEM32 [pcx].WindowSize.y, rect.bottom
+	bpMPM [pcx].WindowSize.y, rect.bottom
 	
 	; Populate ScreenPos, ScreenSize
 	invoke GetClientRect, [pcx].Handle, ADDR rect
@@ -899,11 +858,11 @@ bpCreateForm PROC EXPORT BPFormPtr:BPPtr
 	mov eax, rect.left
 	mov [pcx].ScreenPos.x, eax
 	sub rect.right, eax
-	bpMEM32 [pcx].ScreenSize.x, rect.right
+	bpMPM [pcx].ScreenSize.x, rect.right
 	mov eax, rect.top
 	mov [pcx].ScreenPos.y, eax
 	sub rect.bottom, eax
-	bpMEM32 [pcx].ScreenSize.y, rect.bottom
+	bpMPM [pcx].ScreenSize.y, rect.bottom
 	
 	mov pcx, BPFormPtr
 	mov [pcx].DefaultFlag, TRUE
@@ -990,11 +949,10 @@ bpError PROC EXPORT StringPtr:BPPtr, CaptionPtr:BPPtr
 	sub pbx, StringPtr
 	invoke GetStdHandle, STD_ERROR_HANDLE
 	mov stdError, pax
-	invoke WriteConsole, stdError, StringPtr, ebx, NULL, NULL
+	invoke WriteConsole, stdError, StringPtr, pbx, NULL, NULL
 	pop pbx
 	.IF !(CaptionPtr)
-		lea pax, bpErrorCaption
-		mov CaptionPtr, pax
+		mov CaptionPtr, OFFSET bpErrorCaption
 	.ENDIF
 	invoke MessageBox, NULL, StringPtr, CaptionPtr, MB_OK
 	
@@ -1037,9 +995,7 @@ bpInitGLContext PROC EXPORT BPFormPtr:BPPtr
 	mov pcx, BPFormPtr
 	mov [pcx].GLContext, pax
 	
-	push [pcx].GLContext
-	push [pcx].DeviceContext
-	call wglMakeCurrent
+	invoke wglMakeCurrent, [pcx].DeviceContext, [pcx].GLContext
 	
 	invoke glEnable, GL_CULL_FACE
 	invoke glShadeModel, GL_SMOOTH
@@ -1060,9 +1016,9 @@ bpInitGLContext ENDP
 ;   Send joystick axis input to form OnInput event as a struct.
 ;   BPFormPtr:BPPtr - pointer to a form structure.
 ;   JoyNum:DWORD - number of the joystick sending input.
-;   Axis:DWORD - axis number (correspondent to BP_JOY_AXIS_* constants).
+;   Axis:BPPtr - axis number (correspondent to BP_JOY_AXIS_* constants).
 ;   Position:REAL4 - axis position.
-bpInJoyAxis PROC EXPORT BPFormPtr:BPPtr, JoyNum:DWORD, Axis:DWORD, \
+bpInJoyAxis PROC EXPORT BPFormPtr:BPPtr, JoyNum:DWORD, Axis:BPPtr, \
 Position:REAL4
 	LOCAL bpInStruct:BPInJoyAxis, pos:REAL4
 	
@@ -1089,13 +1045,13 @@ Position:REAL4
 				mov pos, 1065353216	; 1.0f
 			.ENDIF
 		.ELSE
-			bpMEM32 pos, Position
+			bpMPM pos, Position
 		.ENDIF
 	.ENDIF
 	
-	bpMEM32 bpInStruct.JoyNum, JoyNum
-	bpMEM32 bpInStruct.Axis, Axis
-	bpMEM32 bpInStruct.Position, pos
+	bpMPM bpInStruct.JoyNum, JoyNum
+	bpMPM bpInStruct.Axis, Axis
+	bpMPM bpInStruct.Position, pos
 	
 	ASSUME pcx:PTR BPForm
 	mov pcx, BPFormPtr
@@ -1114,12 +1070,12 @@ bpInJoyAxis ENDP
 ;   JoyNum:DWORD - number of the joystick sending input.
 ;   Button:BPPtr - number of the joystick button.
 ;   Pressed:BOOL - if the button has been pressed or released.
-bpInJoyButton PROC EXPORT BPFormPtr:BPPtr, JoyNum:DWORD, Button:DWORD, \
+bpInJoyButton PROC EXPORT BPFormPtr:BPPtr, JoyNum:DWORD, Button:BPPtr, \
 Pressed:BOOL
 	LOCAL bpInStruct:BPInJoyButton
 	
-	bpMEM32 bpInStruct.JoyNum, JoyNum
-	bpMEM32 bpInStruct.Button, Button
+	bpMPM bpInStruct.JoyNum, JoyNum
+	bpMPM bpInStruct.Button, Button
 	.IF (Pressed)
 		mov al, 1
 	.ELSE
@@ -1146,8 +1102,7 @@ bpInJoyButton ENDP
 bpInKey PROC EXPORT BPFormPtr:BPPtr, Keycode:WPARAM, Pressed:BOOL
 	LOCAL bpInStruct:BPInKey
 	
-	mov pax, Keycode
-	mov bpInStruct.Keycode, eax
+	bpMPM bpInStruct.Keycode, Keycode
 	mov eax, Pressed
 	mov bpInStruct.Pressed, al
 	
@@ -1168,10 +1123,10 @@ bpInKey ENDP
 ;   BPFormPtr:BPPtr - pointer to a form structure.
 ;   Button:BPPtr - virtual-key code of the mouse button.
 ;   Pressed:BOOL - if the button has been pressed or released.
-bpInMouseButton PROC EXPORT BPFormPtr:BPPtr, Button:DWORD, Pressed:BPBool
+bpInMouseButton PROC EXPORT BPFormPtr:BPPtr, Button:BPPtr, Pressed:BPBool
 	LOCAL bpInStruct:BPInMouseButton
 	
-	bpMEM32 bpInStruct.Button, Button
+	bpMPM bpInStruct.Button, Button
 	mov al, Pressed
 	mov bpInStruct.Pressed, al
 	
@@ -1192,8 +1147,8 @@ bpInMouseButton ENDP
 bpInMouseMove PROC BPFormPtr:BPPtr
 	LOCAL bpInStruct:BPInMouseMove
 	
-	bpMEM32 bpInStruct.Position.x, bpMouseClient[0]
-	bpMEM32 bpInStruct.Position.y, bpMouseClient[4]
+	bpMPM bpInStruct.Position.x, bpMouseClient[0]
+	bpMPM bpInStruct.Position.y, bpMouseClient[4]
 	
 	ASSUME pcx:PTR BPForm
 	mov pcx, BPFormPtr
@@ -1205,8 +1160,8 @@ bpInMouseMove PROC BPFormPtr:BPPtr
 	sub eax, bpMouseClientPrev[4]
 	mov bpInStruct.Relative.y, eax
 	
-	bpMEM32 bpMouseClientPrev[0], bpMouseClient[0]
-	bpMEM32 bpMouseClientPrev[4], bpMouseClient[4]
+	bpMPM bpMouseClientPrev[0], bpMouseClient[0]
+	bpMPM bpMouseClientPrev[4], bpMouseClient[4]
 	
 	lea pax, bpInStruct
 	push pax
@@ -1371,18 +1326,17 @@ bpReadJoysticks PROC EXPORT BPFormPtr:BPPtr
 	mov joyInfoEx.dwFlags, JOY_RETURNALL
 	
 	push pbx
-	xor ebx, ebx
-	.WHILE (ebx < bpJoyCount)
+	xor pbx, pbx
+	.WHILE (pbx < bpJoyCount)
 		mov pax, pbx
 		mov pcx, SIZEOF BPJoystick
 		mul pcx
 		
 		.IF (bpJoysticks[pax].Active)
-			mov ecx, bpJoysticks[pax].NumButtons
-			mov buttons, ecx
+			bpMPM buttons, bpJoysticks[pax].NumButtons
 			
-			invoke joyGetPosEx, ebx, ADDR joyInfoEx
-			mov joyNum, ebx
+			invoke joyGetPosEx, pbx, ADDR joyInfoEx
+			mov joyNum, pbx
 			
 			push pbx
 			mov pax, pbx
@@ -1399,8 +1353,8 @@ bpReadJoysticks PROC EXPORT BPFormPtr:BPPtr
 				
 			mov eax, joyInfoEx.dwButtons
 			.IF (bpJoyInfoEx[pbx].dwButtons != eax)
-				xor ecx, ecx
-				.WHILE (ecx < buttons)
+				xor pcx, pcx
+				.WHILE (pcx < buttons)
 					mov eax, 1
 					shl eax, cl
 					mov edx, bpJoyInfoEx[pbx].dwButtons
@@ -1409,18 +1363,14 @@ bpReadJoysticks PROC EXPORT BPFormPtr:BPPtr
 					.IF (eax != edx)
 						push pbx
 						push pcx
-						push pax
-						push pcx
-						bpPush32 joyNum
-						push BPFormPtr
-						call bpInJoyButton
+						invoke bpInJoyButton, BPFormPtr, joyNum, pcx, eax
 						pop pcx
 						pop pbx
 					.ENDIF
 					inc pcx
 				.ENDW
 				
-				bpMEM32 bpJoyInfoEx[pbx].dwButtons, joyInfoEx.dwButtons
+				bpMPM bpJoyInfoEx[pbx].dwButtons, joyInfoEx.dwButtons
 			.ENDIF
 			
 			mov eax, joyInfoEx.dwPOV
@@ -1462,8 +1412,9 @@ bpReadJoysticks PROC EXPORT BPFormPtr:BPPtr
 					.ENDIF
 				.ENDIF
 				
+				bpMPM bpJoyInfoEx[pbx].dwPOV, joyInfoEx.dwPOV
+				
 				mov joyInfoEx.dwReserved1, eax	; evil
-				bpMEM32 bpJoyInfoEx[pbx].dwPOV, joyInfoEx.dwPOV
 				
 				xor pcx, pcx
 				.WHILE (pcx < 4)
@@ -1477,18 +1428,14 @@ bpReadJoysticks PROC EXPORT BPFormPtr:BPPtr
 						add pdx, 32
 						push pbx
 						push pcx
-						push pax
-						push pdx
-						bpPush32 joyNum
-						push BPFormPtr
-						call bpInJoyButton
+						invoke bpInJoyButton, BPFormPtr, joyNum, pdx, eax
 						pop pcx
 						pop pbx
 					.ENDIF
 					inc pcx
 				.ENDW
 				
-				bpMEM32 bpJoyInfoEx[pbx].dwReserved1, joyInfoEx.dwReserved1
+				bpMPM bpJoyInfoEx[pbx].dwReserved1, joyInfoEx.dwReserved1
 			.ENDIF
 			
 			pop pbx
@@ -1509,22 +1456,17 @@ bpScreenToWindowPos PROC EXPORT BPFormPtr:BPPtr, PosPtr:BPPtr
 	LOCAL rect:RECT
 	ASSUME pcx:PTR BPForm
 	
-	mov pcx, PosPtr
-	bpMEM32 rect.left,	DWORD PTR [pcx]
-	bpMEM32 rect.top,	DWORD PTR [pcx+4]
+	mov pax, PosPtr
+	bpMPM rect.left,		DWORD PTR [pax]
+	bpMPM rect.top,		DWORD PTR [pax+4]
 	mov rect.right,		0
 	mov rect.bottom,	0
 	
 	mov pcx, BPFormPtr
-	push 0
-	bpPush32 [pcx].WindowStyle
-	lea pax, rect
-	push pax
-	call AdjustWindowRect
-	
-	mov pcx, PosPtr
-	bpMEM32 DWORD PTR [pax], 	rect.left
-	bpMEM32 DWORD PTR [pax+4], 	rect.top
+	invoke AdjustWindowRect, ADDR rect, [pcx].WindowStyle, 0
+	mov pax, PosPtr
+	bpMPM DWORD PTR [pax], 	rect.left
+	bpMPM DWORD PTR [pax+4], 	rect.top
 	
 	ASSUME pcx:nothing
 	ret
@@ -1539,19 +1481,14 @@ bpScreenToWindowSize PROC EXPORT BPFormPtr:BPPtr, SizePtr:BPPtr
 	LOCAL rect:RECT
 	ASSUME pcx:PTR BPForm
 	
-	mov pcx, SizePtr
+	mov pax, SizePtr
 	mov rect.top,		0
 	mov rect.left,		0
-	bpMEM32 rect.right,		DWORD PTR [pcx]
-	bpMEM32 rect.bottom,	DWORD PTR [pcx+4]
+	bpMPM rect.right,		DWORD PTR [pax]
+	bpMPM rect.bottom,	DWORD PTR [pax+4]
 	
 	mov pcx, BPFormPtr
-	push 0
-	bpPush32 [pcx].WindowStyle
-	lea pax, rect
-	push pax
-	call AdjustWindowRect
-	
+	invoke AdjustWindowRect, ADDR rect, [pcx].WindowStyle, 0
 	mov ecx, rect.right
 	sub ecx, rect.left
 	mov pax, SizePtr
@@ -1573,17 +1510,17 @@ bpSetDisplayDevice PROC EXPORT BPFormPtr:BPPtr, DisplayDevice:DWORD
 	
 	ASSUME pcx:PTR BPForm
 	
-	mov eax, DisplayDevice
-	mov edx, SIZEOF BPDisplayDevice
-	mul edx
-	mov edx, eax
+	mov pax, DisplayDevice
+	mov pdx, SIZEOF BPDisplayDevice
+	mul pdx
+	mov pdx, pax
 	
 	.IF !(bpDisplayDevices[pdx].Active)
 		ret
 	.ENDIF
 	
 	mov pcx, BPFormPtr
-	bpMEM32 [pcx].DisplayDevice, DisplayDevice
+	bpMPM [pcx].DisplayDevice, DisplayDevice
 	
 	
 	mov pcx, BPFormPtr
@@ -1596,10 +1533,8 @@ bpSetDisplayDevice PROC EXPORT BPFormPtr:BPPtr, DisplayDevice:DWORD
 	pop pdx
 	
 	mov pcx, BPFormPtr
-	bpPush32 bpDisplayDevices[pdx].ScreenPos.y
-	bpPush32 bpDisplayDevices[pdx].ScreenPos.x
-	push pcx
-	call bpSetWindowPos
+	invoke bpSetWindowPos, pcx, \
+	bpDisplayDevices[pdx].ScreenPos.x, bpDisplayDevices[pdx].ScreenPos.y
 	
 	mov pcx, BPFormPtr
 	invoke ShowWindow, [pcx].Handle, SW_RESTORE
@@ -1681,9 +1616,7 @@ bpSetMouseMode PROC EXPORT BPFormPtr:BPPtr, MouseMode:BPEnum
 		.ENDIF
 		.IF (MouseMode == BP_MOUSE_MODE_LOCKED)
 			mov pcx, BPFormPtr
-			bpPush32 [pcx].ScreenCnt.y
-			bpPush32 [pcx].ScreenCnt.x
-			call SetCursorPos
+			invoke SetCursorPos, [pcx].ScreenCnt.x, [pcx].ScreenCnt.y
 		.ENDIF
 	.ENDIF
 	ASSUME pcx:nothing
@@ -1710,9 +1643,9 @@ bpSetResolution PROC EXPORT BPFormPtr:BPPtr, ResPtr:BPPtr, CmpAspect:BPBool
 	
 	ASSUME pcx:PTR BPForm
 	mov pcx, BPFormPtr
-	mov eax, [pcx].DisplayDevice
-	mov ecx, SIZEOF BPDisplayDevice
-	mul ecx
+	mov pax, [pcx].DisplayDevice
+	mov pcx, SIZEOF BPDisplayDevice
+	mul pcx
 	lea pax, bpDisplayDevices[pax].RawName
 	mov namePtr, pax
 	ASSUME pcx:nothing
@@ -1724,9 +1657,9 @@ bpSetResolution PROC EXPORT BPFormPtr:BPPtr, ResPtr:BPPtr, CmpAspect:BPBool
 		mov devMode.dmSize, SIZEOF DEVMODEA
 	ENDIF
 	invoke EnumDisplaySettingsA, namePtr, ENUM_CURRENT_SETTINGS, ADDR devMode
-	mov pcx, ResPtr
-	bpMEM32 devMode.dmPelsWidth, DWORD PTR [pcx]
-	bpMEM32 devMode.dmPelsHeight, DWORD PTR [pcx+4]
+	mov pax, ResPtr
+	bpMPM devMode.dmPelsWidth, DWORD PTR [pax]
+	bpMPM devMode.dmPelsHeight, DWORD PTR [pax+4]
 	
 	
 	invoke ChangeDisplaySettingsExA, namePtr, ADDR devMode, NULL, \
@@ -1768,8 +1701,8 @@ bpSetResolution PROC EXPORT BPFormPtr:BPPtr, ResPtr:BPPtr, CmpAspect:BPBool
 				fsub aspect
 				fabs
 				push 1000
-				fimul DWORD PTR [psp] ;?
-				add psp, SIZEOF BPPtr
+				fimul BPPtr PTR [psp]
+				pop eax
 				fistp aspectDiff
 			
 				mov eax, aspectDiff
@@ -1796,9 +1729,9 @@ bpSetResolution PROC EXPORT BPFormPtr:BPPtr, ResPtr:BPPtr, CmpAspect:BPBool
 		.ENDIF
 		pop pbx
 		
-		mov pcx, ResPtr
-		bpMEM32 DWORD PTR [pcx], best.dmPelsWidth
-		bpMEM32 DWORD PTR [pcx+4], best.dmPelsHeight
+		mov pax, ResPtr
+		bpMPM DWORD PTR [pax], best.dmPelsWidth
+		bpMPM DWORD PTR [pax+4], best.dmPelsHeight
 		invoke ChangeDisplaySettingsExA, namePtr, ADDR best, NULL, \
 		CDS_FULLSCREEN, NULL
 		
@@ -1819,8 +1752,8 @@ bpSetScreenCenter PROC EXPORT BPFormPtr:BPPtr
 	LOCAL winW, winH:DWORD
 	ASSUME pcx:PTR BPForm
 	mov pcx, BPFormPtr
-	bpMEM32 winW, [pcx].ScreenSize.x
-	bpMEM32 winH, [pcx].ScreenSize.y
+	bpMPM winW, [pcx].ScreenSize.x
+	bpMPM winH, [pcx].ScreenSize.y
 	
 	mov ecx, 2
 	
@@ -1828,7 +1761,7 @@ bpSetScreenCenter PROC EXPORT BPFormPtr:BPPtr
 	xor edx, edx
 	div ecx
 	mov winW, eax
-	push pax
+	push eax
 	mov eax, winH
 	xor edx, edx
 	div ecx
@@ -1837,7 +1770,7 @@ bpSetScreenCenter PROC EXPORT BPFormPtr:BPPtr
 	mov pcx, BPFormPtr
 	add eax, [pcx].ScreenPos.y
 	mov [pcx].ScreenCnt.y, eax
-	pop pax
+	pop eax
 	add eax, [pcx].ScreenPos.x
 	mov [pcx].ScreenCnt.x, eax
 	
@@ -1882,10 +1815,7 @@ bpSetWindowMode PROC EXPORT BPFormPtr:BPPtr, WindowMode:BPEnum
 			mov pcx, BPFormPtr
 		.ENDIF
 	.ELSEIF ([pcx].WindowMode == BP_WINDOW_MODE_FULLSCREEN_EX)
-		bpPush32 [pcx].WindowStyle
-		push GWL_STYLE
-		push [pcx].Handle
-		call SetWindowLongA
+		invoke SetWindowLongA, [pcx].Handle, GWL_STYLE, [pcx].WindowStyle
 		invoke ChangeDisplaySettingsA, NULL, 0
 		; the proper? way to change back would be:
 		;mov pcx, BPFormPtr
@@ -1901,21 +1831,11 @@ bpSetWindowMode PROC EXPORT BPFormPtr:BPPtr, WindowMode:BPEnum
 	mov [pcx].WindowMode, al
 	
 	.IF (WindowMode == BP_WINDOW_MODE_WINDOWED)
-		bpPush32 [pcx].WindowStyle
-		push GWL_STYLE
-		push [pcx].Handle
-		call SetWindowLongA
-		
+		invoke SetWindowLongA, [pcx].Handle, GWL_STYLE, [pcx].WindowStyle
 		mov pcx, BPFormPtr
-		push SWP_NOZORDER or SWP_FRAMECHANGED or SWP_SHOWWINDOW
-		bpPush32 [pcx].WindowSize.y
-		bpPush32 [pcx].WindowSize.x
-		bpPush32 [pcx].WindowPos.y
-		bpPush32 [pcx].WindowPos.x
-		push HWND_TOPMOST
-		push [pcx].Handle
-		call SetWindowPos
-		
+		invoke SetWindowPos, [pcx].Handle, HWND_TOPMOST, [pcx].WindowPos.x, \
+		[pcx].WindowPos.y, [pcx].WindowSize.x, [pcx].WindowSize.y, \
+		SWP_NOZORDER or SWP_FRAMECHANGED or SWP_SHOWWINDOW
 		mov pcx, BPFormPtr
 		invoke ShowWindow, [pcx].Handle, SW_RESTORE
 	.ELSEIF (WindowMode == BP_WINDOW_MODE_MINIMIZED)
@@ -1929,29 +1849,23 @@ bpSetWindowMode PROC EXPORT BPFormPtr:BPPtr, WindowMode:BPEnum
 		.ENDIF
 		
 		.IF (WindowMode == BP_WINDOW_MODE_FULLSCREEN_EX)
-			push FALSE
-			lea pax, [pcx].ScreenSize
-			push pax
-			push BPFormPtr
-			call bpSetResolution
+			invoke bpSetResolution, BPFormPtr, ADDR [pcx].ScreenSize, FALSE
 			mov pcx, BPFormPtr
 		.ENDIF
 	
-		bpMEM32 scrSize.x, [pcx].ScreenSize.x
-		bpMEM32 scrSize.y, [pcx].ScreenSize.y
+		bpMPM scrSize.x, [pcx].ScreenSize.x
+		bpMPM scrSize.y, [pcx].ScreenSize.y
 		; This here sends a WM_SIZE with weird additions
 		invoke SetWindowLongA, [pcx].Handle, GWL_STYLE, WS_POPUP
 		
 		mov pcx, BPFormPtr
-		mov eax, [pcx].DisplayDevice
-		mov edx, SIZEOF BPDisplayDevice
-		mul edx
+		mov pax, [pcx].DisplayDevice
+		mov pdx, SIZEOF BPDisplayDevice
+		mul pdx
 		
 		.IF (WindowMode == BP_WINDOW_MODE_FULLSCREEN)
-			mov pcx, pax
-			bpMEM32 scrSize.x, bpDisplayDevices[pcx].ScreenSize.x
-			bpMEM32 scrSize.y, bpDisplayDevices[pcx].ScreenSize.y
-			mov pcx, BPFormPtr
+			bpMPM scrSize.x, bpDisplayDevices[pax].ScreenSize.x
+			bpMPM scrSize.y, bpDisplayDevices[pax].ScreenSize.y
 		.ENDIF
 		
 		invoke SetWindowPos, [pcx].Handle, HWND_TOPMOST, \
@@ -1973,8 +1887,8 @@ bpSetWindowMode ENDP
 bpSetWindowPos PROC EXPORT BPFormPtr:BPPtr, X:SDWORD, Y:SDWORD
 	ASSUME pcx:PTR BPForm
 	mov pcx, BPFormPtr
-	bpMEM32 [pcx].WindowPos.x, X
-	bpMEM32 [pcx].WindowPos.y, Y
+	bpMPM [pcx].WindowPos.x, X
+	bpMPM [pcx].WindowPos.y, Y
 	
 	mov pcx, BPFormPtr
 	invoke SetWindowPos, [pcx].Handle, HWND_TOPMOST, X, Y, 0, 0, \
@@ -1991,8 +1905,8 @@ bpSetWindowPos ENDP
 bpSetWindowSize PROC EXPORT BPFormPtr:BPPtr, X:DWORD, Y:DWORD
 	ASSUME pcx:PTR BPForm
 	mov pcx, BPFormPtr
-	bpMEM32 [pcx].WindowSize.x, X
-	bpMEM32 [pcx].WindowSize.y, Y
+	bpMPM [pcx].WindowSize.x, X
+	bpMPM [pcx].WindowSize.y, Y
 	
 	mov pcx, BPFormPtr
 	; Just don't call this asshole in OnCreate
@@ -2027,9 +1941,9 @@ bpUpdateDisplayDevices PROC EXPORT
 			invoke EnumDisplaySettingsA, ADDR dispDev.DeviceName, \
 			ENUM_REGISTRY_SETTINGS, ADDR devMode
 			
-			mov eax, bpDisplayDeviceCount
-			mov ecx, SIZEOF BPDisplayDevice
-			mul ecx
+			mov pax, bpDisplayDeviceCount
+			mov pcx, SIZEOF BPDisplayDevice
+			mul pcx
 			mov bpDisplayDevices[pax].Active, TRUE
 			
 			; Need a portrait-default monitor to test this, but should be ok
@@ -2046,18 +1960,17 @@ bpUpdateDisplayDevices PROC EXPORT
 				add bpDisplayDevices[pax].Orientation, 2
 			.ENDIF
 			
-			mov pcx, pax
-			bpMEM32 bpDisplayDevices[pcx].RefreshRate, devMode.dmDisplayFrequency
-			bpMEM32 bpDisplayDevices[pcx].ScreenPos.x, devMode.dmPosition.x
-			bpMEM32 bpDisplayDevices[pcx].ScreenPos.y, devMode.dmPosition.y
-			bpMEM32 bpDisplayDevices[pcx].ScreenSize.x, devMode.dmPelsWidth
-			bpMEM32 bpDisplayDevices[pcx].ScreenSize.y, devMode.dmPelsHeight
-			lea pcx, bpDisplayDevices[pcx].RawName
+			bpMPM bpDisplayDevices[pax].RefreshRate, devMode.dmDisplayFrequency
+			bpMPM bpDisplayDevices[pax].ScreenPos.x, devMode.dmPosition.x
+			bpMPM bpDisplayDevices[pax].ScreenPos.y, devMode.dmPosition.y
+			bpMPM bpDisplayDevices[pax].ScreenSize.x, devMode.dmPelsWidth
+			bpMPM bpDisplayDevices[pax].ScreenSize.y, devMode.dmPelsHeight
+			lea pcx, bpDisplayDevices[pax].RawName
 			invoke RtlMoveMemory, pcx, ADDR dispDev.DeviceName, 32
 		.ELSE
-			mov eax, bpDisplayDeviceCount
-			mov ecx, SIZEOF BPDisplayDevice
-			mul ecx
+			mov pax, bpDisplayDeviceCount
+			mov pcx, SIZEOF BPDisplayDevice
+			mul pcx
 			mov bpDisplayDevices[pax].Active, FALSE
 		.ENDIF
 		inc bpDisplayDeviceCount
@@ -2076,33 +1989,32 @@ bpUpdateJoysticks PROC EXPORT
 	IFDEF JOYCAPSAFIX
 		LOCAL joyCaps:JOYCAPSAFIX
 	ELSE
-		LOCAL joyCaps:JOYCAPS
+		LOCAL joyCaps:JOYCAPSA
 	ENDIF
 	
 	call joyGetNumDevs
 	mov bpJoyCount, eax
 	
 	push pbx
-	xor ebx, ebx
-	.WHILE (ebx < bpJoyCount)
-		invoke joyGetPos, ebx, ADDR joyInfo
+	xor pbx, pbx
+	.WHILE (pbx < bpJoyCount)
+		invoke joyGetPos, pbx, ADDR joyInfo
 		.IF (pax == JOYERR_NOERROR)
 			IFDEF JOYCAPSAFIX
-				invoke joyGetDevCaps, ebx, ADDR joyCaps, SIZEOF JOYCAPSAFIX
+				invoke joyGetDevCapsA, pbx, ADDR joyCaps, SIZEOF JOYCAPSAFIX
 			ELSE
-				invoke joyGetDevCaps, ebx, ADDR joyCaps, SIZEOF JOYCAPS
+				invoke joyGetDevCapsA, pbx, ADDR joyCaps, SIZEOF JOYCAPSA
 			ENDIF
 			
 			mov pax, pbx
 			mov pcx, SIZEOF BPJoystick
 			mul pcx
-			mov pcx, pax
-			mov bpJoysticks[pcx].Active, TRUE
-			bpMPM bpJoysticks[pcx].VendorId, joyCaps.wMid
-			bpMPM bpJoysticks[pcx].ProductId, joyCaps.wPid
-			bpMEM32 bpJoysticks[pcx].NumAxes, joyCaps.wNumAxes
-			bpMEM32 bpJoysticks[pcx].NumButtons, joyCaps.wNumButtons
-			invoke RtlMoveMemory, ADDR bpJoysticks[pcx].RawName, \
+			mov bpJoysticks[pax].Active, TRUE
+			bpMPM bpJoysticks[pax].VendorId, joyCaps.wMid
+			bpMPM bpJoysticks[pax].ProductId, joyCaps.wPid
+			bpMPM bpJoysticks[pax].NumAxes, joyCaps.wNumAxes
+			bpMPM bpJoysticks[pax].NumButtons, joyCaps.wNumButtons
+			invoke RtlMoveMemory, ADDR bpJoysticks[pax].RawName, \
 			ADDR joyCaps.szPname, 32
 		.ELSE
 			mov pax, pbx
@@ -2135,8 +2047,8 @@ bpUpdateWindowPos PROC EXPORT BPFormPtr:BPPtr
 	mov pcx, BPFormPtr
 	mov [pcx].WindowSize.y, eax
 	
-	bpMEM32 [pcx].WindowPos.x, winRect.left
-	bpMEM32 [pcx].WindowPos.y, winRect.top
+	bpMPM [pcx].WindowPos.x, winRect.left
+	bpMPM [pcx].WindowPos.y, winRect.top
 
 	ASSUME pcx:nothing
 	ret
@@ -2199,9 +2111,7 @@ bpDefWndProc PROC EXPORT hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
 			.ENDIF
 			mov pcx, dwRefData
 			.IF ([pcx].DeviceContext)
-				push [pcx].DeviceContext
-				push [pcx].Handle
-				call ReleaseDC
+				invoke ReleaseDC, [pcx].Handle, [pcx].DeviceContext
 			.ENDIF
 			invoke PostQuitMessage, 0
 		.ENDIF
@@ -2237,10 +2147,10 @@ bpDefWndProc PROC EXPORT hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
 		.IF ([pcx].WindowMode == BP_WINDOW_MODE_WINDOWED)
 			invoke bpUpdateWindowPos, dwRefData
 		.ENDIF
-		mov pax, lParam
+		mov eax, lParam
 		movsx eax, ax
 		mov [pcx].ScreenPos.x, eax
-		mov pax, lParam
+		mov eax, lParam
 		shr eax, 16
 		movsx eax, ax
 		mov [pcx].ScreenPos.y, eax
@@ -2256,8 +2166,8 @@ bpDefWndProc PROC EXPORT hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
 				mov eax, bpMouseScreenPrev[0]
 				mov edx, bpMouseScreenPrev[4]
 				.IF (bpMouseScreen[0] != eax) || (bpMouseScreen[4] != edx)
-					bpMEM32 bpMouseClient[0], bpMouseScreen[0]
-					bpMEM32 bpMouseClient[4], bpMouseScreen[4]
+					bpMPM bpMouseClient[0], bpMouseScreen[0]
+					bpMPM bpMouseClient[4], bpMouseScreen[4]
 					mov pcx, dwRefData
 					invoke ScreenToClient, [pcx].Handle, ADDR bpMouseClient
 					
@@ -2266,19 +2176,17 @@ bpDefWndProc PROC EXPORT hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
 				mov pcx, dwRefData
 			.ENDIF
 			.IF ([pcx].MouseMode == BP_MOUSE_MODE_LOCKED)
-				bpPush32 [pcx].ScreenCnt.y
-				bpPush32 [pcx].ScreenCnt.x
-				call SetCursorPos
+				invoke SetCursorPos, [pcx].ScreenCnt.x, [pcx].ScreenCnt.y
 				mov pcx, dwRefData
-				bpMEM32 bpMouseScreenPrev[0], [pcx].ScreenCnt.x
-				bpMEM32 bpMouseScreenPrev[4], [pcx].ScreenCnt.y
-				bpMEM32 bpMouseClientPrev[0], [pcx].ScreenCnt.x
-				bpMEM32 bpMouseClientPrev[4], [pcx].ScreenCnt.y
+				bpMPM bpMouseScreenPrev[0], [pcx].ScreenCnt.x
+				bpMPM bpMouseScreenPrev[4], [pcx].ScreenCnt.y
+				bpMPM bpMouseClientPrev[0], [pcx].ScreenCnt.x
+				bpMPM bpMouseClientPrev[4], [pcx].ScreenCnt.y
 				invoke ScreenToClient, [pcx].Handle, ADDR bpMouseClientPrev
 				mov pcx, dwRefData
 			.ELSE
-				bpMEM32 bpMouseScreenPrev[0], bpMouseScreen[0]
-				bpMEM32 bpMouseScreenPrev[4], bpMouseScreen[4]
+				bpMPM bpMouseScreenPrev[0], bpMouseScreen[0]
+				bpMPM bpMouseScreenPrev[4], bpMouseScreen[4]
 			.ENDIF
 		.ENDIF
 		
@@ -2323,10 +2231,10 @@ bpDefWndProc PROC EXPORT hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
 			invoke bpUpdateWindowPos, dwRefData	; will have dwRefData in pcx
 		.ENDIF
 		
-		mov pax, lParam
+		mov eax, lParam
 		movsx eax, ax
 		mov [pcx].ScreenSize.x, eax
-		mov pax, lParam
+		mov eax, lParam
 		shr eax, 16
 		movsx eax, ax
 		mov [pcx].ScreenSize.y, eax
@@ -2343,11 +2251,7 @@ bpDefWndProc PROC EXPORT hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
 		mov pcx, dwRefData
 		.IF ([pcx].DefaultFlag)
 			.IF ([pcx].GLContext)
-				bpPush32 [pcx].ScreenSize.y
-				bpPush32 [pcx].ScreenSize.x
-				push 0
-				push 0
-				call glViewport
+				invoke glViewport, 0, 0, [pcx].ScreenSize.x, [pcx].ScreenSize.y
 			.ENDIF
 			invoke bpSetScreenCenter, dwRefData
 		.ENDIF
@@ -2390,7 +2294,7 @@ bpDefWndProc PROC EXPORT hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
 		.ENDIF
 	.ELSEIF (uMsg == WM_XBUTTONDOWN)
 		.IF ([pcx].OnInput) && !([pcx].InputFlags & BP_IF_RAW_MOUSE)
-			mov pax, wParam
+			mov eax, wParam
 			shr eax, 16
 			movsx eax, ax
 			add eax, 4
@@ -2398,7 +2302,7 @@ bpDefWndProc PROC EXPORT hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
 		.ENDIF
 	.ELSEIF (uMsg == WM_XBUTTONUP)
 		.IF ([pcx].OnInput) && !([pcx].InputFlags & BP_IF_RAW_MOUSE)
-			mov pax, wParam
+			mov eax, wParam
 			shr eax, 16
 			movsx eax, ax
 			add eax, 4

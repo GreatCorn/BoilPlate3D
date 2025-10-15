@@ -178,22 +178,20 @@ ENDM
 ;   Unified vertex, texcoord and normal drawing procedure for BPMesh structure.
 ;   BPMeshPtr - pointer to a BPMesh structure.
 bpDrawMesh PROC EXPORT BPMeshPtr:BPPtr
-	ASSUME pcx:PTR BPMesh
+	push pbx
+	ASSUME pbx:PTR BPMesh
+	mov pbx, BPMeshPtr
 	
-	mov pcx, BPMeshPtr
-	invoke glVertexPointer, 3, GL_FLOAT, 0, [pcx].Vertices
-	mov pcx, BPMeshPtr
-	invoke glTexCoordPointer, 2, GL_FLOAT, 0, [pcx].TexCoords
-	mov pcx, BPMeshPtr
-	invoke glNormalPointer, GL_FLOAT, 0, [pcx].Normals
-	mov pcx, BPMeshPtr
-	invoke glDrawArrays, GL_TRIANGLES, 0, [pcx].Count
-	mov pcx, BPMeshPtr
+	invoke glVertexPointer, 3, GL_FLOAT, 0, [pbx].Vertices
+	invoke glTexCoordPointer, 2, GL_FLOAT, 0, [pbx].TexCoords
+	invoke glNormalPointer, GL_FLOAT, 0, [pbx].Normals
+	invoke glDrawArrays, GL_TRIANGLES, 0, [pbx].Count
 	
 	;push BPMeshPtr
 	;call bpDrawNormals
 	
-	ASSUME pcx:nothing
+	ASSUME pbx:nothing
+	pop pbx
 	ret
 bpDrawMesh ENDP
 
@@ -243,12 +241,12 @@ bpDrawNormals PROC EXPORT BPMeshPtr:BPPtr
 bpDrawNormals ENDP
 
 bpFreeBPA PROC EXPORT BPAnimPTR:BPPtr
-	ASSUME pcx:PTR BPAnimTrack
+	ASSUME pax:PTR BPAnimTrack
 	
-	mov pcx, BPAnimPTR
-	invoke bpFree, bpDefHeap, 0, [pcx].Frames
+	mov pax, BPAnimPTR
+	invoke bpFree, bpDefHeap, 0, [pax].Frames
 	
-	ASSUME pcx:nothing
+	ASSUME pax:nothing
 	ret
 bpFreeBPA ENDP
 
@@ -281,9 +279,15 @@ bpLoadBPA PROC EXPORT BPAnimPTR:BPPtr, FilePath:BPPtr
 	invoke bpMalloc, bpDefHeap, 0, dwFileSize
 	mov pcx, BPAnimPTR
 	mov [pcx].Frames, pax
-	bpMPM [pcx].ByteSize, dwFileSize
+	bpMEM32 [pcx].ByteSize, dwFileSize
 	
-	invoke ReadFile, hFile, [pcx].Frames, dwFileSize, ADDR dwBytesRead, 0
+	push 0
+	lea pax, dwBytesRead
+	push pax
+	bpPush32 dwFileSize
+	push [pcx].Frames
+	push hFile
+	call ReadFile
 		
 	IFDEF BP_IMPORTERS_VERBOSE
 	IFDEF print
@@ -326,21 +330,29 @@ bpLoadBPL PROC EXPORT GLListPTR:BPPtr, FilePath:BPPtr
 		mov pax, buffer	; Get the UV data
 		mov ecx, DWORD PTR [pax+pbx+4]
 		mov eax, DWORD PTR [pax+pbx]
-		invoke glTexCoord2f, eax, ecx
+		push pcx
+		push pax
+		call glTexCoord2f
 		add pbx, 8
 		
 		mov pax, buffer	; Get the normals
 		mov edx, DWORD PTR [pax+pbx+8]
 		mov ecx, DWORD PTR [pax+pbx+4]
 		mov eax, DWORD PTR [pax+pbx]
-		invoke glNormal3f, eax, ecx, edx
+		push pdx
+		push pcx
+		push pax
+		call glNormal3f
 		add pbx, 12
 		
 		mov pax, buffer	; Get the vertices
 		mov edx, DWORD PTR [pax+pbx+8]
 		mov ecx, DWORD PTR [pax+pbx+4]
 		mov eax, DWORD PTR [pax+pbx]
-		invoke glVertex3f, eax, ecx, edx
+		push pdx
+		push pcx
+		push pax
+		call glVertex3f
 		add pbx, 12
 	.ENDW
 	pop pbx
@@ -358,8 +370,10 @@ bpLoadBPL ENDP
 
 bpLoadBPM PROC EXPORT BPMeshPTR:BPPtr, FilePath:BPPtr
 	LOCAL hFile:HANDLE, dwHighSize:DWORD, dwFileSize:DWORD, dwArraySize:DWORD
-	LOCAL v3Size:DWORD, v2Size:DWORD, dwBytesRead:DWORD
-	ASSUME pcx:PTR BPMesh
+	LOCAL v3Size:BPPtr, v2Size:BPPtr, dwBytesRead:DWORD
+	push pbx
+	ASSUME pbx:PTR BPMesh
+	mov pbx, BPMeshPTR
 	
 	invoke CreateFile, FilePath, GENERIC_READ, FILE_SHARE_READ, 0, \
 	OPEN_EXISTING, FILE_FLAG_SEQUENTIAL_SCAN, 0
@@ -375,40 +389,54 @@ bpLoadBPM PROC EXPORT BPMeshPTR:BPPtr, FilePath:BPPtr
 	xor edx, edx
 	div ecx
 	mov dwArraySize, eax
-	push eax
+	push pax
 	
 	mov ecx, 4
 	div ecx
-	mov pcx, BPMeshPTR
-	mov [pcx].Count, eax
+	mov [pbx].Count, eax
 	
-	pop eax
+	pop pax
 	mov ecx, 3				; Allocate the Vertices array
 	mul ecx
-	mov v3Size, eax
+	mov v3Size, pax
 	invoke bpMalloc, bpDefHeap, 0, v3Size
-	mov pcx, BPMeshPTR
-	mov [pcx].Vertices, pax
-	bpMPM [pcx].V3Size, v3Size
+	mov [pbx].Vertices, pax
+	bpMPM [pbx].V3Size, v3Size
 	
 	mov eax, dwArraySize	; Allocate the TexCoords array
 	mov ecx, 2
 	mul ecx
-	mov v2Size, eax
+	mov v2Size, pax
 	invoke bpMalloc, bpDefHeap, 0, v2Size
-	mov pcx, BPMeshPTR
-	mov [pcx].TexCoords, pax
-	bpMPM [pcx].V2Size, v2Size
+	mov [pbx].TexCoords, pax
+	bpMPM [pbx].V2Size, v2Size
 	
 	invoke bpMalloc, bpDefHeap, 0, v3Size	; Allocate the Normals array
-	mov pcx, BPMeshPTR
-	mov [pcx].Normals, pax
+	mov [pbx].Normals, pax
 	
-    invoke ReadFile, hFile, [pcx].Vertices, v3Size, ADDR dwBytesRead, 0
-	mov pcx, BPMeshPTR
-    invoke ReadFile, hFile, [pcx].TexCoords, v2Size, ADDR dwBytesRead, 0
-	mov pcx, BPMeshPTR
-    invoke ReadFile, hFile, [pcx].Normals, v3Size, ADDR dwBytesRead, 0
+	push 0
+	lea pax, dwBytesRead
+	push pax
+	push v3Size
+	push [pbx].Vertices
+	push hFile
+    call ReadFile
+	
+	push 0
+	lea pax, dwBytesRead
+	push pax
+	push v2Size
+	push [pbx].TexCoords
+	push hFile
+    call ReadFile
+	
+	push 0
+	lea pax, dwBytesRead
+	push pax
+	push v3Size
+	push [pbx].Normals
+	push hFile
+    call ReadFile
 	
 	
 	IFDEF BP_IMPORTERS_VERBOSE
@@ -429,7 +457,8 @@ bpLoadBPM PROC EXPORT BPMeshPTR:BPPtr, FilePath:BPPtr
 	
     invoke CloseHandle, hFile
 	
-	ASSUME pcx:nothing
+	ASSUME pbx:nothing
+	pop pbx
 	ret
 bpLoadBPM ENDP
 
@@ -501,15 +530,22 @@ bpLoadBPT PROC EXPORT TexturePTR:BPPtr, FilePath:BPPtr
 	IFDEF BP_FORCE_MANUAL_TEXTURE
 		invoke bpTexImage2D, texW, texH, texType, buffer
 	ELSE
+		push buffer
+		bpPush32 texDataType
+		bpPush32 texFormat
+		bpPush32 texH
+		bpPush32 texW
 		.IF (texFormat == GL_RGBA)
-			mov pax, 4
+			mov eax, 4
 		.ELSEIF (texFormat == GL_LUMINANCE)
-			mov pax, 1
+			mov eax, 1
 		.ELSE
-			mov pax, 3
+			mov eax, 3
 		.ENDIF
-		invoke gluBuild2DMipmaps, GL_TEXTURE_2D, pax, texW, texH, texFormat, \
-		texDataType, buffer
+		push pax
+		push GL_TEXTURE_2D
+		call gluBuild2DMipmaps
+		
 		push pax
 		invoke glGetError
 		pop pcx
@@ -584,7 +620,7 @@ TextureType:BYTE, Buffer:BPPtr
 	mov eax, TextureWidth
 	mov ecx, TextureHeight
 	mul ecx
-	mov area, eax
+	mov area, pax
 	; RGBA
 	.IF (TextureType == BPT_RGB5A1) || (TextureType == BPT_RGBA4)
 		shl eax, 2	; * 4
@@ -594,7 +630,7 @@ TextureType:BYTE, Buffer:BPPtr
 		mul ecx
 		mov hasAlpha, FALSE
 	.ENDIF
-	mov parsedSize, eax
+	mov parsedSize, pax
 	
 	invoke bpMalloc, bpDefHeap, 0, parsedSize
 	mov parsed, pax
@@ -707,14 +743,20 @@ TextureType:BYTE, Buffer:BPPtr
 	pop pbx
 	
 	.IF (hasAlpha)
-		mov pax, GL_RGBA
-		mov pcx, 4
+		mov eax, GL_RGBA
+		mov edx, 4
 	.ELSE
-		mov pax, GL_RGB
-		mov pcx, 3
+		mov eax, GL_RGB
+		mov edx, 3
 	.ENDIF
-	invoke gluBuild2DMipmaps, GL_TEXTURE_2D, pcx, TextureWidth, TextureHeight, \
-	pax, GL_UNSIGNED_BYTE, parsed
+	push parsed
+	push GL_UNSIGNED_BYTE
+	push pax
+	bpPush32 TextureHeight
+	bpPush32 TextureWidth
+	push pdx
+	push GL_TEXTURE_2D
+	call gluBuild2DMipmaps
 	
 	invoke bpFree, bpDefHeap, 0, parsed
 	ret
@@ -742,7 +784,7 @@ bpProcessAnimPlayer PROC EXPORT BPAnimPlrPTR:BPPtr
 			mov edx, 12
 			mul edx
 			add eax, 4	; This is the time DWORD
-			mov [pcx].MeshFrameSize, eax	; BAD CODE BAD CODE BUT I FORGOT HOW TO MOVE EXTEND
+			mov [pcx].MeshFrameSize, pax
 		.ENDIF
 	
 		ASSUME pdx:PTR BPAnimTrack
@@ -777,7 +819,7 @@ bpProcessAnimPlayer PROC EXPORT BPAnimPlrPTR:BPPtr
 				add frameAddr, pax
 			.ENDIF
 			mov eax, [pdx].ByteSize
-			.IF ([pcx].FrameOffset >= eax)
+			.IF ([pcx].FrameOffset >= pax)
 				.IF ([pdx].Looping)
 					mov [pcx].FrameOffset, 0
 					mov [pcx].Timer, 0 ; Should be sub (-) framecount*FPS or smth
@@ -850,7 +892,12 @@ bpProcessAnimPlayer PROC EXPORT BPAnimPlrPTR:BPPtr
 					mov pcx, [pcx].Matrix
 					xor pax, pax
 					.WHILE (pax < SIZEOF REAL4 * 16)
-						bpMPM REAL4 PTR [pcx+pax], REAL4 PTR [pbx+pax]
+						IFDEF rax
+							fld REAL4 PTR [pbx+pax]
+							fstp REAL4 PTR [pcx+pax]
+						ELSE
+							bpMPM REAL4 PTR [pcx+pax], REAL4 PTR [pbx+pax]
+						ENDIF
 						add pax, 4
 					.ENDW
 				.ELSEIF ([pcx].Interpolation == BPINTERPOLATION_LINEAR)

@@ -51,39 +51,25 @@ VectorCopy MACRO Cnt:REQ, To:REQ, From:REQ
 	mov pax, From
 	PosOff = 0
 	REPEAT Cnt
-		push REAL4 PTR [pax+PosOff]
+		IFDEF rax
+			mov ecx, REAL4 PTR [pax+PosOff]
+			push rcx
+		ELSE
+			push REAL4 PTR [pax+PosOff]
+		ENDIF
 		PosOff = PosOff + SIZEOF REAL4
 	ENDM
 	mov pax, To
 	PosOff = (Cnt-1) * SIZEOF REAL4
 	REPEAT Cnt
-		pop REAL4 PTR [pax+PosOff]
+		IFDEF rax
+			pop rcx
+			mov REAL4 PTR [pax+PosOff], ecx
+		ELSE
+			pop REAL4 PTR [pax+PosOff]
+		ENDIF
 		PosOff = PosOff - SIZEOF REAL4
 	ENDM
-ENDM
-
-VectorClampLength MACRO Cnt:REQ, A:REQ, Len:REQ
-	LOCAL ALen
-	.DATA?
-	ALen REAL4 ?
-	
-	.CODE
-	VectorLength Cnt, A
-	mov ALen, eax
-	.IF (ALen)
-		fcmp Len, ALen
-		.IF (Carry?)
-			mov pax, A
-			PosOff = 0
-			REPEAT Cnt
-				fld REAL4 PTR [pax+PosOff]
-				fdiv ALen
-				fmul Len
-				fstp REAL4 PTR [pax+PosOff]
-				PosOff = PosOff + SIZEOF REAL4
-			ENDM
-		.ENDIF
-	.ENDIF
 ENDM
 
 VectorDistanceSqr MACRO Cnt:REQ, A:REQ, B:REQ
@@ -99,9 +85,10 @@ VectorDistanceSqr MACRO Cnt:REQ, A:REQ, B:REQ
 	REPEAT Cnt-1
 		fadd
 	ENDM
-	sub esp, 4
-	fstp REAL4 PTR [esp]
-	pop eax
+	sub psp, 4
+	fstp REAL4 PTR [psp]
+	mov eax, REAL4 PTR [psp]
+	add psp, 4
 ENDM
 
 VectorF MACRO Cnt:REQ, A:REQ
@@ -126,9 +113,10 @@ VectorLength MACRO Cnt:REQ, A:REQ
 		fadd
 	ENDM
 	fsqrt
-	sub esp, 4
-	fstp REAL4 PTR [esp]
-	pop eax
+	sub psp, 4
+	fstp REAL4 PTR [psp]
+	mov eax, REAL4 PTR [psp]
+	add psp, 4
 ENDM
 
 VectorLengthSqr MACRO Cnt:REQ, A:REQ
@@ -142,9 +130,10 @@ VectorLengthSqr MACRO Cnt:REQ, A:REQ
 	REPEAT Cnt-1
 		fadd
 	ENDM
-	sub esp, 4
-	fstp REAL4 PTR [esp]
-	pop eax
+	sub psp, 4
+	fstp REAL4 PTR [psp]
+	mov eax, REAL4 PTR [psp]
+	add psp, 4
 ENDM
 
 VectorLerp MACRO Cnt:REQ, A:REQ, B:REQ, T:REQ
@@ -195,20 +184,21 @@ VectorNormalize MACRO Cnt:REQ, A:REQ
 		ENDM
 		ret
 	.ENDIF
-	push eax
-	fld REAL4 PTR [esp]
+	add psp, 4
+	mov REAL4 PTR [psp], eax
+	fld REAL4 PTR [psp]
 	fsqrt
-	fstp REAL4 PTR [esp]
+	fstp REAL4 PTR [psp]
 	
 	mov pax, A
 	PosOff = 0
 	REPEAT Cnt
 		fld REAL4 PTR [pax+PosOff]
-		fdiv REAL4 PTR [esp]
+		fdiv REAL4 PTR [psp]
 		fstp REAL4 PTR [pax+PosOff]
 		PosOff = PosOff + SIZEOF REAL4
 	ENDM
-	add esp, 4
+	add psp, 4
 ENDM
 
 VectorRound MACRO Cnt:REQ, A:REQ
@@ -236,8 +226,13 @@ VectorSet MACRO A:REQ, Coords:VARARG
 	mov pax, A
 	PosOff = 0
 	FOR Coord, <Coords>
-		push Coord
-		pop REAL4 PTR [pax+PosOff]
+		IFDEF rax
+			mov ecx, Coord
+			mov REAL4 PTR [pax+PosOff], ecx
+		ELSE
+			push Coord
+			pop REAL4 PTR [pax+PosOff]
+		ENDIF
 		PosOff = PosOff + SIZEOF REAL4
 	ENDM
 ENDM
@@ -257,8 +252,8 @@ ENDM
 ; ----- Vector2 -----
 
 Vector2Pop MACRO A:REQ
-	pop A.X
-	pop A.Y
+	bpPop32 A.X
+	bpPop32 A.Y
 ENDM
 
 Vector2Print MACRO A:REQ
@@ -267,8 +262,8 @@ Vector2Print MACRO A:REQ
 ENDM
 
 Vector2Push MACRO A:REQ
-	push A.Y
-	push A.X
+	bpPush32 A.Y
+	bpPush32 A.X
 ENDM
 
 Vector2Add PROC EXPORT A:BPPtr, B:BPPtr
@@ -291,11 +286,6 @@ Vector2Angle PROC EXPORT From:BPPtr, To:BPPtr
 	mov eax, Val
 	ret
 Vector2Angle ENDP
-
-Vector2ClampLength PROC EXPORT A:BPPtr, Len:REAL4
-	VectorClampLength 2, A, Len
-	ret
-Vector2ClampLength ENDP
 
 Vector2Copy PROC EXPORT To:BPPtr, From:BPPtr
 	VectorCopy 2, To, From
@@ -385,9 +375,9 @@ Vector2Sub ENDP
 ; ----- Vector3 -----
 
 Vector3Pop MACRO A:REQ
-	pop A.X
-	pop A.Y
-	pop A.Z
+	bpPop32 A.X
+	bpPop32 A.Y
+	bpPop32 A.Z
 ENDM
 
 Vector3Print MACRO A:REQ
@@ -397,9 +387,9 @@ Vector3Print MACRO A:REQ
 ENDM
 
 Vector3Push MACRO A:REQ
-	push A.Z
-	push A.Y
-	push A.X
+	bpPush32 A.Z
+	bpPush32 A.Y
+	bpPush32 A.X
 ENDM
 
 Vector3Add PROC EXPORT A:BPPtr, B:BPPtr
@@ -435,11 +425,6 @@ Vector3Angle PROC EXPORT From:BPPtr, To:BPPtr, Angle:BPPtr
 	fstp REAL4 PTR [pdx]
 	ret
 Vector3Angle ENDP
-
-Vector3ClampLength PROC EXPORT A:BPPtr, Len:REAL4
-	VectorClampLength 3, A, Len
-	ret
-Vector3ClampLength ENDP
 
 Vector3Copy PROC EXPORT To:BPPtr, From:BPPtr
 	VectorCopy 3, To, From
@@ -601,14 +586,48 @@ Vector4Sub PROC EXPORT A:BPPtr, B:BPPtr
 Vector4Sub ENDP
 
 IFDEF BP3D_MATHS_INC
+VectorClampLength MACRO Cnt:REQ, A:REQ, Len:REQ
+	LOCAL ALen
+	.DATA?
+	ALen REAL4 ?
+	
+	.CODE
+	VectorLength Cnt, A
+	mov ALen, eax
+	.IF (ALen)
+		fcmp Len, ALen
+		.IF (Carry?)
+			mov pax, A
+			PosOff = 0
+			REPEAT Cnt
+				fld REAL4 PTR [pax+PosOff]
+				fdiv ALen
+				fmul Len
+				fstp REAL4 PTR [pax+PosOff]
+				PosOff = PosOff + SIZEOF REAL4
+			ENDM
+		.ENDIF
+	.ENDIF
+ENDM
+
+Vector2ClampLength PROC EXPORT A:BPPtr, Len:REAL4
+	VectorClampLength 2, A, Len
+	ret
+Vector2ClampLength ENDP
+
+Vector3ClampLength PROC EXPORT A:BPPtr, Len:REAL4
+	VectorClampLength 3, A, Len
+	ret
+Vector3ClampLength ENDP
+
 Vector3Euler PROC EXPORT A:BPPtr
 	mov pcx, A
 	invoke flAngle, REAL4 PTR [pcx]
-	mov REAL4 PTR [pcx], pax
+	mov REAL4 PTR [pcx], eax
 	invoke flAngle, REAL4 PTR [pcx+4]
-	mov REAL4 PTR [pcx+4], pax
+	mov REAL4 PTR [pcx+4], eax
 	invoke flAngle, REAL4 PTR [pcx+8]
-	mov REAL4 PTR [pcx+8], pax
+	mov REAL4 PTR [pcx+8], eax
 	ret
 Vector3Euler ENDP
 
@@ -621,7 +640,7 @@ Vector3LerpAngle PROC EXPORT A:BPPtr, B:BPPtr, T:REAL4	;REDO WITH flLerpAngle
 	fsub REAL4 PTR [pdx]
 	fstp _Ang
 	invoke flAngle, _Ang
-	mov _Ang, pax
+	mov _Ang, eax
 	fld _Ang
 	fmul T
 	fadd REAL4 PTR [pdx]
@@ -631,7 +650,7 @@ Vector3LerpAngle PROC EXPORT A:BPPtr, B:BPPtr, T:REAL4	;REDO WITH flLerpAngle
 	fsub REAL4 PTR [pdx+4]
 	fstp _Ang
 	invoke flAngle, _Ang
-	mov _Ang, pax
+	mov _Ang, eax
 	fld _Ang
 	fmul T
 	fadd REAL4 PTR [pdx+4]
@@ -641,7 +660,7 @@ Vector3LerpAngle PROC EXPORT A:BPPtr, B:BPPtr, T:REAL4	;REDO WITH flLerpAngle
 	fsub REAL4 PTR [pdx+8]
 	fstp _Ang
 	invoke flAngle, _Ang
-	mov _Ang, pax
+	mov _Ang, eax
 	fld _Ang
 	fmul T
 	fadd REAL4 PTR [pdx+8]

@@ -79,21 +79,21 @@ glClearDepthf PROC EXPORT depth:REAL4
 glClearDepthf ENDP
 
 glClearColor3fv PROC EXPORT v:BPPtr
-	mov pax, v
-	push clWhite[12]
-	push REAL4 PTR [pax+8]
-	push REAL4 PTR [pax+4]
-	push REAL4 PTR [pax]
+	mov pcx, v
+	bpPush32 clWhite[12]
+	bpPush32 REAL4 PTR [pcx+8]
+	bpPush32 REAL4 PTR [pcx+4]
+	bpPush32 REAL4 PTR [pcx]
 	call glClearColor
 	ret
 glClearColor3fv ENDP
 
 glClearColor4fv PROC EXPORT v:BPPtr
-	mov pax, v
-	push REAL4 PTR [pax+12]
-	push REAL4 PTR [pax+8]
-	push REAL4 PTR [pax+4]
-	push REAL4 PTR [pax]
+	mov pcx, v
+	bpPush32 REAL4 PTR [pcx+12]
+	bpPush32 REAL4 PTR [pcx+8]
+	bpPush32 REAL4 PTR [pcx+4]
+	bpPush32 REAL4 PTR [pcx]
 	call glClearColor
 	ret
 glClearColor4fv ENDP
@@ -154,17 +154,18 @@ centerY:REAL4, centerZ:REAL4, upX:REAL4, upY:REAL4, upZ:REAL4
 	call gluLookAt
 gluLookAtf ENDP
 
-gluLookAtfv PROC EXPORT eyePos:BPPtr, centerPos:BPPtr, upPos:BPPtr
+gluLookAtfv PROC EXPORT eyePos:BPPtr, centerPos:BPPtr, upVector:BPPtr
 	IFDEF BP_MULTITHREADED_CONTEXT
 		LOCAL bp3DDbl:REAL8
 	ENDIF
-	mov pax, upPos
+	mov pax, upVector
 	pfad REAL4 PTR [pax+8]
 	pfad REAL4 PTR [pax+4]
 	pfad REAL4 PTR [pax]
 	mov pax, centerPos
 	pfad REAL4 PTR [pax+8]
 	pfad REAL4 PTR [pax+4]
+	pfad REAL4 PTR [pax]
 	mov pax, eyePos
 	pfad REAL4 PTR [pax+8]
 	pfad REAL4 PTR [pax+4]

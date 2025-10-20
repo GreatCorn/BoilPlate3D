@@ -3,10 +3,13 @@ BP3D (short for BoilPlate3D) is a MASM-compatible (which means ideally targeting
 
 BP3D implements a somewhat OOP-like form API to easily and quickly create and manage windows, oriented for developing 3D graphics with OpenGL. It supports automatic keyboard and mouse (+raw) and joystick input configuration. The forms also provide multiple display device functionality. BP3D started with the OpenGL fixed-function pipeline for game development, but can be set up for use with other graphics APIs. BP3D can be included in a MASM-compatible project and used as-is (with direct access to data fields), or compiled into a dynamic library (to use with helper procedures).
 
+Various BP3D extensions (src\\*.inc) are present, but for now are generally not as well-structured or generalized. Some extensions are not optimized for 64-bit assembly. The neccessity of the existence of some is also debatable.
+
 BP3D aims to support various WinAPI clients, which include (tested):
-- Windows 2000 - 10
+- Windows 98SE, ME, 2000 (see BP_COMPATIBILITY_*)
+- Windows XP - 10
 - ReactOS
-- Wine (Linux, BSD)
+- Wine (Android - Winlator; Linux - Arch, Debian; BSD - FreeBSD)
 
 BP3D is built with future x64 support in mind, though it now remains untested and not fully configured for it. Right now, BP3D is tested for compileability with: MASM32, ASMC (32-bit), and UASM (32-bit; 64-bit compile only, can't link). POASM and TASM support might be considered in the future. BP3D supports MASM32 and WinInc Windows headers.
 

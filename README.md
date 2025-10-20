@@ -1,7 +1,7 @@
 # BoilPlate3D
 BP3D (short for BoilPlate3D) is a MASM-compatible (which means ideally targeting other MASM-compatible assemblers) scripted framework that aims to reduce the amount of redundant boilerplate code by providing a generalized but flexible Win32 form API.
 
-BP3D implements a somewhat OOP-like form API to easily and quickly create and manage windows, oriented for developing 3D graphics with OpenGL. It supports automatic keyboard and mouse (+raw) and joystick input configuration. The forms also provide multiple display device functionality. BP3D started with the OpenGL fixed-function pipeline for game development, but can be set up for use with other graphics APIs.
+BP3D implements a somewhat OOP-like form API to easily and quickly create and manage windows, oriented for developing 3D graphics with OpenGL. It supports automatic keyboard and mouse (+raw) and joystick input configuration. The forms also provide multiple display device functionality. BP3D started with the OpenGL fixed-function pipeline for game development, but can be set up for use with other graphics APIs. BP3D can be included in a MASM-compatible project and used as-is (with direct access to data fields), or compiled into a dynamic library (to use with helper procedures).
 
 BP3D aims to support various WinAPI clients, which include (tested):
 - Windows 2000 - 10

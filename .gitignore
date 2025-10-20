@@ -1,3 +1,4 @@
+*.err
 *.exe
 *.exp
 *.lib

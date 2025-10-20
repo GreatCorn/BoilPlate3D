@@ -13,7 +13,7 @@
 .model flat, stdcall
 option casemap:none
 
-BP_COMPATIBILITY_W2K	EQU <1>	; Exclude unsupported APIs
+BP_COMPATIBILITY_W9X	EQU <1>	; Exclude unsupported APIs
 
 ; BP3D includes
 include ..\..\src\BP3D.asm

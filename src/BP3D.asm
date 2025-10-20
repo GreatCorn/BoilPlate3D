@@ -48,7 +48,7 @@ ENDIF
 ;   Available compile-time symbolic macros to define (EQU) before including 
 ; BP3D, for additional or alternative functionality in the build:
 ;
-;   BP_COMPATIBILITY_W2K - Windows 2000, ME, 98SE compatibility mode. Removes
+;   BP_COMPATIBILITY_W9X - Windows 2000, ME, 98SE compatibility mode. Removes
 ; all calls of the APIs not supported on aforementioned systems to avoid DLL
 ; errors. Unsupported APIs that are used: RAWINPUT.
 ;
@@ -79,6 +79,9 @@ ENDIF
 ;
 ;   BP_WININC - use WinInc Windows headers instead of MASM32 headers and LIB 
 ; files.
+
+;   P.S. If you're aiming for Windows 98SE and ME compatibility, compiling with
+; UASM is not advised, as it somehow makes CRTDLL unable to start.
 
 IFDEF BP_TRACEABLE_HEAP		; Malloc macros for memory tracing
 	bpFree		TEXTEQU <bpFreeProc>
@@ -239,7 +242,10 @@ ENDIF
 ;   P.S. FFS just use 32-bit as long as 32-bit binaries are supported on 64-bit
 ; systems.
 ;   P.P.S. The x64 calling convention was made by the devil himself.
-IFDEF rax	; Cross-architecture compatibility (WIP)
+IFDEF rax
+	BP_64 EQU <1>
+ENDIF
+IFDEF BP_64	; Cross-architecture compatibility (WIP)
 	ECHO BP3D: Compiling in 64-bit mode.
 	ECHO BP3D: WARNING! BP3D is compileable, but untested on x64.
 	BPPtr		TYPEDEF QWORD	; Pointer type
@@ -1216,7 +1222,7 @@ bpInMouseMove ENDP
 ;   BPFormPtr:BPPtr - pointer to a form structure.
 ;   RawHandle:LPARAM - handle to RAWINPUT structure (lParam in WM_INPUT).
 bpInRaw PROC EXPORT BPFormPtr:BPPtr, RawHandle:LPARAM
-	IFNDEF BP_COMPATIBILITY_W2K
+	IFNDEF BP_COMPATIBILITY_W9X
 	LOCAL bpInMouseMoveStruct:BPInMouseMove
 	LOCAL dwSize:DWORD, lpb:BPPtr
 	
@@ -1595,7 +1601,7 @@ bpSetInputFlags PROC EXPORT BPFormPtr:BPPtr, InputFlags:BYTE
 	ASSUME pcx:PTR BPForm
 	mov pcx, BPFormPtr
 	
-	IFNDEF BP_COMPATIBILITY_W2K
+	IFNDEF BP_COMPATIBILITY_W9X
 	; Raw mouse flag (no lag raw mouse input, useless on Wine)
 	mov al, [pcx].InputFlags
 	and al, BP_IF_RAW_MOUSE

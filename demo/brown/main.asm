@@ -16,7 +16,7 @@ IFNDEF rax
 ENDIF
 option casemap:none
 
-BP_COMPATIBILITY_W2K	EQU <1>	; Exclude unsupported APIs
+BP_COMPATIBILITY_W9X	EQU <1>	; Exclude unsupported APIs
 
 ; BP3D includes
 include ..\..\src\BP3D.asm
@@ -80,7 +80,7 @@ RenderParticles PROC
 	
 	; Iterate through the particles, draw and process them
 	xor pbx, pbx
-	.WHILE (pbx < LENGTH ParticlePos)
+	.WHILE (pbx < PARTICLE_AMOUNT*SIZEOF Vector3)
 		
 		xor pdx, pdx
 		mov pax, pbx
@@ -144,7 +144,7 @@ RenderParticles ENDP
 ; Reset particles to their original position & alpha, apply random velocities.
 ResetParticles PROC
 	xor pbx, pbx
-	.WHILE (pbx < LENGTH ParticlePos)
+	.WHILE (pbx < PARTICLE_AMOUNT * SIZEOF Vector3)
 		mov ParticlePos[pbx], 0
 		bpMEM32 ParticlePos[pbx+4], f(1)
 		bpMEM32 ParticlePos[pbx+8], f(0.5)

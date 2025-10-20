@@ -34,6 +34,9 @@ for %%x in (%*) do (
 	) else (
 		if [%%~x] == [/b] (
 			set _build=1
+		) else if [%%~x] == [/c] (
+			set _asm=asmc
+			set _link=linkw
 		) else if [%%~x] == [/d] (
 			set _reading=drive
 		) else if [%%~x] == [/i] (
@@ -42,6 +45,9 @@ for %%x in (%*) do (
 		) else if [%%~x] == [/j] (
 			set _asm=uasm
 			set _link=jwlink
+		) else if [%%~x] == [/p] (
+			set _asm=poasm
+			set _link=polink
 		) else if [%%~x] == [/o] (
 			set _reading=appName
 		) else if [%%~x] == [/q] (
@@ -49,7 +55,13 @@ for %%x in (%*) do (
 		) else if [%%~x] == [/w] (
 			set _includes=wininc
 		) else if [%%~x] == [/64] (
-			set _asm=uasm64
+			if !_asm!==masm (
+				set _asm=ml64
+			) else if !_asm!==asmc (
+				set _asm=asmc64
+			) else if !_asm!==uasm (
+				set _asm=uasm64
+			)
 		) else if "%%~x"=="/help" (
 			set _argCnt=0
 			set _help=1
@@ -66,13 +78,15 @@ if %_argCnt%==0 (
 	if %_help%==0 (
 		echo For more info run MAKEIT /help
 	) else (
-		echo /64		Use ML64 to compile
+		echo /64		Use x64 compilation if available 
 		echo /b		Build only, without running
+		echo /c		Use ASMC and LINKW to compile and link
 		echo /d		Specify drive when using default include paths
 		echo /i [path]	Specify custom include path. Must have \lib
 		echo /help		Print this help message
 		echo /j		Use UASM and JWlink to compile and link
 		echo /o [name]	Set executable output name
+		echo /p		Use POASM and POLINK to compile and link
 		echo /q		Quiet compilation and linking
 		echo /w		Use WinInc includes instead of MASM
 	)
@@ -82,6 +96,8 @@ if %_argCnt%==0 (
 if [%_quiet%] EQU [1] (
 	if %_asm%==masm (
 		set _asmArgs=%_asmArgs% /nologo
+	) else if %_asm%==poasm (
+		set _asmArgs=%_asmArgs% /V0
 	) else (
 		set _asmArgs=%_asmArgs% -q
 	)
@@ -100,6 +116,8 @@ if %_includes%==masm (
 	
 	if %_asm%==masm (
 		set _asmArgs=%_asmArgs% /DBP_WININC=1
+	) else if %_asm%==poasm (
+		set _asmArgs=%_asmArgs% /DBP_WININC=1
 	) else (
 		set _asmArgs=%_asmArgs% -DBP_WININC=1
 	)
@@ -109,6 +127,12 @@ if %_asm%==uasm (
 	uasm32 -c -coff -I %_incpath% %_asmArgs% %_sourcefile%
 ) else if %_asm%==masm (
 	ml /c /coff /I %_incpath% %_asmArgs% %_sourcefile%
+) else if %_asm%==asmc (
+	asmc -c -coff -I%_incpath% %_asmArgs% %_sourcefile%
+) else if %_asm%==poasm (
+	poasm /I %_incpath% %_asmArgs% %_sourcefile%
+) else if %_asm%==asmc64 (
+	asmc64 -c -coff -I%_incpath% %_asmArgs% %_sourcefile%
 ) else if %_asm%==uasm64 (
 	uasm64 -c -win64 -I %_incpath% %_asmArgs% %_sourcefile%
 )
@@ -125,6 +149,14 @@ if %_link%==jwlink (
 	) else (
 		link /subsystem:WINDOWS %_project%.obj /libpath:%_libpath% /entry:start /out:"%_appName%"
 	)
+) else if %_link%==linkw (
+	if [%_quiet%] EQU [1] (
+		linkw /subsystem:WINDOWS /libpath:%_libpath% /entry:_start /out:"%_appName%" /nologo %_project%.obj 
+	) else (
+		linkw /subsystem:WINDOWS /libpath:%_libpath% /entry:_start /out:"%_appName%" %_project%.obj 
+	)
+) else if %_link%==polink (
+	polink /subsystem:WINDOWS %_project%.obj /libpath:%_libpath% /entry:start /out:"%_appName%"
 )
 if [%_build%] NEQ [1] (
 	%_project%.exe

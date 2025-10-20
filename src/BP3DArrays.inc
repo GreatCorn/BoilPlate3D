@@ -1,6 +1,15 @@
+;
+;   BP3DArrays.inc
+;   Version 0.7ac1
+;   BP3D array helper functions extension.
+;
+;   Copyright (c) 2025 Yevhenii Ionenko (aka GreatCorn). All rights reserved.
+;   Licensed under the terms of the MIT license (see ..\LICENSE.txt).
+;
+
 ; ----- INTERFACE -----
 .DATA
-IFDEF BP_ARRAY_ORDERED
+IFDEF BP_ARRAY_USE_ORDER
 ;   Array structuring orders, from most to least significant axes. Generally, 
 ; most significant axes get iterated first, inside their iterations are then the
 ; lesser-significance axes. X may represent rows, Y columns and Z depth.
@@ -42,14 +51,14 @@ bp1DArrayGetPosition ENDP
 ;   DataSize - SIZEOF the data type in the array.
 bp2DArrayGetOffset PROC EXPORT X:BPPtr, Y:BPPtr, ArrayWidth:BPPtr, \
 DataSize:BPPtr
-	IFDEF BP_ARRAY_ORDERED
+	IFDEF BP_ARRAY_USE_ORDER
 	.IF (bp2DArrayOrder[0] == 'Y')
 	ENDIF
 		mov pax, Y
 		mov pcx, ArrayWidth
 		mul pcx
 		add pax, X
-	IFDEF BP_ARRAY_ORDERED
+	IFDEF BP_ARRAY_USE_ORDER
 	.ELSE
 		mov pax, X
 		mov pcx, ArrayWidth
@@ -80,7 +89,7 @@ DataSize:BPPtr
 	mov pcx, ArrayWidth
 	;xor pdx, pdx	; ArrayOffset should be a multiple of DataSize
 	div pcx
-	IFDEF BP_ARRAY_ORDERED
+	IFDEF BP_ARRAY_USE_ORDER
 	.IF (bp2DArrayOrder[0] == 'X')
 		xchg
 	.ENDIF

@@ -12,6 +12,7 @@ BP3D_MATHS_INC EQU <1>
 
 ; -----	INTERFACE -----
 
+; ----- CONSTANTS -----
 ; FPU codeword interrupt mask field flags
 FPU_EXCEPTION_PRECISION		EQU 0000000000100000b	; Precision mask
 FPU_EXCEPTION_UNDERFLOW		EQU 0000000000010000b	; Underflow mask
@@ -50,6 +51,7 @@ PI2			REAL4	6.283185307		; Pi*2	(360 deg)
 flInf		DWORD	FLT_INF			; Data field of FLT_INF
 flInfN		DWORD	FLT_INFN		; Data field of FLT_INFN
 
+; ----- DATA FIELDS -----
 .DATA?
 nRandSeed DWORD ?
 

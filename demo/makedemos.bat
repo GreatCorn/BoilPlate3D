@@ -1,3 +1,11 @@
+@echo off
+
 cd brown
-call ..\makeit main.asm /o "BP3D Brown Demo.exe" /b /w /j
+echo Building .\brown
+call ..\makeit main.asm /o "BP3D Brown Demo.exe" /b /j /w
+cd ..
+
+cd softbody
+echo Building .\softbody
+call ..\makeit main.asm /o "BP3D Softbody Demo.exe" /b /j /w
 cd ..

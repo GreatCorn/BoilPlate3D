@@ -1,3 +1,15 @@
+;
+;   BP3DGLPlus.inc
+;   Version 0.5ac1
+;   BP3D logical helper function additions to the OpenGL & GLU APIs extension.
+;
+;   Copyright (c) 2025 Yevhenii Ionenko (aka GreatCorn). All rights reserved.
+;   Licensed under the terms of the MIT license (see ..\LICENSE.txt).
+;
+
+IFNDEF BP3D_GLPLUS_INC
+BP3D_GLPLUS_INC EQU <1>
+
 IFNDEF BP_GLU
 BP_GLU EQU <1>
 IFDEF BP_WININC
@@ -9,6 +21,9 @@ ELSEIFNDEF BP_CUSTOM_INCLUDES
 ENDIF
 ENDIF
 
+IFDEF rax
+	ECHO BP3D: WARNING! BP3DGLPlus.inc now only supports stdcall and is untested on x64.
+ENDIF
 
 GL_CLAMP_TO_EDGE			EQU 33071
 GL_MULTISAMPLE				EQU 32925
@@ -275,3 +290,6 @@ glTranslate3fv PROC EXPORT v:BPPtr
 	invoke glTranslatef, REAL4 PTR [pax], REAL4 PTR [pax+4], REAL4 PTR [pax+8]
 	ret
 glTranslate3fv ENDP
+ELSE
+	ECHO BP3D: Duplicate include file BP3DGLPlus.inc
+ENDIF

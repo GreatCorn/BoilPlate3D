@@ -1,5 +1,14 @@
-IFNDEF BP3DVECTORS_INC
-BP3DVECTORS_INC equ <1>
+;
+;   BP3DVectors.inc
+;   Version 0.7ac1
+;   BP3D common vector (2D, 3D, 4D) functions extension.
+;
+;   Copyright (c) 2025 Yevhenii Ionenko (aka GreatCorn). All rights reserved.
+;   Licensed under the terms of the MIT license (see ..\LICENSE.txt).
+;
+
+IFNDEF BP3D_VECTORS_INC
+BP3D_VECTORS_INC EQU <1>
 
 ; ----- INTERFACE -----
 
@@ -22,6 +31,7 @@ Vector4 STRUCT
 	W REAL4 0
 Vector4 ENDS
 
+; ----- CONSTANTS -----
 .CONST
 Vector2One	Vector2 <1.0, 1.0>
 Vector2Zero	Vector2 <0.0, 0.0>
@@ -29,6 +39,7 @@ Vector3One	Vector3 <1.0, 1.0, 1.0>
 Vector3Up	Vector3 <0.0, 1.0, 0.0>
 Vector3Zero	Vector3 <0.0, 0.0, 0.0>
 
+; ----- IMPLEMENTATION -----
 .CODE
 
 Vector2Set PROTO :BPPtr, :REAL4, :REAL4
@@ -85,10 +96,10 @@ VectorDistanceSqr MACRO Cnt:REQ, A:REQ, B:REQ
 	REPEAT Cnt-1
 		fadd
 	ENDM
-	sub psp, 4
+	push pax
 	fstp REAL4 PTR [psp]
-	mov eax, REAL4 PTR [psp]
-	add psp, 4
+	mov eax, REAL4 PTR [psp]	; Thank you x64
+	add psp, SIZEOF BPPtr
 ENDM
 
 VectorF MACRO Cnt:REQ, A:REQ
@@ -113,10 +124,10 @@ VectorLength MACRO Cnt:REQ, A:REQ
 		fadd
 	ENDM
 	fsqrt
-	sub psp, 4
+	push pax
 	fstp REAL4 PTR [psp]
 	mov eax, REAL4 PTR [psp]
-	add psp, 4
+	add psp, SIZEOF BPPtr
 ENDM
 
 VectorLengthSqr MACRO Cnt:REQ, A:REQ
@@ -130,10 +141,10 @@ VectorLengthSqr MACRO Cnt:REQ, A:REQ
 	REPEAT Cnt-1
 		fadd
 	ENDM
-	sub psp, 4
+	push pax
 	fstp REAL4 PTR [psp]
 	mov eax, REAL4 PTR [psp]
-	add psp, 4
+	add psp, SIZEOF BPPtr
 ENDM
 
 VectorLerp MACRO Cnt:REQ, A:REQ, B:REQ, T:REQ
@@ -184,7 +195,7 @@ VectorNormalize MACRO Cnt:REQ, A:REQ
 		ENDM
 		ret
 	.ENDIF
-	add psp, 4
+	push pax
 	mov REAL4 PTR [psp], eax
 	fld REAL4 PTR [psp]
 	fsqrt
@@ -198,7 +209,7 @@ VectorNormalize MACRO Cnt:REQ, A:REQ
 		fstp REAL4 PTR [pax+PosOff]
 		PosOff = PosOff + SIZEOF REAL4
 	ENDM
-	add psp, 4
+	add psp, SIZEOF BPPtr
 ENDM
 
 VectorRound MACRO Cnt:REQ, A:REQ
@@ -250,7 +261,6 @@ VectorSub MACRO Cnt:REQ, A:REQ, B:REQ
 ENDM
 
 ; ----- Vector2 -----
-
 Vector2Pop MACRO A:REQ
 	bpPop32 A.X
 	bpPop32 A.Y
@@ -373,7 +383,6 @@ Vector2Sub PROC EXPORT A:BPPtr, B:BPPtr
 Vector2Sub ENDP
 
 ; ----- Vector3 -----
-
 Vector3Pop MACRO A:REQ
 	bpPop32 A.X
 	bpPop32 A.Y
@@ -537,7 +546,6 @@ Vector3Sub PROC EXPORT A:BPPtr, B:BPPtr
 Vector3Sub ENDP
 
 ; ----- Vector4 -----
-
 Vector4Print MACRO A:REQ
 	print real4$(A.X), 9
 	print real4$(A.Y), 9

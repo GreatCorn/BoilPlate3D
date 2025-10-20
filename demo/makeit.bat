@@ -1,5 +1,5 @@
-:: Batch was created by the devil himself
-::@echo off
+:: Batch is a fucking headache
+@echo off
 
 setlocal EnableDelayedExpansion
 set _argCnt=0

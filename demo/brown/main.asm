@@ -3,6 +3,7 @@
 ;
 ;   Demonstrates the usage of importers, maths, vectors and implements a basic
 ; particle system. Tests the basic audio capabilities of the system (MCI).
+;   64-bit compileable (UASM, untested).
 ;
 ;   Copyright (c) 2025 Yevhenii Ionenko (aka GreatCorn). All rights reserved.
 ;   Licensed under the terms of the MIT license (see ..\LICENSE.txt).
@@ -167,8 +168,8 @@ ResetParticles PROC
 	ret
 ResetParticles ENDP
 
-; FMain bindings.
-OnCreate PROC
+;   FMain bindings
+OnCreate PROC STDCALL
 	LOCAL texPixels:BPPtr, colLerp:REAL4
 	invoke bpInitGLContext, ADDR FMain
 	
@@ -261,7 +262,7 @@ OnCreate PROC
 	ret
 OnCreate ENDP
 
-OnInput PROC BPInType:BYTE, BPInStruct:BPPtr
+OnInput PROC STDCALL BPInType:BYTE, BPInStruct:BPPtr
 	.IF (BPInType == BP_INPUT_KEY)
 		ASSUME pbx:PTR BPInKey
 		mov pbx, BPInStruct
@@ -286,7 +287,7 @@ OnInput PROC BPInType:BYTE, BPInStruct:BPPtr
 	ret
 OnInput ENDP
 
-OnRender PROC
+OnRender PROC STDCALL
 	invoke glClear, GL_COLOR_BUFFER_BIT or GL_DEPTH_BUFFER_BIT
 	
 	invoke glMatrixMode, GL_PROJECTION
@@ -318,8 +319,9 @@ OnRender PROC
 OnRender ENDP
 
 start:
-	call nRandomize
+	call nRandomize		; Set random seed
 	
+	; Bind callback procedures
 	mov pax, OFFSET AppName
 	mov FMain.Caption,	pax
 	mov pax, OFFSET OnCreate
@@ -329,7 +331,8 @@ start:
 	mov pax, OFFSET OnRender
 	mov FMain.OnRender,	pax
 	
-	invoke bpCreateForm, ADDR FMain
+	invoke bpCreateForm, ADDR FMain	; Create form
 	
-	invoke TerminateProcess, r(GetCurrentProcess), 0 
+	; This code is reached when form's execution is done
+	invoke TerminateProcess, r(GetCurrentProcess), 0
 end start

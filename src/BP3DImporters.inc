@@ -1,5 +1,16 @@
-IFNDEF BP3DIMPORTERS_INC
-BP3DIMPORTERS_INC EQU <1>
+;
+;   BP3DImporters.inc
+;   Version 0.5ac1
+;   BP3D raw asset format importers (animations, GL lists, dynamic meshes, 
+; textures) extension.
+;
+;   Copyright (c) 2025 Yevhenii Ionenko (aka GreatCorn). All rights reserved.
+;   Licensed under the terms of the MIT license (see ..\LICENSE.txt).
+;
+
+
+IFNDEF BP3D_IMPORTERS_INC
+BP3D_IMPORTERS_INC EQU <1>
 
 IFNDEF BP_GLU
 BP_GLU EQU <1>
@@ -12,7 +23,9 @@ ELSEIFNDEF BP_CUSTOM_INCLUDES
 ENDIF
 ENDIF
 
-BP_CLAMP_INTERPOLATION	EQU <1>	; makes no sense to put it here
+IFDEF rax
+	ECHO BP3D: WARNING! BP3DImporters.inc GLU calls are invalid and untested on x64.
+ENDIF
 
 ; ----- INTERFACE -----
 
@@ -20,97 +33,103 @@ BP_CLAMP_INTERPOLATION	EQU <1>	; makes no sense to put it here
 
 BPMesh STRUCT
 	Count		DWORD 0	; How many vertex objects are there
-	Vertices	BPPtr 0
-	TexCoords	BPPtr 0
-	Normals		BPPtr 0
-	V2Size		BPPtr 0
-	V3Size		BPPtr 0
+	Vertices	BPPtr 0	; Pointer to a Vector3[Count] array of mesh vertices
+	TexCoords	BPPtr 0	; Pointer to a Vector2[Count] array of mesh UVs
+	Normals		BPPtr 0	; Pointer to a Vector3[Count] array of mesh normals
+	V2Size		BPPtr 0	; The size, in bytes, of the TexCoords array
+	V3Size		BPPtr 0	; The size, in bytes, of the Vertices and Normals arrays
 BPMesh ENDS
 
 BPAnimTrack STRUCT
-	ByteSize	DWORD 0
-	Frames		BPPtr ?
-	Looping		BPBool FALSE
+	ByteSize	DWORD 0		; The size, in bytes, of Frames
+	Frames		BPPtr ?		; Pointer to an array of abstract frames
+	Looping		BPBool FALSE; If the animation restart when its end is reached
 BPAnimTrack ENDS
 
-BPAnimFramePRS STRUCT
+;   Every BPAnimFrame type has a Time DWORD at the start, which contains the
+; frame number.
+BPAnimFramePRS STRUCT		; (Position:Vector, Rotation:Vector3, Scale:Vector3)
 	Time		DWORD ?
 	Position	Vector3 <?, ?, ?>
 	Rotation	Vector3 <?, ?, ?>
 	Scale		Vector3 <?, ?, ?>
 BPAnimFramePRS ENDS
 
-BPAnimFrameMatrix STRUCT
+BPAnimFrameMatrix STRUCT	; (Matrix[16]:REAL4)
 	Time		DWORD ?
 	Matrix		REAL4 16 DUP(?)
 BPAnimFrameMatrix ENDS
 
-BPAnimFrameMesh STRUCT
+; (Vertex[Mesh.Count]:Vector3, <Normals[Mesh.Count]:Vector3>)
+BPAnimFrameVertex STRUCT
 	Time		DWORD ?
-	Mesh		BPMesh <>
-BPAnimFrameMesh ENDS
+;	Vertex		Vector3 Mesh.Count DUP (<?, ?, ?>)
+;	IF MeshUseNormals
+;		Normals		Vector3 Mesh.Count DUP (<?, ?, ?>)
+;	ENDIF
+BPAnimFrameVertex ENDS
 
-BPAnimPlayer STRUCT
-	TrackPtr	BPPtr 0
-	FrameOffset	BPPtr 0
+BPAnimPlayer STRUCT			; Animation player
+	TrackPtr	BPPtr 0		; Pointer to a BPAnimTrack
+	FrameOffset	BPPtr 0		; Pointer offset to add to TrackPtr of current frame
 	
-	Timer		REAL4 0.0
-	Speed		REAL4 1.0
+	Timer		REAL4 0.0	; The timer that updates FrameOffset
+	Speed		REAL4 1.0	; Playback speed (1.0 = 100%)
 	
-	Interpolation	BPEnum BPINTERPOLATION_LINEAR
+	Interpolation	BPEnum BP_INTERPOLATE_LINEAR	; Frame interpolation type
 	
-	FrameType BPEnum BPFRAME_PRS
+	FrameType BPEnum BPA_FRAME_PRS	; Frame data type
 	
-	; Case FrameType of BPFRAME_PRS
+	; Animation properties binds
+	; Case FrameType of BPA_FRAME_PRS
 	;UNION
-		Position	BPPtr 0
-		Rotation	BPPtr 0
-		Scale 		BPPtr 0
+		Position	BPPtr 0		; Pointer to :Vector3
+		Rotation	BPPtr 0		; Pointer to :Vector3 (Euler)
+		Scale 		BPPtr 0		; Pointer to :Vector3
 	;ENDS
 	
-	; Case FrameType of BPFRAME_MATRIX
+	; Case FrameType of BPA_FRAME_MATRIX
 	;UNION
-		Matrix		BPPtr 0
+		Matrix		BPPtr 0		; Pointer to :REAL4[16]
 	;ENDS
 	
-	; Case FrameType of BPFRAME_VERTEX
+	; Case FrameType of BPA_FRAME_VERTEX
 	;UNION
-		Mesh		BPPtr 0
-		MeshFrameSize BPPtr 0
-		MeshUseNormals BPBool TRUE
+		Mesh			BPPtr 0		; Pointer to BPMesh
+		MeshFrameSize	BPPtr 0		; Size of the BPAnimFrameVertex
+		MeshUseNormals	BPBool TRUE	; If normals are included in the frame data
 	;ENDS
 BPAnimPlayer ENDS
 
 
 ; ----- CONSTANTS -----
+; BP animation interpolation types
+BP_INTERPOLATE_CONSTANT	EQU 0	; No interpolation
+BP_INTERPOLATE_LINEAR	EQU 1	; Linear interpolation
+BP_INTERPOLATE_LOG		EQU 2	; Logarithmic interpolation (based on lerp, WIP)
 
-BPT_HEADER EQU 9
+; BP animation frame data types
+BPA_FRAME_PRS		EQU 0	; BPAnimFramePRS
+BPA_FRAME_MATRIX	EQU 1	; BPAnimFrameMatrix
+BPA_FRAME_VERTEX	EQU 2	; BPAnimFrameVertex
 
-BPT_RGB8	EQU 0
-BPT_RGBA8	EQU 1
-BPT_RGB565	EQU 2
-BPT_RGB5A1	EQU 3
-BPT_RGBA4	EQU 4
-BPT_RGB332	EQU 5
-BPT_L8		EQU 6
+BPT_HEADER EQU 9	; BP texture header size, in bytes
 
-BPFRAME_PRS		EQU 0
-BPFRAME_MATRIX	EQU 1
-BPFRAME_VERTEX	EQU 2
-
-BPINTERPOLATION_CONSTANT	EQU 0
-BPINTERPOLATION_LINEAR		EQU 1
-BPINTERPOLATION_LOGARITHMIC	EQU 2
-
-BPMESH_INTERPOLATE_VERTEX EQU 1
-BPMESH_INTERPOLATE_TEXCOORD EQU 2
-BPMESH_INTERPOLATE_NORMAL EQU 4
+; BP texture color and data formats
+BPT_RGB8	EQU 0	; (R8, G8, B8)		24-bit
+BPT_RGBA8	EQU 1	; (R8, G8, B8, A8)	32-bit
+BPT_RGB565	EQU 2	; (R5, G6, B5)		16-bit
+BPT_RGB5A1	EQU 3	; (R5, G5, B5, A1)	16-bit
+BPT_RGBA4	EQU 4	; (R4, G4, B4, A4)	16-bit
+BPT_RGB332	EQU 5	; (R3, G3, B2)		8-bit
+BPT_L8		EQU 6	; (L8)				8-bit (monochrome, luminance)
 
 .CONST
 
+; ----- DATA FIELDS -----
 .DATA
-bpAnimationFPS		REAL4 30.0
-bpTextureFiltering	BPBool FALSE
+bpAnimationFPS		REAL4 30.0		; Exported FPS for speed calculation
+bpTextureFiltering	BPBool FALSE	; Enable texture filtering on import
 
 ; ----- IMPLEMENTATION -----
 .CODE
@@ -137,40 +156,40 @@ s MACRO qStr:REQ
 	EXITM <ADDR strDb>
 ENDM
 
-;   Load barebones animation track implementation - sequence of 28-byte frames: WRONGr 
-; Time:DWORD, Position:Vector3, Rotation:Vector3.
+;   Load abstract animation track data that can be interpreted by a BPAnimPlayer
+; based on BPAnimPlayer.FrameType.
 LoadBPA MACRO BPAnimPTR:REQ, FilePath:REQ
 	invoke bpLoadBPA, BPAnimPTR, s(FilePath)
 ENDM
 
 ;   Load a file storing interleaved sequences of UV (x, y), normal (x, y, z) and
 ; vertex (x, y, z) REAL4 values as a GL list. Rendered using glCallList.
-;   GLListPTR - pointer to an uninitialized OpenGL list.
-;   FilePath - quoted file path string.
-LoadBPL MACRO GLListPTR:REQ, FilePath:REQ
-	invoke bpLoadBPL, GLListPTR, s(FilePath)
+;   GLListPtr:BPPtr - pointer to an uninitialized OpenGL list.
+;   FilePath:String - quoted file path string.
+LoadBPL MACRO GLListPtr:REQ, FilePath:REQ
+	invoke bpLoadBPL, GLListPtr, s(FilePath)
 ENDM
 
 ;   Load a file storing sequences of vertex (x, y, z), UV (x, y), and normal
 ; (x, y, z) REAL4 values as a BPMesh struct. Rendered using bpDrawMesh 
 ; (subsequent glDrawArrays calls).
-;   BPMeshPTR - pointer to a BPMesh structure.
-;   FilePath - quoted file path string.
-LoadBPM MACRO BPMeshPTR:REQ, FilePath:REQ
-	invoke bpLoadBPM, BPMeshPTR, s(FilePath)
+;   BPMeshPtr:BPPtr - pointer to a BPMesh structure.
+;   FilePath:String - quoted file path string.
+LoadBPM MACRO BPMeshPtr:REQ, FilePath:REQ
+	invoke bpLoadBPM, BPMeshPtr, s(FilePath)
 ENDM
 
 ;   Load a Boil Plate texture - a raw image file with a BPT_HEADER-byte header
 ; which specifies its color format and dimensions.
-;   TexturePTR - pointer to an uninitialized OpenGL texture.
-;   FilePath - quoted file path string.
-LoadBPT MACRO TexturePTR:REQ, FilePath:REQ
-	invoke bpLoadBPT, TexturePTR, s(FilePath)
+;   TexturePtr:BPPtr - pointer to an uninitialized OpenGL texture.
+;   FilePath:String - quoted file path string.
+LoadBPT MACRO TexturePtr:REQ, FilePath:REQ
+	invoke bpLoadBPT, TexturePtr, s(FilePath)
 ENDM
 
 ;   Load a file's entire contents and return the allocated buffer in pax. 
 ; Returns 0 if file is not found.
-;   FilePath - quoted file path string.
+;   FilePath:String - quoted file path string.
 LoadFile MACRO FilePath:REQ
 	invoke bpLoadFile, s(FilePath), 0
 ENDM
@@ -281,14 +300,11 @@ bpLoadBPA PROC EXPORT BPAnimPTR:BPPtr, FilePath:BPPtr
 	mov [pcx].Frames, pax
 	bpMEM32 [pcx].ByteSize, dwFileSize
 	
-	push 0
-	lea pax, dwBytesRead
-	push pax
-	bpPush32 dwFileSize
-	push [pcx].Frames
-	push hFile
-	call ReadFile
-		
+	push pbx
+	mov pbx, [pcx].Frames
+	invoke ReadFile, hFile, pbx, dwFileSize, ADDR dwBytesRead, 0
+	pop pbx
+	
 	IFDEF BP_IMPORTERS_VERBOSE
 	IFDEF print
 		push pax
@@ -314,7 +330,7 @@ bpLoadBPA PROC EXPORT BPAnimPTR:BPPtr, FilePath:BPPtr
 bpLoadBPA ENDP
 
 bpLoadBPL PROC EXPORT GLListPTR:BPPtr, FilePath:BPPtr
-	LOCAL buffer:BPPtr, listIndex:DWORD, dwFileSize: DWORD
+	LOCAL buffer:BPPtr, listIndex:DWORD, dwFileSize:DWORD
 	
 	invoke bpLoadFile, FilePath, ADDR dwFileSize
 	mov buffer, pax
@@ -324,36 +340,24 @@ bpLoadBPL PROC EXPORT GLListPTR:BPPtr, FilePath:BPPtr
 	invoke glNewList, listIndex, GL_COMPILE
 	invoke glBegin, GL_TRIANGLES
 	
-	push pbx	; Preserve ebx
+	push pbx	; Preserve pbx
 	xor pbx, pbx
 	.WHILE (ebx < dwFileSize)
-		mov pax, buffer	; Get the UV data
-		mov ecx, DWORD PTR [pax+pbx+4]
-		mov eax, DWORD PTR [pax+pbx]
-		push pcx
-		push pax
-		call glTexCoord2f
+		add pbx, buffer
+		
+		; Get the UV data
+		invoke glTexCoord2fv, pbx
 		add pbx, 8
 		
-		mov pax, buffer	; Get the normals
-		mov edx, DWORD PTR [pax+pbx+8]
-		mov ecx, DWORD PTR [pax+pbx+4]
-		mov eax, DWORD PTR [pax+pbx]
-		push pdx
-		push pcx
-		push pax
-		call glNormal3f
+		; Get the normals
+		invoke glNormal3fv, pbx
 		add pbx, 12
 		
-		mov pax, buffer	; Get the vertices
-		mov edx, DWORD PTR [pax+pbx+8]
-		mov ecx, DWORD PTR [pax+pbx+4]
-		mov eax, DWORD PTR [pax+pbx]
-		push pdx
-		push pcx
-		push pax
-		call glVertex3f
+		; Get the vertices
+		invoke glVertex3fv, pbx
 		add pbx, 12
+		
+		sub pbx, buffer
 	.ENDW
 	pop pbx
 	
@@ -370,7 +374,7 @@ bpLoadBPL ENDP
 
 bpLoadBPM PROC EXPORT BPMeshPTR:BPPtr, FilePath:BPPtr
 	LOCAL hFile:HANDLE, dwHighSize:DWORD, dwFileSize:DWORD, dwArraySize:DWORD
-	LOCAL v3Size:BPPtr, v2Size:BPPtr, dwBytesRead:DWORD
+	LOCAL v3Size:DWORD, v2Size:DWORD, dwBytesRead:DWORD
 	push pbx
 	ASSUME pbx:PTR BPMesh
 	mov pbx, BPMeshPTR
@@ -398,46 +402,27 @@ bpLoadBPM PROC EXPORT BPMeshPTR:BPPtr, FilePath:BPPtr
 	pop pax
 	mov ecx, 3				; Allocate the Vertices array
 	mul ecx
-	mov v3Size, pax
+	mov v3Size, eax
 	invoke bpMalloc, bpDefHeap, 0, v3Size
 	mov [pbx].Vertices, pax
-	bpMPM [pbx].V3Size, v3Size
+	mov eax, v3Size
+	mov [pbx].V3Size, pax
 	
 	mov eax, dwArraySize	; Allocate the TexCoords array
 	mov ecx, 2
 	mul ecx
-	mov v2Size, pax
+	mov v2Size, eax
 	invoke bpMalloc, bpDefHeap, 0, v2Size
 	mov [pbx].TexCoords, pax
-	bpMPM [pbx].V2Size, v2Size
+	mov eax, v2Size
+	mov [pbx].V2Size, pax
 	
 	invoke bpMalloc, bpDefHeap, 0, v3Size	; Allocate the Normals array
 	mov [pbx].Normals, pax
 	
-	push 0
-	lea pax, dwBytesRead
-	push pax
-	push v3Size
-	push [pbx].Vertices
-	push hFile
-    call ReadFile
-	
-	push 0
-	lea pax, dwBytesRead
-	push pax
-	push v2Size
-	push [pbx].TexCoords
-	push hFile
-    call ReadFile
-	
-	push 0
-	lea pax, dwBytesRead
-	push pax
-	push v3Size
-	push [pbx].Normals
-	push hFile
-    call ReadFile
-	
+    invoke ReadFile, hFile, [pbx].Vertices, v3Size, ADDR dwBytesRead, 0
+    invoke ReadFile, hFile, [pbx].TexCoords, v2Size, ADDR dwBytesRead, 0
+    invoke ReadFile, hFile, [pbx].Normals, v3Size, ADDR dwBytesRead, 0	
 	
 	IFDEF BP_IMPORTERS_VERBOSE
 	IFDEF print
@@ -530,11 +515,6 @@ bpLoadBPT PROC EXPORT TexturePTR:BPPtr, FilePath:BPPtr
 	IFDEF BP_FORCE_MANUAL_TEXTURE
 		invoke bpTexImage2D, texW, texH, texType, buffer
 	ELSE
-		push buffer
-		bpPush32 texDataType
-		bpPush32 texFormat
-		bpPush32 texH
-		bpPush32 texW
 		.IF (texFormat == GL_RGBA)
 			mov eax, 4
 		.ELSEIF (texFormat == GL_LUMINANCE)
@@ -542,9 +522,10 @@ bpLoadBPT PROC EXPORT TexturePTR:BPPtr, FilePath:BPPtr
 		.ELSE
 			mov eax, 3
 		.ENDIF
-		push pax
-		push GL_TEXTURE_2D
-		call gluBuild2DMipmaps
+		; I can't even begin to fucking understand what x64 doesn't like here
+		; Fuck you x64
+		invoke gluBuild2DMipmaps, GL_TEXTURE_2D, eax, texW, texH, texFormat, \
+		texDataType, buffer
 		
 		push pax
 		invoke glGetError
@@ -749,21 +730,15 @@ TextureType:BYTE, Buffer:BPPtr
 		mov eax, GL_RGB
 		mov edx, 3
 	.ENDIF
-	push parsed
-	push GL_UNSIGNED_BYTE
-	push pax
-	bpPush32 TextureHeight
-	bpPush32 TextureWidth
-	push pdx
-	push GL_TEXTURE_2D
-	call gluBuild2DMipmaps
+	invoke gluBuild2DMipmaps, GL_TEXTURE_2D, edx, TextureWidth, TextureHeight, \
+	eax, GL_UNSIGNED_BYTE, parsed
 	
 	invoke bpFree, bpDefHeap, 0, parsed
 	ret
 bpTexImage2D ENDP
 
 IFDEF BP3D_MATHS_INC
-IFDEF BP3DVECTORS_INC 
+IFDEF BP3D_VECTORS_INC 
 bpProcessAnimPlayer PROC EXPORT BPAnimPlrPTR:BPPtr
 	LOCAL floatVal:REAL4, animSpd:REAL4, fact:REAL4
 	LOCAL frameAddr:BPPtr
@@ -775,7 +750,7 @@ bpProcessAnimPlayer PROC EXPORT BPAnimPlrPTR:BPPtr
 	ASSUME pcx:PTR BPAnimPlayer
 	mov pcx, BPAnimPlrPTR
 	.IF ([pcx].TrackPtr)
-		.IF (([pcx].FrameType == BPFRAME_VERTEX) && !([pcx].MeshFrameSize))
+		.IF (([pcx].FrameType == BPA_FRAME_VERTEX) && !([pcx].MeshFrameSize))
 			mov pax, [pcx].Mesh			; Get frame size
 			mov eax, DWORD PTR [pax]	; Get count of vertices
 			.IF ([pcx].MeshUseNormals)
@@ -807,13 +782,13 @@ bpProcessAnimPlayer PROC EXPORT BPAnimPlrPTR:BPPtr
 		mov eax, DWORD PTR [pax]	; Get current frame's time (first 4 bytes)
 		.WHILE (floatVal >= eax)
 			mov resFrame, TRUE
-			.IF ([pcx].FrameType == BPFRAME_PRS)
+			.IF ([pcx].FrameType == BPA_FRAME_PRS)
 				add [pcx].FrameOffset, SIZEOF BPAnimFramePRS
 				add frameAddr, SIZEOF BPAnimFramePRS
-			.ELSEIF ([pcx].FrameType == BPFRAME_MATRIX)
+			.ELSEIF ([pcx].FrameType == BPA_FRAME_MATRIX)
 				add [pcx].FrameOffset, SIZEOF BPAnimFrameMatrix
 				add frameAddr, SIZEOF BPAnimFrameMatrix
-			.ELSEIF ([pcx].FrameType == BPFRAME_VERTEX)
+			.ELSEIF ([pcx].FrameType == BPA_FRAME_VERTEX)
 				mov pax, [pcx].MeshFrameSize
 				add [pcx].FrameOffset, pax
 				add frameAddr, pax
@@ -832,7 +807,7 @@ bpProcessAnimPlayer PROC EXPORT BPAnimPlrPTR:BPPtr
 			mov pax, frameAddr
 			mov eax, DWORD PTR [pax]
 		.ENDW
-		.IF ([pcx].FrameType == BPFRAME_PRS)
+		.IF ([pcx].FrameType == BPA_FRAME_PRS)
 			mov intStructSize, SIZEOF Vector3
 			mov intFrameSize, SIZEOF BPAnimFramePRS
 			
@@ -840,14 +815,14 @@ bpProcessAnimPlayer PROC EXPORT BPAnimPlrPTR:BPPtr
 			mov pbx, frameAddr
 			add pbx, 4	; Now pbx is Value
 			.IF ([pcx].Position)
-				.IF ([pcx].Interpolation == BPINTERPOLATION_CONSTANT)
+				.IF ([pcx].Interpolation == BP_INTERPOLATE_CONSTANT)
 					invoke Vector3Copy, [pcx].Position, pbx
-				.ELSEIF ([pcx].Interpolation == BPINTERPOLATION_LINEAR)
+				.ELSEIF ([pcx].Interpolation == BP_INTERPOLATE_LINEAR)
 					mov timeOffset, 4			; Byte offset from Frame.Time
 					mov pcx, [pcx].Position		; Output to this address
 					push bpAnimInterpolatePositionEnd	; To avoid ret
 					jmp bpAnimInterpolateLinear
-				.ELSEIF ([pcx].Interpolation == BPINTERPOLATION_LOGARITHMIC)
+				.ELSEIF ([pcx].Interpolation == BP_INTERPOLATE_LOG)
 				
 				.ENDIF
 			.ENDIF
@@ -856,14 +831,14 @@ bpProcessAnimPlayer PROC EXPORT BPAnimPlrPTR:BPPtr
 			add pbx, SIZEOF Vector3	; Now pbx is Rotation:Vector3
 			mov pcx, BPAnimPlrPTR
 			.IF ([pcx].Rotation)
-				.IF ([pcx].Interpolation == BPINTERPOLATION_CONSTANT)
+				.IF ([pcx].Interpolation == BP_INTERPOLATE_CONSTANT)
 					invoke Vector3Copy, [pcx].Rotation, pbx
-				.ELSEIF ([pcx].Interpolation == BPINTERPOLATION_LINEAR)
+				.ELSEIF ([pcx].Interpolation == BP_INTERPOLATE_LINEAR)
 					mov timeOffset, 4+SIZEOF Vector3
 					mov pcx, [pcx].Rotation
 					push bpAnimInterpolateRotationEnd
 					jmp bpAnimInterpolateLinear
-				.ELSEIF ([pcx].Interpolation == BPINTERPOLATION_LOGARITHMIC)
+				.ELSEIF ([pcx].Interpolation == BP_INTERPOLATE_LOG)
 				
 				.ENDIF
 			.ENDIF
@@ -872,23 +847,23 @@ bpProcessAnimPlayer PROC EXPORT BPAnimPlrPTR:BPPtr
 			add pbx, SIZEOF Vector3	; Now pbx is Scale:Vector3
 			mov pcx, BPAnimPlrPTR
 			.IF ([pcx].Scale)
-				.IF ([pcx].Interpolation == BPINTERPOLATION_CONSTANT)
+				.IF ([pcx].Interpolation == BP_INTERPOLATE_CONSTANT)
 					invoke Vector3Copy, [pcx].Scale, pbx
-				.ELSEIF ([pcx].Interpolation == BPINTERPOLATION_LINEAR)
+				.ELSEIF ([pcx].Interpolation == BP_INTERPOLATE_LINEAR)
 					mov timeOffset, 4+SIZEOF Vector3*2
 					mov pcx, [pcx].Scale
 					push bpAnimInterpolateEnd
 					jmp bpAnimInterpolateLinear
-				.ELSEIF ([pcx].Interpolation == BPINTERPOLATION_LOGARITHMIC)
+				.ELSEIF ([pcx].Interpolation == BP_INTERPOLATE_LOG)
 				
 				.ENDIF
 			.ENDIF
-		.ELSEIF ([pcx].FrameType == BPFRAME_MATRIX)
+		.ELSEIF ([pcx].FrameType == BPA_FRAME_MATRIX)
 			mov pbx, frameAddr
 			add pbx, 4
 			
 			.IF ([pcx].Matrix)
-				.IF ([pcx].Interpolation == BPINTERPOLATION_CONSTANT)
+				.IF ([pcx].Interpolation == BP_INTERPOLATE_CONSTANT)
 					mov pcx, [pcx].Matrix
 					xor pax, pax
 					.WHILE (pax < SIZEOF REAL4 * 16)
@@ -900,7 +875,7 @@ bpProcessAnimPlayer PROC EXPORT BPAnimPlrPTR:BPPtr
 						ENDIF
 						add pax, 4
 					.ENDW
-				.ELSEIF ([pcx].Interpolation == BPINTERPOLATION_LINEAR)
+				.ELSEIF ([pcx].Interpolation == BP_INTERPOLATE_LINEAR)
 					mov intStructSize, SIZEOF REAL4 * 16
 					mov intFrameSize, SIZEOF BPAnimFrameMatrix
 					
@@ -908,11 +883,11 @@ bpProcessAnimPlayer PROC EXPORT BPAnimPlrPTR:BPPtr
 					mov pcx, [pcx].Matrix
 					push bpAnimInterpolateEnd
 					jmp bpAnimInterpolateLinear
-				.ELSEIF ([pcx].Interpolation == BPINTERPOLATION_LOGARITHMIC)
+				.ELSEIF ([pcx].Interpolation == BP_INTERPOLATE_LOG)
 					
 				.ENDIF
 			.ENDIF
-		.ELSEIF ([pcx].FrameType == BPFRAME_VERTEX)
+		.ELSEIF ([pcx].FrameType == BPA_FRAME_VERTEX)
 			mov pbx, frameAddr
 			add pbx, 4
 			
@@ -928,7 +903,7 @@ bpProcessAnimPlayer PROC EXPORT BPAnimPlrPTR:BPPtr
 					mov intStructSize, pax
 					pop pcx
 				.ENDIF
-				.IF ([pcx].Interpolation == BPINTERPOLATION_CONSTANT)
+				.IF ([pcx].Interpolation == BP_INTERPOLATE_CONSTANT)
 					mov pax, [pcx].Mesh
 					mov BPPtr PTR [pax+4], pbx	; The pointer to vertices
 					.IF ([pcx].MeshUseNormals)
@@ -936,7 +911,7 @@ bpProcessAnimPlayer PROC EXPORT BPAnimPlrPTR:BPPtr
 						mov pax, [pcx].Mesh
 						mov BPPtr PTR [pax+4+SIZEOF BPPtr*2], pbx	; Normals
 					.ENDIF
-				.ELSEIF ([pcx].Interpolation == BPINTERPOLATION_LINEAR)
+				.ELSEIF ([pcx].Interpolation == BP_INTERPOLATE_LINEAR)
 					bpMPM intFrameSize, [pcx].MeshFrameSize	; Time + mesh
 					
 					mov timeOffset, 4
@@ -956,7 +931,7 @@ bpProcessAnimPlayer PROC EXPORT BPAnimPlrPTR:BPPtr
 						push bpAnimInterpolateEnd
 						jmp bpAnimInterpolateLinear						
 					.ENDIF
-				.ELSEIF ([pcx].Interpolation == BPINTERPOLATION_LOGARITHMIC)
+				.ELSEIF ([pcx].Interpolation == BP_INTERPOLATE_LOG)
 					
 				.ENDIF
 			.ENDIF
@@ -997,7 +972,7 @@ bpProcessAnimPlayer PROC EXPORT BPAnimPlrPTR:BPPtr
 			fld animSpd
 			fdiv floatVal
 			fstp fact
-			IFDEF BP_CLAMP_INTERPOLATION
+			IFNDEF BP_INTERPOLATION_UNCLAMPED
 				push pax
 				invoke flClamp, fact, 0, 1065353216	; fact, 0, 1.0
 				mov fact, eax

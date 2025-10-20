@@ -1,3 +1,15 @@
+;
+;   BP3DText.inc
+;   Version 0.5ac1
+;   BP3D bitmap text rendering API extension.
+;
+;   Copyright (c) 2025 Yevhenii Ionenko (aka GreatCorn). All rights reserved.
+;   Licensed under the terms of the MIT license (see ..\LICENSE.txt).
+;
+
+IFNDEF BP3D_TEXT_INC
+BP3D_TEXT_INC EQU <1>
+
 BP_ALIGN_LEFT	EQU 0
 BP_ALIGN_CENTER	EQU 1
 BP_ALIGN_RIGHT	EQU 2
@@ -18,7 +30,7 @@ bpTextNL		BYTE 0
 
 .CODE
 
-IFDEF BP3DIMPORTERS_INC
+IFDEF BP3D_IMPORTERS_INC
 LoadFont MACRO DirPath:REQ, FontPTR
 	IFB <FontPTR>
 		invoke bpLoadFont, s(DirPath), OFFSET bpDefaultFont
@@ -29,8 +41,18 @@ ENDM
 
 RenderText MACRO TextString:REQ, X:=<0>, Y:=<0>, \
 HorizontalAlign:=<BP_ALIGN_LEFT>, VerticalAlign:=<BP_ALIGN_TOP>
-	invoke bpRenderText, s(TextString), X, Y, \
-	HorizontalAlign, VerticalAlign
+	LOCAL qot
+	qot INSTR <TextString>,<">; "
+	IFE qot
+		qot INSTR <TextString>,<'>; '
+	ENDIF
+	IF qot
+		invoke bpRenderText, s(TextString), X, Y, \
+		HorizontalAlign, VerticalAlign
+	ELSE
+		invoke bpRenderText, TextString, X, Y, \
+		HorizontalAlign, VerticalAlign
+	ENDIF
 ENDM
 ENDIF
 
@@ -53,7 +75,7 @@ bpBuildFontQuad PROC EXPORT
 	ret
 bpBuildFontQuad ENDP
 
-IFDEF BP3DIMPORTERS_INC
+IFDEF BP3D_IMPORTERS_INC
 bpLoadFont PROC EXPORT DirPath:BPPtr, FontPTR:BPPtr
 	LOCAL dirLen:BPPtr, stringBuf:BPPtr
 	
@@ -118,6 +140,8 @@ bpLoadFont PROC EXPORT DirPath:BPPtr, FontPTR:BPPtr
 		mul pcx
 		add pax, FontPTR
 		invoke bpLoadBPT, pax, stringBuf
+		invoke glTexParameteri, GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP 
+		invoke glTexParameteri, GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP 
 		
 		inc pbx
 	.ENDW
@@ -225,3 +249,7 @@ HorizontalAlign:BPEnum, VerticalAlign:BPEnum
 	.ENDIF
 	ret
 bpRenderText ENDP
+ELSE
+	ECHO BP3D: Duplicate include file BP3DText.inc
+ENDIF
+	

@@ -45,7 +45,6 @@ ELSEIFNDEF BP_CUSTOM_INCLUDES
 ENDIF
 
 ; -----	INTERFACE -----
-
 ;   Available compile-time symbolic macros to define (EQU) before including 
 ; BP3D, for additional or alternative functionality in the build:
 ;
@@ -230,12 +229,19 @@ ENDIF
 ENDIF
 
 ;   Cross-architecture compatibility is possible but very shitty to pull off and
-; may quickly become an ungodly mess. I don't understand the people that prefer
-; 64-bit assembly over 32-bit. For now I couldn't get JWlink to recognize the
-; LIB files and ML64 is unusable with any kind of headers I threw at it. FFS
-; just use 32-bit as long as 32-bit binaries are supported on 64-bit systems.
+; may quickly become a terrible mess. For now I couldn't get JWlink to recognize
+; the LIB files and ML64 is unusable with any kind of headers I threw at it. The
+; attempted switch to support 64-bit Assembly made the code even more of a mess
+; without register role standardization and bloated invokes here and there. Even
+; so, there are some cases where STDCALL is used explicitly (BPForm.OnInput) and
+; I get a head-splitting headache whenever I just try to decipher how exactly
+; the x64 calling convention works. 
+;   P.S. FFS just use 32-bit as long as 32-bit binaries are supported on 64-bit
+; systems.
+;   P.P.S. The x64 calling convention was made by the devil himself.
 IFDEF rax	; Cross-architecture compatibility (WIP)
 	ECHO BP3D: Compiling in 64-bit mode.
+	ECHO BP3D: WARNING! BP3D is compileable, but untested on x64.
 	BPPtr		TYPEDEF QWORD	; Pointer type
 	BPSPtr		TYPEDEF SQWORD	; Signed pointer type
 	BPPtrShift	EQU 3			; Byte shift amount (to use instead of mul/div)
@@ -262,11 +268,11 @@ ELSE
 	psp	EQU esp
 ENDIF
 
-; Miscellaneous types for argument generalization
+;   Miscellaneous types for argument generalization
 BPBool TYPEDEF BYTE		; Boolean type
 BPEnum TYPEDEF BYTE		; Enumerator type
 
-BPDisplayDevice STRUCT
+BPDisplayDevice STRUCT	; Display device (monitor) structure
 	Active		BPBool FALSE
 	DPI			DWORD ?
 	Orientation	BPEnum ?
@@ -305,20 +311,20 @@ BPForm STRUCT			; Windows form (window) structure
 	WindowSize		POINT <CW_USEDEFAULT, CW_USEDEFAULT>
 	
 	; Event procedures
-	;   OnCreate PROC
+	;   OnCreate	PROC STDCALL
 	;   Gets called after the form has just been created (bpCreateForm).
 	OnCreate		BPPtr 0
 	
-	;   OnDestroy	PROC
+	;   OnDestroy	PROC STDCALL
 	;   Gets called after the form has just been destroyed (WM_DESTROY).
 	OnDestroy		BPPtr 0
 	
-	;   OnFixed		PROC
+	;   OnFixed		PROC STDCALL
 	;   Gets called in a separate asynchronous thread every bpFixedInterval 
 	; seconds (default 0.01666666 s = 60 times/s).
 	OnFixed			BPPtr 0
 	
-	;   OnInput		PROC BPInType:BPEnum, BPInStruct:BPPtr
+	;   OnInput		PROC STDCALL BPInType:BPEnum, BPInStruct:BPPtr
 	;   Gets called whenever captured input gets sent to the form (see 
 	; InputFlags).
 	;   BPInType:BPEnum - a BP_INPUT_* constant that signifies the type of input
@@ -326,20 +332,20 @@ BPForm STRUCT			; Windows form (window) structure
 	;   BPInStruct:BPPtr - pointer to a BPIn* struct corresponding to BPInType.
 	OnInput			BPPtr 0
 	
-	;   OnRender	PROC
+	;   OnRender	PROC STDCALL
 	;   Gets called whenever the form is drawn (WM_PAINT). If DefaultFlag is on,
 	; doesn't send DefWindowProc to maintain a loop. For frame-independence
 	; deltaTime should be used.
 	OnRender		BPPtr 0
 	
-	;   OnResize	PROC
+	;   OnResize	PROC STDCALL
 	;   Gets called whenever the form is resized (WM_SIZE). Window size and
 	; client size are return in WindowSize and ScreenSize respectively.
 	OnResize		BPPtr 0
 	
-	;   OnStart		PROC
+	;   OnStart		PROC STDCALL
 	;   Gets called after one frame has passed after form creation.
-	OnStart			BPPtr 0	; OnStart	PROC
+	OnStart			BPPtr 0
 BPForm ENDS
 
 BPInJoyAxis STRUCT		; Joystick axis input structure
@@ -447,6 +453,7 @@ bpDefClassMain	DB "BPFMain", 0		; Default window class name
 bpErrorCaption	DB "ERROR", 0
 bpJoyMaxValue	DWORD 1191182336	; Value to divide the joystick DW by (32768)
 
+; ----- DATA FIELDS -----
 .DATA
 bpDefHeap	HANDLE 0	; Default heap (to not GetProcessHeap every time)
 
@@ -544,11 +551,13 @@ bpMPM MACRO m1:REQ, m2:REQ
 	pop m1
 ENDM
 
+;   Memory to memory through 32-bit eax macro (like MASM mrm).
 bpMEM32 MACRO m1:REQ, m2:REQ
 	mov eax, m2
 	mov m1, eax
 ENDM
 
+;   Pop 32-bit value (through rax-eax if 64-bit) macro.
 bpPop32 MACRO m1:REQ
 	IFDEF rax
 		pop rax
@@ -558,6 +567,7 @@ bpPop32 MACRO m1:REQ
 	ENDIF
 ENDM
 
+;   Push 32-bit value (through rax-eax if 64-bit) macro.
 bpPush32 MACRO m1:REQ
 	IFDEF rax
 		mov eax, m1
@@ -818,7 +828,9 @@ bpCalculateDelta ENDP
 bpCreateForm PROC EXPORT BPFormPtr:BPPtr
 	LOCAL wc:WNDCLASSEX, msg:MSG, testFreq:LARGE_INTEGER, quitFlag:BPBool
 	LOCAL ridMouse:RAWINPUTDEVICE, rect:RECT
-	ASSUME pcx:PTR BPForm
+	push pbx
+	ASSUME pbx:PTR BPForm
+	mov pbx, BPFormPtr
 	
 	.IF (!bpDefHeap)
 		call GetProcessHeap
@@ -832,10 +844,9 @@ bpCreateForm PROC EXPORT BPFormPtr:BPPtr
 	mov	wc.hbrBackground, COLOR_WINDOW
 	mov wc.lpszMenuName, NULL
 	
-	mov pcx, BPFormPtr
 	
-	bpMPM wc.lpszClassName, [pcx].ClassName	; MSDN says it's a 32-bit pointer ?
-	bpMPM wc.lpfnWndProc, [pcx].WndProc
+	bpMPM wc.lpszClassName,	[pbx].ClassName	; MSDN says it's a 32-bit pointer ?
+	bpMPM wc.lpfnWndProc,	[pbx].WndProc
 	
 	
 	invoke GetModuleHandle, NULL
@@ -848,23 +859,11 @@ bpCreateForm PROC EXPORT BPFormPtr:BPPtr
 	
 	invoke RegisterClassEx, ADDR wc
 	
-	mov pcx, BPFormPtr
-	push NULL
-	push wc.hInstance
-	push NULL
-	push NULL
-	bpPush32 [pcx].WindowSize.y
-	bpPush32 [pcx].WindowSize.x
-	bpPush32 [pcx].WindowPos.y
-	bpPush32 [pcx].WindowPos.x
-	bpPush32 [pcx].WindowStyle
-	push [pcx].Caption
-	push [pcx].ClassName
-	push 0
-	call CreateWindowEx
+	invoke CreateWindowEx, 0, [pbx].ClassName, [pbx].Caption, \
+	[pbx].WindowStyle, [pbx].WindowPos.x, [pbx].WindowPos.y, \
+	[pbx].WindowSize.x, [pbx].WindowSize.y, NULL, NULL, wc.hInstance, NULL
 	
-	mov pcx, BPFormPtr
-	mov [pcx].Handle, pax
+	mov [pbx].Handle, pax
 	IFDEF SetWindowLongPtrA
 		invoke SetWindowLongPtrA, pax, GWLP_USERDATA, BPFormPtr
 	ELSE
@@ -881,60 +880,60 @@ bpCreateForm PROC EXPORT BPFormPtr:BPPtr
 	call bpUpdateDisplayDevices
 	
 	; Populate WindowPos, WindowSize
-	mov pcx, BPFormPtr
-	invoke GetWindowRect, [pcx].Handle, ADDR rect
-	mov pcx, BPFormPtr
+	invoke GetWindowRect, [pbx].Handle, ADDR rect
 	mov eax, rect.left
-	mov [pcx].WindowPos.x, eax
+	mov [pbx].WindowPos.x, eax
 	sub rect.right, eax
-	bpMEM32 [pcx].WindowSize.x, rect.right
+	bpMEM32 [pbx].WindowSize.x, rect.right
 	mov eax, rect.top
-	mov [pcx].WindowPos.y, eax
+	mov [pbx].WindowPos.y, eax
 	sub rect.bottom, eax
-	bpMEM32 [pcx].WindowSize.y, rect.bottom
+	bpMEM32 [pbx].WindowSize.y, rect.bottom
 	
 	; Populate ScreenPos, ScreenSize
-	invoke GetClientRect, [pcx].Handle, ADDR rect
-	mov pcx, BPFormPtr
+	invoke GetClientRect, [pbx].Handle, ADDR rect
 	mov eax, rect.left
-	mov [pcx].ScreenPos.x, eax
+	mov [pbx].ScreenPos.x, eax
 	sub rect.right, eax
-	bpMEM32 [pcx].ScreenSize.x, rect.right
+	bpMEM32 [pbx].ScreenSize.x, rect.right
 	mov eax, rect.top
-	mov [pcx].ScreenPos.y, eax
+	mov [pbx].ScreenPos.y, eax
 	sub rect.bottom, eax
-	bpMEM32 [pcx].ScreenSize.y, rect.bottom
+	bpMEM32 [pbx].ScreenSize.y, rect.bottom
 	
-	mov pcx, BPFormPtr
-	mov [pcx].DefaultFlag, TRUE
-	.IF ([pcx].OnCreate)
-		call [pcx].OnCreate
+	mov [pbx].DefaultFlag, TRUE
+	.IF ([pbx].OnCreate)
+		mov pax, pbx
+		pop pbx
+		ASSUME pax:PTR BPForm
+		call [pax].OnCreate
+		ASSUME pax:nothing
+		push pbx
+		mov pbx, BPFormPtr
 	.ENDIF
-	mov pcx, BPFormPtr
-	.IF ([pcx].DefaultFlag)
-		mov al, [pcx].InputFlags
-		mov [pcx].InputFlags, 0
-		invoke bpSetInputFlags, pcx, al
+	.IF ([pbx].DefaultFlag)
+		mov al, [pbx].InputFlags
+		mov [pbx].InputFlags, 0
+		invoke bpSetInputFlags, pbx, al
 		
-		mov pcx, BPFormPtr
-		.IF ([pcx].WindowMode)
-			invoke bpSetWindowMode, pcx, [pcx].WindowMode
+		mov pbx, BPFormPtr
+		.IF ([pbx].WindowMode)
+			invoke bpSetWindowMode, pbx, [pbx].WindowMode
 		.ENDIF
 	.ENDIF
 	
 	; OnFixed
-	mov pcx, BPFormPtr
-	.IF ([pcx].OnFixed)
+	.IF ([pbx].OnFixed)
 		; BSD's Wine port doesn't like WinMM (Linux's does, skill issue).
 		;invoke timeSetEvent, BP_FIXED_INTERVAL, 0, OFFSET bpDefFixedProc, \
 		;BPFormPtr, TIME_PERIODIC
 		invoke CreateThread, NULL, 0, OFFSET bpDefFixedProc, BPFormPtr, 0, NULL 
 	.ENDIF
 	
-	mov pcx, BPFormPtr
-	invoke ShowWindow, [pcx].Handle, SW_SHOWDEFAULT
+	invoke ShowWindow, [pbx].Handle, SW_SHOWDEFAULT
 	
-	ASSUME pcx:nothing
+	ASSUME pbx:nothing
+	pop pbx
 	
 	mov quitFlag, 0
 	.WHILE (!quitFlag)
@@ -1009,12 +1008,12 @@ bpError ENDP
 ;   BPFormPtr:BPPtr - pointer to a form structure.
 bpInitGLContext PROC EXPORT BPFormPtr:BPPtr
 	LOCAL pfd:PIXELFORMATDESCRIPTOR, pixelFormat:DWORD
-	ASSUME pcx:PTR BPForm
+	push pbx
+	ASSUME pbx:PTR BPForm
+	mov pbx, BPFormPtr
 	
-	mov pcx, BPFormPtr
-	invoke GetDC, [pcx].Handle
-	mov pcx, BPFormPtr
-	mov [pcx].DeviceContext, pax
+	invoke GetDC, [pbx].Handle
+	mov [pbx].DeviceContext, pax
 	
 	mov pfd.nSize, SIZEOF PIXELFORMATDESCRIPTOR
 	mov pfd.nVersion, 1
@@ -1026,20 +1025,15 @@ bpInitGLContext PROC EXPORT BPFormPtr:BPPtr
 	mov pfd.cStencilBits, 1
 	mov pfd.iLayerType, PFD_MAIN_PLANE
 	
-	invoke ChoosePixelFormat, [pcx].DeviceContext, ADDR pfd
+	invoke ChoosePixelFormat, [pbx].DeviceContext, ADDR pfd
 	mov pixelFormat, eax
 	
-	mov pcx, BPFormPtr
-	invoke SetPixelFormat, [pcx].DeviceContext, pixelFormat, ADDR pfd
+	invoke SetPixelFormat, [pbx].DeviceContext, pixelFormat, ADDR pfd
 	
-	mov pcx, BPFormPtr
-	invoke wglCreateContext, [pcx].DeviceContext
-	mov pcx, BPFormPtr
-	mov [pcx].GLContext, pax
+	invoke wglCreateContext, [pbx].DeviceContext
+	mov [pbx].GLContext, pax
 	
-	push [pcx].GLContext
-	push [pcx].DeviceContext
-	call wglMakeCurrent
+	invoke wglMakeCurrent, [pbx].DeviceContext, [pbx].GLContext
 	
 	invoke glEnable, GL_CULL_FACE
 	invoke glShadeModel, GL_SMOOTH
@@ -1053,7 +1047,8 @@ bpInitGLContext PROC EXPORT BPFormPtr:BPPtr
 	
 	invoke glClearColor, 0, 0, 0, 0
 	
-	ASSUME pcx:nothing
+	ASSUME pbx:nothing
+	pop pbx
 	ret
 bpInitGLContext ENDP
 
@@ -1409,11 +1404,8 @@ bpReadJoysticks PROC EXPORT BPFormPtr:BPPtr
 					.IF (eax != edx)
 						push pbx
 						push pcx
-						push pax
-						push pcx
-						bpPush32 joyNum
-						push BPFormPtr
-						call bpInJoyButton
+						mov ebx, ecx
+						invoke bpInJoyButton, BPFormPtr, joyNum, ebx, eax
 						pop pcx
 						pop pbx
 					.ENDIF
@@ -1477,11 +1469,8 @@ bpReadJoysticks PROC EXPORT BPFormPtr:BPPtr
 						add pdx, 32
 						push pbx
 						push pcx
-						push pax
-						push pdx
-						bpPush32 joyNum
-						push BPFormPtr
-						call bpInJoyButton
+						mov ebx, edx
+						invoke bpInJoyButton, BPFormPtr, joyNum, ebx, eax
 						pop pcx
 						pop pbx
 					.ENDIF
@@ -1507,7 +1496,6 @@ bpReadJoysticks ENDP
 ; The resulting window position will be returned into this pointer.
 bpScreenToWindowPos PROC EXPORT BPFormPtr:BPPtr, PosPtr:BPPtr
 	LOCAL rect:RECT
-	ASSUME pcx:PTR BPForm
 	
 	mov pcx, PosPtr
 	bpMEM32 rect.left,	DWORD PTR [pcx]
@@ -1515,18 +1503,14 @@ bpScreenToWindowPos PROC EXPORT BPFormPtr:BPPtr, PosPtr:BPPtr
 	mov rect.right,		0
 	mov rect.bottom,	0
 	
-	mov pcx, BPFormPtr
-	push 0
-	bpPush32 [pcx].WindowStyle
-	lea pax, rect
-	push pax
-	call AdjustWindowRect
+	ASSUME pax:PTR BPForm
+	mov pax, BPFormPtr
+	invoke AdjustWindowRect, ADDR rect, [pax].WindowStyle, 0
+	ASSUME pax:nothing
 	
 	mov pcx, PosPtr
-	bpMEM32 DWORD PTR [pax], 	rect.left
-	bpMEM32 DWORD PTR [pax+4], 	rect.top
-	
-	ASSUME pcx:nothing
+	bpMEM32 DWORD PTR [pcx], 	rect.left
+	bpMEM32 DWORD PTR [pcx+4], 	rect.top
 	ret
 bpScreenToWindowPos ENDP
 
@@ -1537,7 +1521,6 @@ bpScreenToWindowPos ENDP
 ; consecutively. The resulting window size will be returned into this pointer.
 bpScreenToWindowSize PROC EXPORT BPFormPtr:BPPtr, SizePtr:BPPtr
 	LOCAL rect:RECT
-	ASSUME pcx:PTR BPForm
 	
 	mov pcx, SizePtr
 	mov rect.top,		0
@@ -1545,12 +1528,10 @@ bpScreenToWindowSize PROC EXPORT BPFormPtr:BPPtr, SizePtr:BPPtr
 	bpMEM32 rect.right,		DWORD PTR [pcx]
 	bpMEM32 rect.bottom,	DWORD PTR [pcx+4]
 	
-	mov pcx, BPFormPtr
-	push 0
-	bpPush32 [pcx].WindowStyle
-	lea pax, rect
-	push pax
-	call AdjustWindowRect
+	ASSUME pax:PTR BPForm
+	mov pax, BPFormPtr
+	invoke AdjustWindowRect, ADDR rect, [pax].WindowStyle, 0
+	ASSUME pax:nothing
 	
 	mov ecx, rect.right
 	sub ecx, rect.left
@@ -1560,7 +1541,6 @@ bpScreenToWindowSize PROC EXPORT BPFormPtr:BPPtr, SizePtr:BPPtr
 	sub ecx, rect.top
 	mov DWORD PTR [pax+4], ecx
 	
-	ASSUME pcx:nothing
 	ret
 bpScreenToWindowSize ENDP
 
@@ -1571,7 +1551,9 @@ bpScreenToWindowSize ENDP
 bpSetDisplayDevice PROC EXPORT BPFormPtr:BPPtr, DisplayDevice:DWORD
 	LOCAL winMode:BPEnum
 	
-	ASSUME pcx:PTR BPForm
+	push pbx
+	ASSUME pbx:PTR BPForm
+	mov pbx, BPFormPtr
 	
 	mov eax, DisplayDevice
 	mov edx, SIZEOF BPDisplayDevice
@@ -1582,30 +1564,25 @@ bpSetDisplayDevice PROC EXPORT BPFormPtr:BPPtr, DisplayDevice:DWORD
 		ret
 	.ENDIF
 	
-	mov pcx, BPFormPtr
-	bpMEM32 [pcx].DisplayDevice, DisplayDevice
+	bpMEM32 [pbx].DisplayDevice, DisplayDevice
 	
 	
-	mov pcx, BPFormPtr
-	mov al, [pcx].WindowMode
+	mov al, [pbx].WindowMode
 	mov winMode, al
 	push pdx
 	; This horrid random bullshit is necessary to make it work with Xorg
 	invoke bpSetWindowMode, BPFormPtr, BP_WINDOW_MODE_WINDOWED
 	invoke bpSetWindowMode, BPFormPtr, BP_WINDOW_MODE_MINIMIZED
-	pop pdx
+	pop pax
 	
-	mov pcx, BPFormPtr
-	bpPush32 bpDisplayDevices[pdx].ScreenPos.y
-	bpPush32 bpDisplayDevices[pdx].ScreenPos.x
-	push pcx
-	call bpSetWindowPos
+	invoke bpSetWindowPos, pbx, bpDisplayDevices[pax].ScreenPos.x, \
+	bpDisplayDevices[pax].ScreenPos.y
 	
-	mov pcx, BPFormPtr
-	invoke ShowWindow, [pcx].Handle, SW_RESTORE
+	invoke ShowWindow, [pbx].Handle, SW_RESTORE
 	invoke bpSetWindowMode, BPFormPtr, winMode
 	
-	ASSUME pcx:nothing
+	ASSUME pbx:nothing
+	pop pbx
 	ret
 bpSetDisplayDevice ENDP
 
@@ -1662,11 +1639,12 @@ bpSetInputFlags ENDP
 bpSetMouseMode PROC EXPORT BPFormPtr:BPPtr, MouseMode:BPEnum
 	LOCAL curInfo:CURSORINFO
 	
-	ASSUME pcx:PTR BPForm
-	mov pcx, BPFormPtr
+	push pbx
+	ASSUME pbx:PTR BPForm
+	mov pbx, BPFormPtr
 	
 	mov al, MouseMode
-	mov [pcx].MouseMode, al
+	mov [pbx].MouseMode, al
 	
 	mov curInfo.cbSize, SIZEOF CURSORINFO
 	invoke GetCursorInfo, ADDR curInfo
@@ -1680,13 +1658,11 @@ bpSetMouseMode PROC EXPORT BPFormPtr:BPPtr, MouseMode:BPEnum
 			invoke ShowCursor, 0
 		.ENDIF
 		.IF (MouseMode == BP_MOUSE_MODE_LOCKED)
-			mov pcx, BPFormPtr
-			bpPush32 [pcx].ScreenCnt.y
-			bpPush32 [pcx].ScreenCnt.x
-			call SetCursorPos
+			invoke SetCursorPos, [pbx].ScreenCnt.x, [pbx].ScreenCnt.y
 		.ENDIF
 	.ENDIF
-	ASSUME pcx:nothing
+	ASSUME pbx:nothing
+	pop pbx
 	ret
 bpSetMouseMode ENDP
 
@@ -1871,98 +1847,77 @@ bpSetScreenSize ENDP
 ;   WindowMode:BPEnum - window mode, represented as a BPWINMODE constant.
 bpSetWindowMode PROC EXPORT BPFormPtr:BPPtr, WindowMode:BPEnum
 	LOCAL scrSize:POINT
-	ASSUME pcx:PTR BPForm
-	mov pcx, BPFormPtr
+	push pbx
+	ASSUME pbx:PTR BPForm
+	mov pbx, BPFormPtr
 	
-	.IF ([pcx].WindowMode == BP_WINDOW_MODE_FULLSCREEN)
+	.IF ([pbx].WindowMode == BP_WINDOW_MODE_FULLSCREEN)
 		; Dubiously necessary
 		; I stole the modes from Godot but didn't even check how they work smh
 		.IF (WindowMode != BP_WINDOW_MODE_WINDOWED)
-			invoke bpSetWindowMode, pcx, BP_WINDOW_MODE_WINDOWED
-			mov pcx, BPFormPtr
+			invoke bpSetWindowMode, pbx, BP_WINDOW_MODE_WINDOWED
 		.ENDIF
-	.ELSEIF ([pcx].WindowMode == BP_WINDOW_MODE_FULLSCREEN_EX)
-		bpPush32 [pcx].WindowStyle
-		push GWL_STYLE
-		push [pcx].Handle
-		call SetWindowLongA
+	.ELSEIF ([pbx].WindowMode == BP_WINDOW_MODE_FULLSCREEN_EX)
+		invoke SetWindowLongA, [pbx].Handle, GWL_STYLE, [pbx].WindowStyle
 		invoke ChangeDisplaySettingsA, NULL, 0
 		; the proper? way to change back would be:
 		;mov pcx, BPFormPtr
-		;mov pax, [pcx].DisplayDevice
+		;mov pax, [pbx].DisplayDevice
 		;mov pcx, SIZEOF BPDisplayDevice
 		;mul pcx
 		;lea pax, bpDisplayDevices[pax].ScreenSize
 		;invoke bpSetResolution, BPFormPtr, pax, FALSE
-		mov pcx, BPFormPtr
 	.ENDIF
 	
 	mov al, WindowMode
-	mov [pcx].WindowMode, al
+	mov [pbx].WindowMode, al
 	
 	.IF (WindowMode == BP_WINDOW_MODE_WINDOWED)
-		bpPush32 [pcx].WindowStyle
-		push GWL_STYLE
-		push [pcx].Handle
-		call SetWindowLongA
+		invoke SetWindowLongA, [pbx].Handle, GWL_STYLE, [pbx].WindowStyle
 		
-		mov pcx, BPFormPtr
-		push SWP_NOZORDER or SWP_FRAMECHANGED or SWP_SHOWWINDOW
-		bpPush32 [pcx].WindowSize.y
-		bpPush32 [pcx].WindowSize.x
-		bpPush32 [pcx].WindowPos.y
-		bpPush32 [pcx].WindowPos.x
-		push HWND_TOPMOST
-		push [pcx].Handle
-		call SetWindowPos
+		invoke SetWindowPos, [pbx].Handle, HWND_TOPMOST, [pbx].WindowPos.x, \
+		[pbx].WindowPos.y, [pbx].WindowSize.x, [pbx].WindowSize.y, \
+		SWP_NOZORDER or SWP_FRAMECHANGED or SWP_SHOWWINDOW
 		
-		mov pcx, BPFormPtr
-		invoke ShowWindow, [pcx].Handle, SW_RESTORE
+		invoke ShowWindow, [pbx].Handle, SW_RESTORE
 	.ELSEIF (WindowMode == BP_WINDOW_MODE_MINIMIZED)
-		invoke ShowWindow, [pcx].Handle, SW_MINIMIZE
+		invoke ShowWindow, [pbx].Handle, SW_MINIMIZE
 	.ELSEIF (WindowMode == BP_WINDOW_MODE_MAXIMIZED)
-		invoke ShowWindow, [pcx].Handle, SW_MAXIMIZE
+		invoke ShowWindow, [pbx].Handle, SW_MAXIMIZE
 	.ELSEIF (WindowMode == BP_WINDOW_MODE_FULLSCREEN) || \
 	(WindowMode == BP_WINDOW_MODE_FULLSCREEN_EX)
-		.IF ([pcx].WindowMode != BP_WINDOW_MODE_MAXIMIZED)
-			invoke bpUpdateWindowPos, BPFormPtr	; pcx still is BPFormPtr
+		.IF ([pbx].WindowMode != BP_WINDOW_MODE_MAXIMIZED)
+			invoke bpUpdateWindowPos, BPFormPtr
 		.ENDIF
 		
 		.IF (WindowMode == BP_WINDOW_MODE_FULLSCREEN_EX)
-			push FALSE
-			lea pax, [pcx].ScreenSize
-			push pax
-			push BPFormPtr
-			call bpSetResolution
-			mov pcx, BPFormPtr
+			invoke bpSetResolution, pbx, ADDR [pbx].ScreenSize, FALSE
 		.ENDIF
 	
-		bpMEM32 scrSize.x, [pcx].ScreenSize.x
-		bpMEM32 scrSize.y, [pcx].ScreenSize.y
+		bpMEM32 scrSize.x, [pbx].ScreenSize.x
+		bpMEM32 scrSize.y, [pbx].ScreenSize.y
 		; This here sends a WM_SIZE with weird additions
-		invoke SetWindowLongA, [pcx].Handle, GWL_STYLE, WS_POPUP
+		invoke SetWindowLongA, [pbx].Handle, GWL_STYLE, WS_POPUP
 		
-		mov pcx, BPFormPtr
-		mov eax, [pcx].DisplayDevice
+		mov eax, [pbx].DisplayDevice
 		mov edx, SIZEOF BPDisplayDevice
 		mul edx
-		
 		.IF (WindowMode == BP_WINDOW_MODE_FULLSCREEN)
-			mov pcx, pax
-			bpMEM32 scrSize.x, bpDisplayDevices[pcx].ScreenSize.x
-			bpMEM32 scrSize.y, bpDisplayDevices[pcx].ScreenSize.y
-			mov pcx, BPFormPtr
+			mov ecx, bpDisplayDevices[pax].ScreenSize.x
+			mov scrSize.x, ecx
+			mov ecx, bpDisplayDevices[pax].ScreenSize.y
+			mov scrSize.y, ecx
 		.ENDIF
 		
-		invoke SetWindowPos, [pcx].Handle, HWND_TOPMOST, \
+		invoke SetWindowPos, [pbx].Handle, HWND_TOPMOST, \
 		bpDisplayDevices[pax].ScreenPos.x, bpDisplayDevices[pax].ScreenPos.y, \
 		scrSize.x, scrSize.y, SWP_NOZORDER or SWP_FRAMECHANGED or SWP_SHOWWINDOW
 	.ENDIF
 	
-	mov pcx, BPFormPtr
-	invoke UpdateWindow, [pcx].Handle
+	invoke UpdateWindow, [pbx].Handle
 	
-	ASSUME pcx:nothing
+	ASSUME pbx:nothing
+	pop pbx
 	ret
 bpSetWindowMode ENDP
 
@@ -2183,6 +2138,10 @@ bpDefWndProc PROC EXPORT hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
 	.ENDIF
 	mov dwRefData, pax
 	
+	;   pbx needs to be preserved and as such bloats the code on bound procedure
+	; calls. pax is, well, pax. pcx and pdx are used in the dreaded x64 calling
+	; convention. I don't even know anymore.
+	ASSUME pax:PTR BPForm
 	ASSUME pcx:PTR BPForm
 	
 	mov pcx, dwRefData
@@ -2190,18 +2149,16 @@ bpDefWndProc PROC EXPORT hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
 	.IF (uMsg == WM_DESTROY)
 		.IF ([pcx].OnDestroy)
 			call [pcx].OnDestroy
-		.ENDIF
-		mov pcx, dwRefData
-		.IF ([pcx].DefaultFlag)
 			mov pcx, dwRefData
+		.ENDIF
+		.IF ([pcx].DefaultFlag)
 			.IF ([pcx].GLContext)
 				invoke wglDeleteContext, [pcx].GLContext
+				mov pcx, dwRefData
 			.ENDIF
-			mov pcx, dwRefData
 			.IF ([pcx].DeviceContext)
-				push [pcx].DeviceContext
-				push [pcx].Handle
-				call ReleaseDC
+				mov pax, pcx
+				invoke ReleaseDC, [pax].Handle, [pax].DeviceContext
 			.ENDIF
 			invoke PostQuitMessage, 0
 		.ENDIF
@@ -2266,9 +2223,8 @@ bpDefWndProc PROC EXPORT hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
 				mov pcx, dwRefData
 			.ENDIF
 			.IF ([pcx].MouseMode == BP_MOUSE_MODE_LOCKED)
-				bpPush32 [pcx].ScreenCnt.y
-				bpPush32 [pcx].ScreenCnt.x
-				call SetCursorPos
+				mov pax, pcx
+				invoke SetCursorPos, [pax].ScreenCnt.x, [pax].ScreenCnt.y
 				mov pcx, dwRefData
 				bpMEM32 bpMouseScreenPrev[0], [pcx].ScreenCnt.x
 				bpMEM32 bpMouseScreenPrev[4], [pcx].ScreenCnt.y
@@ -2295,14 +2251,15 @@ bpDefWndProc PROC EXPORT hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
 		mov [pcx].DefaultFlag, TRUE
 		.IF ([pcx].OnRender) && (bpFirstFrameSkipped)
 			call [pcx].OnRender
+			mov pcx, dwRefData
 		.ELSE
 			mov bpFirstFrameSkipped, TRUE
 			.IF ([pcx].OnStart)
 				call [pcx].OnStart
+				mov pcx, dwRefData
 			.ENDIF
 		.ENDIF
 		
-		mov pcx, dwRefData
 		.IF ([pcx].DefaultFlag)
 			mov [pcx].DefaultFlag, FALSE
 			invoke SwapBuffers, [pcx].DeviceContext
@@ -2343,11 +2300,8 @@ bpDefWndProc PROC EXPORT hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
 		mov pcx, dwRefData
 		.IF ([pcx].DefaultFlag)
 			.IF ([pcx].GLContext)
-				bpPush32 [pcx].ScreenSize.y
-				bpPush32 [pcx].ScreenSize.x
-				push 0
-				push 0
-				call glViewport
+				mov pax, pcx
+				invoke glViewport, 0, 0, [pax].ScreenSize.x, [pax].ScreenSize.y
 			.ENDIF
 			invoke bpSetScreenCenter, dwRefData
 		.ENDIF
@@ -2412,5 +2366,6 @@ bpDefWndProc PROC EXPORT hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
 	.ENDIF
 	
 	ASSUME pcx:nothing
+	ASSUME pax:nothing
 	ret
 bpDefWndProc ENDP

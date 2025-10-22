@@ -13,13 +13,18 @@ BP3D implements a somewhat OOP-like form API to easily and quickly create and ma
 
 Various BP3D extensions (src\\\*.inc) are present, but for now are generally not as well-structured or generalized. Some extensions are not optimized for 64-bit assembly. The neccessity of the existence of some is also debatable.
 
-BP3D aims to support various WinAPI clients out-of-the-box, with minimal (if any) configuration. The tested supported clients include:
+## WinAPI client support
+
+BP3D aims to support various WinAPI clients out-of-the-box, with minimal (if any) configuration. The targetetd supported clients include:
+
 - Windows 98SE, ME, 2000 (see BP_COMPATIBILITY_W9X)
 - Windows XP - 10
 - ReactOS
-- Wine (Android - Winlator; Linux - Arch, Debian; BSD - FreeBSD)
+- Wine (Android (Winlator), Linux, BSD)
 
 If BP3D doesn't work (or works improperly) on your WinAPI host OS, please submit an issue with the details of your setup.
+
+## Assembler support
 
 BP3D is built with future x64 support in mind, though it now remains untested and not fully configured for it. Right now, BP3D is tested for compileability with: MASM32, ASMC (32-bit), and UASM (32-bit; 64-bit compile only, can't link). POASM and TASM support might be considered in the future. BP3D supports MASM32 and WinInc Windows include files (headers and libs).
 

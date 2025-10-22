@@ -148,6 +148,8 @@ bpCheckFileInvalid MACRO
 	.ENDIF
 ENDM
 
+;   Simple MASM SADD replacement. Declares a string and returns its ADDR in pax.
+;   qStr:String - quoted string.
 s MACRO qStr:REQ
 	LOCAL strDb
 	.DATA

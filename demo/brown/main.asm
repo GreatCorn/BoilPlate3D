@@ -70,7 +70,7 @@ ENDM
 
 .CODE
 ; Render and process particles.
-RenderParticles PROC
+RenderParticles PROC EXPORT
 	LOCAL rot:REAL4
 	invoke glBindTexture, GL_TEXTURE_2D, TexParticle
 	invoke glDisable, GL_LIGHTING
@@ -142,7 +142,7 @@ RenderParticles PROC
 RenderParticles ENDP
 
 ; Reset particles to their original position & alpha, apply random velocities.
-ResetParticles PROC
+ResetParticles PROC EXPORT
 	xor pbx, pbx
 	.WHILE (pbx < PARTICLE_AMOUNT * SIZEOF Vector3)
 		mov ParticlePos[pbx], 0
@@ -169,7 +169,7 @@ ResetParticles PROC
 ResetParticles ENDP
 
 ;   FMain bindings
-OnCreate PROC STDCALL
+OnCreate PROC EXPORT
 	LOCAL texPixels:BPPtr, colLerp:REAL4
 	invoke bpInitGLContext, ADDR FMain
 	
@@ -262,7 +262,7 @@ OnCreate PROC STDCALL
 	ret
 OnCreate ENDP
 
-OnInput PROC STDCALL BPInType:BYTE, BPInStruct:BPPtr
+OnInput PROC EXPORT BPInType:BYTE, BPInStruct:BPPtr
 	.IF (BPInType == BP_INPUT_KEY)
 		ASSUME pbx:PTR BPInKey
 		mov pbx, BPInStruct
@@ -287,7 +287,7 @@ OnInput PROC STDCALL BPInType:BYTE, BPInStruct:BPPtr
 	ret
 OnInput ENDP
 
-OnRender PROC STDCALL
+OnRender PROC EXPORT
 	invoke glClear, GL_COLOR_BUFFER_BIT or GL_DEPTH_BUFFER_BIT
 	
 	invoke glMatrixMode, GL_PROJECTION

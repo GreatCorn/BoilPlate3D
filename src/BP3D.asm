@@ -275,8 +275,13 @@ ELSE
 ENDIF
 
 ;   Miscellaneous types for argument generalization
-BPBool TYPEDEF BYTE		; Boolean type
-BPEnum TYPEDEF BYTE		; Enumerator type
+BPBool	TYPEDEF BYTE		; Boolean type
+BPEnum	TYPEDEF BYTE		; Enumerator type
+IFDEF BP_DOUBLE_PRECISION	; Floating-point type
+	BPFloat	TYPEDEF REAL8
+ELSE
+	BPFloat	TYPEDEF REAL4
+ENDIF
 
 BPDisplayDevice STRUCT	; Display device (monitor) structure
 	Active		BPBool FALSE
@@ -292,8 +297,8 @@ BPForm STRUCT			; Windows form (window) structure
 	Caption			BPPtr OFFSET bpDefCaption		; Form caption/title
 	ClassName		BPPtr OFFSET bpDefClassMain		; Form registered class name
 	DefaultFlag		BPBool 0	; Flag to trigger default Win32/BP3D event proc
-	DeviceContext	HDC 0		; Form device context
-	GLContext		HANDLE 0	; Form OpenGL context
+	DeviceContext	HDC 0		; Form device context (DC)
+	GraphicsContext	BPPtr 0		; Form graphics context (GL)
 	Handle			HWND 0		; Form window handle
 	
 	;   Input flags bitmask. See possible input flags at BP_IF_*.
@@ -1037,9 +1042,9 @@ bpInitGLContext PROC EXPORT BPFormPtr:BPPtr
 	invoke SetPixelFormat, [pbx].DeviceContext, pixelFormat, ADDR pfd
 	
 	invoke wglCreateContext, [pbx].DeviceContext
-	mov [pbx].GLContext, pax
+	mov [pbx].GraphicsContext, pax
 	
-	invoke wglMakeCurrent, [pbx].DeviceContext, [pbx].GLContext
+	invoke wglMakeCurrent, [pbx].DeviceContext, [pbx].GraphicsContext
 	
 	invoke glEnable, GL_CULL_FACE
 	invoke glShadeModel, GL_SMOOTH
@@ -2158,8 +2163,12 @@ bpDefWndProc PROC EXPORT hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
 			mov pcx, dwRefData
 		.ENDIF
 		.IF ([pcx].DefaultFlag)
-			.IF ([pcx].GLContext)
-				invoke wglDeleteContext, [pcx].GLContext
+			.IF ([pcx].WindowMode == BP_WINDOW_MODE_FULLSCREEN_EX)
+				invoke bpSetWindowMode, dwRefData, BP_WINDOW_MODE_WINDOWED
+				mov pcx, dwRefData
+			.ENDIF
+			.IF ([pcx].GraphicsContext)
+				invoke wglDeleteContext, [pcx].GraphicsContext
 				mov pcx, dwRefData
 			.ENDIF
 			.IF ([pcx].DeviceContext)
@@ -2305,7 +2314,7 @@ bpDefWndProc PROC EXPORT hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
 		
 		mov pcx, dwRefData
 		.IF ([pcx].DefaultFlag)
-			.IF ([pcx].GLContext)
+			.IF ([pcx].GraphicsContext)
 				mov pax, pcx
 				invoke glViewport, 0, 0, [pax].ScreenSize.x, [pax].ScreenSize.y
 			.ENDIF

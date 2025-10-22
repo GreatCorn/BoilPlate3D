@@ -111,9 +111,9 @@ InitARBContext PROC EXPORT
 	
 	invoke SetPixelFormat, FMain.DeviceContext, pixelFormat, ADDR pfd
 	invoke wglCreateContext, FMain.DeviceContext
-	mov FMain.GLContext, pax
+	mov FMain.GraphicsContext, pax
 	
-	invoke wglMakeCurrent, FMain.DeviceContext, FMain.GLContext
+	invoke wglMakeCurrent, FMain.DeviceContext, FMain.GraphicsContext
 	
 	invoke glEnable, GL_MULTISAMPLE
 	
@@ -332,7 +332,7 @@ Stiffness:REAL4, Damping:REAL4, T:REAL4
 Vector3DampedSpring ENDP
 
 ;   FMain bindings
-OnCreate PROC STDCALL EXPORT
+OnCreate PROC EXPORT
 	.IF (ARB)
 		invoke InitARBContext ; Initialize ARB context
 	.ELSE
@@ -366,7 +366,7 @@ OnCreate PROC STDCALL EXPORT
 	ret
 OnCreate ENDP
 
-OnInput PROC STDCALL EXPORT BPInType:BPEnum, BPInStruct:BPPtr	
+OnInput PROC EXPORT BPInType:BPEnum, BPInStruct:BPPtr	
 	mov pbx, BPInStruct
 	.IF (BPInType == BP_INPUT_MOUSE_BUTTON)
 		ASSUME pbx:PTR BPInMouseButton
@@ -416,7 +416,7 @@ OnInput PROC STDCALL EXPORT BPInType:BPEnum, BPInStruct:BPPtr
 	ret
 OnInput ENDP
 
-OnRender PROC STDCALL EXPORT
+OnRender PROC EXPORT
 	LOCAL vecVal:Vector3, deltaP:REAL4, FPS:DWORD, fpsStr[32]:BYTE
 	
 	call ProcessPhysics
@@ -486,13 +486,16 @@ FARBOnCreate PROC EXPORT
 FARBOnCreate ENDP
 
 start:
-	finit
 	mov FARB.OnCreate, OFFSET FARBOnCreate
 	invoke bpCreateForm, ADDR FARB
 	
-	mov FMain.OnCreate, OFFSET OnCreate
-	mov FMain.OnInput, OFFSET OnInput
-	mov FMain.OnRender, OFFSET OnRender
+	
+	mov FMain.Caption,	OFFSET AppName
+	
+	mov FMain.OnCreate,	OFFSET OnCreate
+	mov FMain.OnInput,	OFFSET OnInput
+	mov FMain.OnRender,	OFFSET OnRender
+	
 	invoke bpCreateForm, ADDR FMain
 	
 	invoke TerminateProcess, r(GetCurrentProcess), 0

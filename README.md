@@ -15,23 +15,23 @@ Various BP3D extensions (src\\\*.inc) are present, but for now are generally not
 
 ## WinAPI client support
 
-BP3D aims to support various WinAPI clients out-of-the-box, with minimal (if any) configuration. The targetetd supported clients include:
+BP3D aims to support various WinAPI clients out-of-the-box, with minimal (if any) configuration. The targeted supported clients include:
 
 - Windows 98SE, ME, 2000 (see BP_COMPATIBILITY_W9X)
 - Windows XP - 10
 - ReactOS
-- Wine (Android (Winlator), Linux, BSD)
+- Wine (Android (<a href="https://github.com/brunodev85/winlator">Winlator</a>), Linux, BSD)
 
 If BP3D doesn't work (or works improperly) on your WinAPI host OS, please submit an issue with the details of your setup.
 
 ## Assembler support
 
-BP3D is built with future x64 support in mind, though it now remains untested and not fully configured for it. Right now, BP3D is tested for compileability with: MASM32, ASMC (32-bit), and UASM (32-bit; 64-bit compile only, can't link). POASM and TASM support might be considered in the future. BP3D supports MASM32 and WinInc Windows include files (headers and libs).
+BP3D is built with future x64 support in mind, though it now remains untested and not fully configured for it. Right now, BP3D is tested for compileability with: MASM32, <a href="https://github.com/nidud/asmc">ASMC</a> (2.37.36, 32-bit), and <a href="https://www.terraspace.co.uk/uasm.html">UASM</a> (2.57 32-bit; 64-bit compile only, can't link). POASM and TASM support might be considered in the future. BP3D supports MASM32 and <a href="https://www.terraspace.co.uk/uasm.html#p7">WinInc</a> (2.10) Windows include files (headers and libs).
 
 ***
 
 Copyright © 2025 Yevhenii Ionenko (aka GreatCorn). All rights reserved.
 
-Licensed under the terms of the MIT license (see LICENSE.txt).
+Licensed under the terms of the MIT license (see <a href="https://github.com/GreatCorn/BoilPlate3D/blob/main/LICENSE.txt">LICENSE.txt</a>).
 
 https://greatcorn.github.io/me/

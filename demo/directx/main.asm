@@ -121,7 +121,7 @@ SetDeviceParams PROC
 	ret
 SetDeviceParams ENDP
 
-;   FMain bindings
+; FMain bindings
 OnCreate PROC EXPORT	
 	;   It's probably best to create separate pointers for IDirect3D objects, 
 	; but hey let's use the BP3D API where it doesn't make much sense to

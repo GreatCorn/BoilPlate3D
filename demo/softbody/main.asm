@@ -331,7 +331,7 @@ Stiffness:REAL4, Damping:REAL4, T:REAL4
 	ret
 Vector3DampedSpring ENDP
 
-;   FMain bindings
+; FMain bindings
 OnCreate PROC EXPORT
 	.IF (ARB)
 		invoke InitARBContext ; Initialize ARB context

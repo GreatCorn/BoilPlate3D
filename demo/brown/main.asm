@@ -168,7 +168,7 @@ ResetParticles PROC EXPORT
 	ret
 ResetParticles ENDP
 
-;   FMain bindings
+; FMain bindings
 OnCreate PROC EXPORT
 	LOCAL texPixels:BPPtr, colLerp:REAL4
 	invoke bpInitGLContext, ADDR FMain

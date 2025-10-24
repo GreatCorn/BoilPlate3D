@@ -285,6 +285,15 @@ glRotate3fvr PROC EXPORT v:BPPtr
 	ret
 glRotate3fvr ENDP
 
+gluSpheref PROC EXPORT quad:BPPtr, radius:REAL4, slices:SDWORD, stacks:SDWORD
+	push stacks
+	push slices
+	pfad radius
+	push quad
+	call gluSphere
+	ret
+gluSpheref ENDP
+
 glTranslate3fv PROC EXPORT v:BPPtr
 	mov pax, v
 	invoke glTranslatef, REAL4 PTR [pax], REAL4 PTR [pax+4], REAL4 PTR [pax+8]

@@ -1,7 +1,8 @@
 ;
 ;   BP3D Forms Demo
 ;
-;   Demonstrates the usage of multiple asynchronous forms.
+;   Demonstrates the usage of multiple asynchronous forms. Might not work well
+; with X11.
 ;
 ;   Copyright (c) 2025 Yevhenii Ionenko (aka GreatCorn). All rights reserved.
 ;   Licensed under the terms of the MIT license (see ..\LICENSE.txt).
@@ -12,6 +13,7 @@
 option casemap:none
 
 BP_COMPATIBILITY_W9X	EQU <1>	; Exclude unsupported APIs
+BP_ONRESIZE_MOVE		EQU <1>	; Call OnResize on WM_MOVE
 
 ; BP3D includes
 include ..\..\src\BP3D.asm
@@ -105,6 +107,7 @@ OnResize PROC EXPORT
 	; pcx is supposed to store the caller form
 	ASSUME pcx:PTR BPForm
 	mov [pcx].DefaultFlag, FALSE
+	call [pcx].OnRender
 	ASSUME pcx:nothing
 	ret
 OnResize ENDP

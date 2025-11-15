@@ -15,6 +15,8 @@
 ; compiler not being a direct inc path is for MASM32 macros loading support.
 IFDEF BP_WININC
 	; ----- WININC INCLUDES -----
+	ECHO BP3D: Compiling with WinInc includes.
+	
 	;   Remember to generate the .lib files.
 	_WIN32_WINNT EQU <0502h>
 	WINVER EQU <0502h>
@@ -22,6 +24,9 @@ IFDEF BP_WININC
 	
 	includelib gdi32.lib
 	includelib kernel32.lib
+	IFNDEF BP_COMPATIBILITY_W9X
+		includelib hid.lib	; You will have to generate it yourself from hid.dll
+	ENDIF
 	include include\gl\gl.inc
 	includelib opengl32.lib
 	includelib ntdll.lib
@@ -30,6 +35,8 @@ IFDEF BP_WININC
 	includelib winmm.lib
 ELSEIFNDEF BP_CUSTOM_INCLUDES
 	; -----	MASM32 INCLUDES -----
+	ECHO BP3D: Compiling with MASM32 includes.
+	
 	include include\windows.inc
 
 	include include\gdi32.inc
@@ -38,6 +45,9 @@ ELSEIFNDEF BP_CUSTOM_INCLUDES
 	includelib kernel32.lib
 	include include\opengl32.inc
 	includelib opengl32.lib
+	IFNDEF BP_COMPATIBILITY_W9X
+		includelib hid.lib
+	ENDIF
 	include include\user32.inc
 	includelib user32.lib
 	include include\winmm.inc
@@ -94,143 +104,6 @@ ELSE
 ENDIF
 
 ; ----- TYPES -----
-;   MASM has some bad headers, fixed redefinitions are here. The ones that have
-; unions in them are the ones that are messed up, with the exception of the 
-; joystick, ones which are of an entirely different size due to Microsoft 
-; switching UINT size from WORD to DWORD (symbolic field prefixes are still w).
-IFNDEF BP_CUSTOM_INCLUDES
-DEVMODEAFIX STRUCT
-	dmDeviceName	BYTE	CCHDEVICENAME dup(?)
-	dmSpecVersion	WORD	?
-	dmDriverVersion	WORD	?
-	dmSize			WORD	?
-	dmDriverExtra	WORD	?
-	dmFields		DWORD	?
-	union
-		struct
-			dmOrientation	WORD	?
-			dmPaperSize 	WORD	?
-			dmPaperLength	WORD	?
-			dmPaperWidth	WORD	?
-			dmScale			WORD	?
-			dmCopies		WORD	?
-			dmDefaultSource	WORD	?
-			dmPrintQuality	WORD	?
-		ends
-		;dmPosition POINTL <>	; are Microsoft docs also tripping
-		struct
-			dmPosition				POINTL	<>
-			dmDisplayOrientation	DWORD	?
-			dmDisplayFixedOutput	DWORD	?
-		ends
-	ends
-	dmColor			WORD	?
-	dmDuplex		WORD	?
-	dmYResolution	WORD	?
-	dmTTOption		WORD	?
-	dmCollate		WORD	?
-	dmFormName		BYTE	CCHFORMNAME dup (?)
-	dmLogPixels		WORD	?
-	dmBitsPerPel	DWORD	?
-	dmPelsWidth		DWORD	?
-	dmPelsHeight	DWORD	?
-	union
-		dmDisplayFlags	DWORD	?
-		dmNup			DWORD	?
-	ends
-	dmDisplayFrequency	DWORD	?
-	dmICMMethod			DWORD	?
-	dmICMIntent			DWORD	?
-	dmMediaType			DWORD	?
-	dmDitherType		DWORD	?
-	dmReserved1			DWORD	?
-	dmReserved2			DWORD	?
-	dmPanningWidth		DWORD	?
-	dmPanningHeight		DWORD	?
-DEVMODEAFIX ENDS
-IFNDEF BP_WININC
-JOYCAPSAFIX STRUCT	; This redefinition isn't the same size, so another name
-	wMid			WORD	?
-	wPid			WORD	?
-	szPname			BYTE	MAXPNAMELEN dup (?)
-	wXmin			DWORD	?
-	wXmax			DWORD	?
-	wYmin			DWORD	?
-	wYmax			DWORD	?
-	wZmin			DWORD	?
-	wZmax			DWORD	?
-	wNumButtons		DWORD	?
-	wPeriodMin		DWORD	?
-	wPeriodMax		DWORD	?
-	wRmin			DWORD	?
-	wRmax			DWORD	?
-	wUmin			DWORD	?
-	wUmax			DWORD	?
-	wVmin			DWORD	?
-	wVmax			DWORD	?
-	wCaps			DWORD	?
-	wMaxAxes		DWORD	?
-	wNumAxes		DWORD	?
-	wMaxButtons		DWORD	?
-	szRegKey		BYTE	MAXPNAMELEN dup(?)
-	szOEMVxD		BYTE	MAX_JOYSTICKOEMVXDNAME dup(?)
-JOYCAPSAFIX ENDS
-
-JOYINFOFIX STRUCT	; Same here
-	wXpos		DWORD	?
-	wYpos		DWORD	?
-	wZpos		DWORD	?
-	wButtons	DWORD	?
-JOYINFOFIX ENDS
-
-RAWINPUTHEADER  STRUCT 		; Just redefine all RAWINPUT while we're at it
-	dwType      DWORD   ?
-	dwSize      DWORD   ?
-	hDevice     HANDLE  ?
-	wParam      WPARAM  ?
-RAWINPUTHEADER  ENDS
-
-RAWMOUSE STRUCT 			; Doesn't exist at all in windows.inc
-	usFlags WORD    ?
-	union
-		ulButtons       DWORD   ?
-		struct
-			usButtonFlags   WORD    ?
-			usButtonData    WORD    ?
-		ends
-	ends
-	ulRawButtons        DWORD   ?
-	lLastX              SDWORD  ?
-	lLastY              SDWORD  ?
-	ulExtraInformation  DWORD   ?
-RAWMOUSE ENDS
-
-RAWKEYBOARD STRUCT 
-	MakeCode            WORD    ?
-	Flags               WORD    ?
-	Reserved            WORD    ?
-	VKey                WORD    ?
-	Message             DWORD   ?
-	ExtraInformation    DWORD   ?
-RAWKEYBOARD ENDS
-
-RAWHID STRUCT 
-	dwSizeHid           DWORD ?
-	dwCount             DWORD ?
-	bRawData            BYTE 1 dup (?)
-RAWHID ENDS
-
-RAWINPUT STRUCT 
-	header  RAWINPUTHEADER <>
-	union data
-		mouse           RAWMOUSE    <>
-		keyboard        RAWKEYBOARD <>
-		hid             RAWHID      <>
-	ends
-RAWINPUT ENDS
-ENDIF
-ENDIF
-
 ;   Cross-architecture compatibility is possible but very shitty to pull off and
 ; may quickly become a terrible mess. For now I couldn't get JWlink to recognize
 ; the LIB files and ML64 is unusable with any kind of headers I threw at it. The
@@ -350,8 +223,9 @@ BPForm STRUCT			; Windows form (window) structure
 	OnRender		BPPtr 0
 	
 	;   OnResize	PROC STDCALL
-	;   Gets called whenever the form is resized (WM_SIZE). Window size and
-	; client size are return in WindowSize and ScreenSize respectively.
+	;   Gets called whenever the form is resized (WM_SIZE) or moved (WM_MOVE, if
+	; BP_ONRESIZE_MOVE is defined). Window and client size and position are
+	; returned in WindowSize, ScreenSize; WindowPos and ScreenPos, respectively.
 	OnResize		BPPtr 0
 	
 	;   OnStart		PROC STDCALL
@@ -399,6 +273,296 @@ BPJoystick STRUCT		; Joystick info abstraction structure (for bpJoysticks)
 	RawName		BYTE		32 dup (?)
 BPJoystick ENDS
 
+
+;   MASM has some bad headers, fixed redefinitions are here. The ones that have
+; unions in them are the ones that are messed up, with the exception of the 
+; joystick, ones which are of an entirely different size due to Microsoft 
+; switching UINT size from WORD to DWORD (symbolic field prefixes are still w).
+IFNDEF BP_CUSTOM_INCLUDES
+DEVMODEAFIX STRUCT
+	dmDeviceName	BYTE	CCHDEVICENAME dup(?)
+	dmSpecVersion	WORD	?
+	dmDriverVersion	WORD	?
+	dmSize			WORD	?
+	dmDriverExtra	WORD	?
+	dmFields		DWORD	?
+	union
+		struct
+			dmOrientation	WORD	?
+			dmPaperSize 	WORD	?
+			dmPaperLength	WORD	?
+			dmPaperWidth	WORD	?
+			dmScale			WORD	?
+			dmCopies		WORD	?
+			dmDefaultSource	WORD	?
+			dmPrintQuality	WORD	?
+		ends
+		;dmPosition POINTL <>	; are Microsoft docs also tripping
+		struct
+			dmPosition				POINTL	<>
+			dmDisplayOrientation	DWORD	?
+			dmDisplayFixedOutput	DWORD	?
+		ends
+	ends
+	dmColor			WORD	?
+	dmDuplex		WORD	?
+	dmYResolution	WORD	?
+	dmTTOption		WORD	?
+	dmCollate		WORD	?
+	dmFormName		BYTE	CCHFORMNAME dup (?)
+	dmLogPixels		WORD	?
+	dmBitsPerPel	DWORD	?
+	dmPelsWidth		DWORD	?
+	dmPelsHeight	DWORD	?
+	union
+		dmDisplayFlags	DWORD	?
+		dmNup			DWORD	?
+	ends
+	dmDisplayFrequency	DWORD	?
+	dmICMMethod			DWORD	?
+	dmICMIntent			DWORD	?
+	dmMediaType			DWORD	?
+	dmDitherType		DWORD	?
+	dmReserved1			DWORD	?
+	dmReserved2			DWORD	?
+	dmPanningWidth		DWORD	?
+	dmPanningHeight		DWORD	?
+DEVMODEAFIX ENDS
+IFNDEF BP_WININC
+;   Fixes for WinMM joystick structs
+JOYCAPSAFIX STRUCT	; This redefinition isn't the same size, so another name
+	wMid			WORD	?
+	wPid			WORD	?
+	szPname			BYTE	MAXPNAMELEN dup (?)
+	wXmin			DWORD	?
+	wXmax			DWORD	?
+	wYmin			DWORD	?
+	wYmax			DWORD	?
+	wZmin			DWORD	?
+	wZmax			DWORD	?
+	wNumButtons		DWORD	?
+	wPeriodMin		DWORD	?
+	wPeriodMax		DWORD	?
+	wRmin			DWORD	?
+	wRmax			DWORD	?
+	wUmin			DWORD	?
+	wUmax			DWORD	?
+	wVmin			DWORD	?
+	wVmax			DWORD	?
+	wCaps			DWORD	?
+	wMaxAxes		DWORD	?
+	wNumAxes		DWORD	?
+	wMaxButtons		DWORD	?
+	szRegKey		BYTE	MAXPNAMELEN dup(?)
+	szOEMVxD		BYTE	MAX_JOYSTICKOEMVXDNAME dup(?)
+JOYCAPSAFIX ENDS
+
+JOYINFOFIX STRUCT	; Same here
+	wXpos		DWORD	?
+	wYpos		DWORD	?
+	wZpos		DWORD	?
+	wButtons	DWORD	?
+JOYINFOFIX ENDS
+
+;   Raw input header fixes (same size, so same symbolic names)
+RAWINPUTHEADER  STRUCT 		; Just redefine all RAWINPUT while we're at it
+	dwType      DWORD   ?
+	dwSize      DWORD   ?
+	hDevice     HANDLE  ?
+	wParam      WPARAM  ?
+RAWINPUTHEADER  ENDS
+
+RAWMOUSE STRUCT 			; Doesn't exist at all in windows.inc
+	usFlags WORD    ?
+	union
+		ulButtons       DWORD   ?
+		struct
+			usButtonFlags   WORD    ?
+			usButtonData    WORD    ?
+		ends
+	ends
+	ulRawButtons        DWORD   ?
+	lLastX              SDWORD  ?
+	lLastY              SDWORD  ?
+	ulExtraInformation  DWORD   ?
+RAWMOUSE ENDS
+
+RAWKEYBOARD STRUCT 
+	MakeCode            WORD    ?
+	Flags               WORD    ?
+	Reserved            WORD    ?
+	VKey                WORD    ?
+	Message             DWORD   ?
+	ExtraInformation    DWORD   ?
+RAWKEYBOARD ENDS
+
+RAWHID STRUCT 
+	dwSizeHid           DWORD ?
+	dwCount             DWORD ?
+	bRawData            BYTE 1 dup (?)
+RAWHID ENDS
+
+RAWINPUT STRUCT 
+	header  RAWINPUTHEADER <>
+	union data
+		mouse           RAWMOUSE    <>
+		keyboard        RAWKEYBOARD <>
+		hid             RAWHID      <>
+	ends
+RAWINPUT ENDS
+ENDIF
+
+IFNDEF BP_COMPATIBILITY_W9X
+;   HidP definitions (no structs defined in any headers, WinInc doesn't have HID
+; at all). These definitions are limited only to the procedures and structs used
+; in BP3D. God save you if you want to use other HID procedures for yourself.
+IFNDEF HIDP_REPORT_TYPE
+HIDP_REPORT_TYPE TYPEDEF DWORD
+HidP_Input = 0
+HidP_Output = 1
+HidP_Feature = 2
+ENDIF
+IFNDEF USAGE
+USAGE TYPEDEF USHORT
+ENDIF
+
+IFNDEF HIDP_CAPS
+HIDP_CAPS STRUCT
+	Usage						USAGE	?
+	UsagePage					USAGE	?
+	InputReportByteLength		USHORT	?
+	OutputReportByteLength		USHORT	?
+	FeatureReportByteLength		USHORT	?
+	Reserved					USHORT	17 dup (?)
+	NumberLinkCollectionNodes	USHORT	?
+	NumberInputButtonCaps		USHORT	?
+	NumberInputValueCaps		USHORT	?
+	NumberInputDataIndices		USHORT	?
+	NumberOutputButtonCaps		USHORT	?
+	NumberOutputValueCaps		USHORT	?
+	NumberOutputDataIndices		USHORT	?
+	NumberFeatureButtonCaps		USHORT	?
+	NumberFeatureValueCaps		USHORT	?
+	NumberFeatureDataIndices	USHORT	?
+HIDP_CAPS ENDS
+ENDIF
+
+IFNDEF HIDP_BUTTON_CAPS
+HIDP_BUTTON_CAPS STRUCT
+	UsagePage			USAGE	?
+	ReportID			UCHAR	?
+	IsAlias				BOOLEAN	?
+	BitField			USHORT	?
+	LinkCollection		USHORT	?
+	LinkUsage			USAGE	?
+	LinkUsagePage		USAGE	?
+	IsRange				BOOLEAN	?
+	IsStringRange		BOOLEAN	?
+	IsDesignatorRange	BOOLEAN	?
+	IsAbsolute			BOOLEAN	?
+	ReportCount			USHORT	?
+	Reserved2			USHORT	?
+	Reserved			ULONG	9 DUP(?)
+
+	UNION
+		STRUCT Range
+			UsageMin		USAGE	?
+			UsageMax		USAGE	?
+			StringMin		USHORT	?
+			StringMax		USHORT	?
+			DesignatorMin	USHORT	?
+			DesignatorMax	USHORT	?
+			DataIndexMin	USHORT	?
+			DataIndexMax	USHORT	?
+		ENDS
+
+		STRUCT NotRange
+			Usage			USAGE	?
+			Reserved1		USAGE	?
+			StringIndex		USHORT	?
+			Reserved2		USHORT	?
+			DesignatorIndex	USHORT	?
+			Reserved3		USHORT	?
+			DataIndex		USHORT	?
+			Reserved4		USHORT	?
+		ENDS
+	ENDS
+HIDP_BUTTON_CAPS ENDS
+ENDIF
+
+IFNDEF HIDP_VALUE_CAPS
+HIDP_VALUE_CAPS	STRUCT 
+	UsagePage			USAGE	?
+	ReportID			BYTE	?
+	IsAlias				BOOLEAN	?
+	BitField			WORD	?
+	LinkCollection		WORD	?
+	LinkUsage			USAGE	?
+	LinkUsagePage		USAGE	?
+	IsRange				BOOLEAN	?
+	IsStringRange		BOOLEAN	?
+	IsDesignatorRange	BOOLEAN	?
+	IsAbsolute			BOOLEAN	?
+	HasNull				BOOLEAN	?
+	Reserved			BYTE	?
+	BitSize				WORD	?
+	ReportCount			WORD	?
+	Reserved2			WORD 5 dup (?)
+	UnitsExp			DWORD	?
+	Units				DWORD	?
+	LogicalMin			SDWORD	?
+	LogicalMax			SDWORD	?
+	PhysicalMin			SDWORD	?
+	PhysicalMax			SDWORD	?
+	UNION
+		STRUCT Range
+			UsageMin		USAGE	?
+			UsageMax		USAGE	?
+			StringMin		WORD	?
+			StringMax		WORD	?
+			DesignatorMin	WORD	?
+			DesignatorMax	WORD	?
+			DataIndexMin	WORD	?
+			DataIndexMax	WORD	?
+		ENDS
+		STRUCT NotRange
+			Usage			USAGE	?
+			Reserved1		USAGE	?
+			StringIndex		WORD	?
+			Reserved2		WORD	?
+			DesignatorIndex	WORD	?
+			Reserved3		WORD	?
+			DataIndex		WORD	?
+			Reserved4		WORD	?
+		ENDS
+	ENDS
+HIDP_VALUE_CAPS	ENDS
+ENDIF
+
+
+IFNDEF HidP_GetButtonCaps
+HidP_GetButtonCaps PROTO STDCALL :DWORD, :BPPtr, :BPPtr, :BPPtr
+ENDIF
+IFNDEF HidP_GetCaps
+HidP_GetCaps PROTO STDCALL :BPPtr, :BPPtr
+ENDIF
+IFNDEF HidP_GetCaps
+HidP_GetCaps PROTO STDCALL :BPPtr, :BPPtr
+ENDIF
+IFNDEF HidP_GetUsages
+HidP_GetUsages PROTO STDCALL :DWORD, :USAGE, :USHORT, :BPPtr, :BPPtr, :BPPtr, \
+:BPPtr, :ULONG
+ENDIF
+IFNDEF HidP_GetUsageValue
+HidP_GetUsageValue PROTO STDCALL :DWORD, :USAGE, :USHORT, :USAGE, :BPPtr, \
+:BPPtr, :BPPtr, :ULONG
+ENDIF
+IFNDEF HidP_GetValueCaps
+HidP_GetValueCaps PROTO STDCALL :DWORD, :BPPtr, :BPPtr, :BPPtr
+ENDIF
+ENDIF
+ENDIF
+
 ; ----- CONSTANTS -----
 BP_ORIENTATION_LANDSCAPE		EQU 0
 BP_ORIENTATION_PORTRAIT			EQU 1
@@ -410,8 +574,9 @@ BP_FIXED_INTERVAL		EQU 1000 / 60	; OnFixed signal interval (ms)
 ;   BPForm.InputFlags bits for configuring input. Can be set before form
 ; creation. To correctly set them after the form has been created, call 
 ; bpSetInputFlags.
-BP_IF_RAW_MOUSE	EQU 1	; Register and use raw mouse input instead of cursor
-BP_IF_JOYSTICK	EQU 2	; Register and use joystick input (BP_INPUT_JOY_*)
+BP_IF_RAW_MOUSE		EQU 1	; Register and use raw mouse input instead of cursor
+BP_IF_JOYSTICK		EQU 2	; Register and use joystick input (BP_INPUT_JOY_*)
+BP_IF_RAW_JOYSTICK	EQU 4	; Register and use raw joystick input
 
 ; Input type constants (BPForm.OnInput)
 BP_INPUT_JOY_AXIS		EQU 0	; Input structure is BPInJoyAxis
@@ -427,7 +592,7 @@ BP_JOY_AXIS_Y	EQU 1	; (left stick vertical)
 BP_JOY_AXIS_Z	EQU 2	; (right stick horizontal or analog shoulders)
 BP_JOY_AXIS_R	EQU 3	; (right stick vertical)
 BP_JOY_AXIS_U	EQU 4	; (right stick horizontal)
-BP_JOY_AXIS_V	EQU 5
+BP_JOY_AXIS_V	EQU 5	; (right stick vertical raw?)
 
 ; Joystick D-pad (returned in BP_INPUT_JOY_BUTTON)
 BP_JOY_DPAD_UP		EQU 32
@@ -455,14 +620,16 @@ BP_WINDOW_MODE_FULLSCREEN_EX	EQU 4	; Form uses exclusive fullscreen,
 										; BPForm.ScreenSize.
 
 ; Mouse wheel virtual-key codes (returned in BP_INPUT_MOUSE_BUTTON)
-VK_MWHEEL_UP	EQU 7
-VK_MWHEEL_DOWN	EQU 8
+VK_MWHEEL_UP	EQU 10
+VK_MWHEEL_DOWN	EQU 11
 
 .CONST
 bpDefCaption	DB "BP3D", 0		; Default window caption
 bpDefClassMain	DB "BPFMain", 0		; Default window class name
 bpErrorCaption	DB "ERROR", 0
 bpJoyMaxValue	DWORD 1191182336	; Value to divide the joystick DW by (32768)
+bpRawJoyF128	REAL4 128.0
+bpRawJoyFM128	REAL4 0.0078125	
 
 ; ----- DATA FIELDS -----
 .DATA
@@ -538,6 +705,7 @@ bpInKey					PROTO :BPPtr, :WPARAM, :BOOL
 bpInMouseButton			PROTO :BPPtr, :DWORD, :BPBool
 bpInMouseMove 			PROTO :BPPtr
 bpInRaw					PROTO :BPPtr, :LPARAM
+bpInRawJoystick			PROTO :BPPtr, :BPPtr
 bpReadJoysticks			PROTO :BPPtr
 bpScreenToWindowPos		PROTO :BPPtr, :BPPtr
 bpScreenToWindowSize	PROTO :BPPtr, :BPPtr
@@ -1343,7 +1511,7 @@ bpInRaw PROC EXPORT BPFormPtr:BPPtr, RawHandle:LPARAM
 				ASSUME pdx:nothing
 			.ENDIF
 		.ELSEIF ([pcx].header.dwType == RIM_TYPEHID)
-			; WIP (touch is vendor-specific, HidP doesn't work with it)
+			invoke bpInRawJoystick, BPFormPtr, lpb
 		.ENDIF
 		ASSUME pcx:nothing
 	.ENDIF
@@ -1351,6 +1519,234 @@ bpInRaw PROC EXPORT BPFormPtr:BPPtr, RawHandle:LPARAM
 	ENDIF
 	ret
 bpInRaw ENDP
+
+;   Process raw joystick input and send to form OnInput event as structs. Satan
+; himself endorsed this procedure and gave me only one gamepad to test with.
+;   BPFormPtr:BPPtr - pointer to a form structure.
+;   InputDataPtr:BPPtr - handle to pre-read RAWINPUT structure.
+bpInRawJoystick PROC EXPORT BPFormPtr:BPPtr, InputDataPtr:BPPtr
+	IFNDEF BP_COMPATIBILITY_W9X
+	MAX_BUTTONS EQU 32
+	
+	LOCAL dwSize:DWORD, prep:BPPtr, caps:HIDP_CAPS
+	LOCAL pbCaps:BPPtr, pvCaps:BPPtr, capsLen:USHORT, usgLen:ULONG, btnCnt:DWORD
+	LOCAL usg[MAX_BUTTONS]:USAGE, btns:DWORD, usgVal:ULONG
+	
+	; Get preparsed data block
+	ASSUME pcx:PTR RAWINPUT
+	mov pcx, InputDataPtr
+	invoke GetRawInputDeviceInfo, [pcx].header.hDevice, RIDI_PREPARSEDDATA, \
+	NULL, ADDR dwSize
+	.IF !(eax)
+		invoke bpMalloc, bpDefHeap, 0, dwSize
+		mov prep, pax
+		mov pcx, InputDataPtr
+		invoke GetRawInputDeviceInfo, [pcx].header.hDevice, RIDI_PREPARSEDDATA,\
+		prep, ADDR dwSize
+		.IF (eax >= 0)
+			; Button caps
+			invoke HidP_GetCaps, prep, ADDR caps
+			
+			movzx eax, caps.NumberInputButtonCaps
+			mov capsLen, ax
+			mov cx, SIZEOF HIDP_BUTTON_CAPS
+			mul cx
+			invoke bpMalloc, bpDefHeap, 0, eax
+			mov pbCaps, pax
+			
+			invoke HidP_GetButtonCaps, 0, pbCaps, ADDR capsLen, prep
+			
+			; Get number of buttons
+			ASSUME pdx:PTR HIDP_BUTTON_CAPS
+			mov pdx, pbCaps
+			movzx eax, [pdx].Range.UsageMax
+			sub ax, [pdx].Range.UsageMin
+			inc ax
+			mov btnCnt, eax
+			mov bpJoysticks[0].NumButtons, eax
+			
+			; Value caps
+			movzx eax, caps.NumberInputValueCaps
+			mov bpJoysticks[0].NumAxes, eax
+			dec bpJoysticks[0].NumAxes
+			mov capsLen, ax
+			mov cx, SIZEOF HIDP_VALUE_CAPS
+			mul cx
+			invoke bpMalloc, bpDefHeap, 0, eax
+			mov pvCaps, pax
+			
+			invoke HidP_GetValueCaps, HidP_Input, pvCaps, ADDR capsLen, prep
+			
+			bpMEM32 usgLen, btnCnt
+			mov pcx, InputDataPtr
+			mov pdx, pbCaps
+			invoke HidP_GetUsages, HidP_Input, [pdx].UsagePage, 0, ADDR usg, \
+			ADDR usgLen, prep, ADDR [pcx].data.hid.bRawData,\
+			[pcx].data.hid.dwSizeHid	; what why bRawData pointer
+			
+			; Set buttons DWORD (reimplementing WinMM huh)
+			mov btns, 0
+			xor pcx, pcx
+			.WHILE (pcx < usgLen)
+				mov pax, pcx
+				shl pax, 1	; *2
+				movzx pax, usg[pax]
+				mov pdx, pbCaps
+				sub ax, [pdx].Range.UsageMin
+				
+				push pcx
+					mov cl, al
+					mov eax, 1
+					shl eax, cl
+					or btns, eax
+				pop pcx
+				
+				inc pcx
+			.ENDW
+			
+			; Send buttons by comparing DWORD
+			mov eax, btns
+			.IF (bpJoyInfoEx[0].dwButtons != eax)
+				xor ecx, ecx
+				.WHILE (ecx < btnCnt)
+					mov eax, 1
+					shl eax, cl
+					mov edx, bpJoyInfoEx[0].dwButtons
+					and edx, eax
+					and eax, btns
+					.IF (eax != edx)
+						push pbx
+						push pcx
+						mov ebx, ecx
+						invoke bpInJoyButton, BPFormPtr, 0, ebx, eax
+						pop pcx
+						pop pbx
+					.ENDIF
+					inc pcx
+				.ENDW
+				
+				bpMEM32 bpJoyInfoEx[0].dwButtons, btns
+			.ENDIF
+			
+			; Get value states
+			xor pcx, pcx
+			.WHILE (cx < capsLen)
+				mov pax, pcx
+				mov edx, SIZEOF HIDP_VALUE_CAPS
+				mul edx
+				add pax, pvCaps
+				mov pdx, pax
+				
+				push pcx
+				push pdx
+				mov pcx, InputDataPtr
+				ASSUME pdx:PTR HIDP_VALUE_CAPS
+				invoke HidP_GetUsageValue, HidP_Input, [pdx].UsagePage, 0, \
+				[pdx].Range.UsageMin, ADDR usgVal, prep, \
+				ADDR [pcx].data.hid.bRawData, [pcx].data.hid.dwSizeHid
+				pop pdx
+				
+				.IF ([pdx].Range.UsageMin == 39h)
+					mov eax, usgVal
+					.IF (bpJoysticks[0].NumAxes == 4)	; Different D-Pad
+						; Bad practice?
+						.IF (eax == 8)
+							xor eax, eax
+						.ELSE
+							inc eax
+						.ENDIF
+					.ENDIF
+					.IF (bpJoyInfoEx[0].dwPOV != eax)
+						mov bpJoyInfoEx[0].dwPOV, eax
+						.IF !(eax)
+							mov usgVal, 0
+						.ELSE
+							mov ecx, eax
+							dec cl
+							shr cl, 1
+							mov eax, 1
+							shl eax, cl
+							mov ecx, usgVal
+							mov usgVal, eax
+							
+							push pcx
+							xor edx, edx
+							mov eax, ecx
+							dec eax
+							mov ecx, 2
+							div ecx
+							pop pcx
+							.IF (edx)
+								.IF (cl == 8)
+									mov cl, 1
+								.ENDIF
+								shr cl, 1
+								mov eax, 1
+								shl eax, cl
+								or usgVal, eax
+							.ENDIF
+						.ENDIF
+						xor pcx, pcx
+						.WHILE (pcx < 4)
+							mov eax, 1
+							shl eax, cl
+							mov edx, bpJoyInfoEx[0].dwReserved1
+							and edx, eax
+							and eax, usgVal
+							.IF (eax != edx)
+								mov pdx, pcx
+								add pdx, 32
+								push pbx
+								push pcx
+								mov ebx, edx
+								invoke bpInJoyButton, BPFormPtr, 0, ebx, eax
+								pop pcx
+								pop pbx
+							.ENDIF
+							inc pcx
+						.ENDW
+						bpMEM32 bpJoyInfoEx[0].dwReserved1, usgVal
+					.ENDIF
+				.ELSE
+					movzx pcx, [pdx].Range.UsageMin
+					sub pcx, 30h
+					mov pdx, pcx
+					shl pdx, 2
+					add pdx, 8
+					mov eax, usgVal
+					.IF (DWORD PTR bpJoyInfoEx[pdx] != eax)
+						mov DWORD PTR bpJoyInfoEx[pdx], eax
+						fild usgVal
+						.IF (bpJoysticks[0].NumAxes == 5)
+							fdiv bpJoyMaxValue
+							fld1
+							fsub
+							.IF (ecx == 4)	; worst practice
+								mov ecx, 3
+							.ELSEIF (ecx == 3)
+								mov ecx, 4
+							.ENDIF
+						.ELSE
+							fsub bpRawJoyF128
+							fmul bpRawJoyFM128
+						.ENDIF
+						fstp usgVal
+						invoke bpInJoyAxis, BPFormPtr, 0, ecx, usgVal
+					.ENDIF
+				.ENDIF
+				ASSUME pdx:nothing
+				
+				pop pcx
+				inc pcx
+			.ENDW
+			invoke bpFree, bpDefHeap, 0, pvCaps
+			invoke bpFree, bpDefHeap, 0, pbCaps
+		.ENDIF
+		invoke bpFree, bpDefHeap, 0, prep
+	.ENDIF
+	ENDIF
+	ret
+bpInRawJoystick ENDP
 
 ;   Read and process all available joysticks for input.
 ;   BPFormPtr:BPPtr - pointer to a form structure to which input will be sent.
@@ -1602,7 +1998,7 @@ bpSetDisplayDevice ENDP
 ;   BPFormPtr:BPPtr - pointer to a form structure.
 ;   InputFlags:BYTE - bitmask of input flags of BP_IF_*.
 bpSetInputFlags PROC EXPORT BPFormPtr:BPPtr, InputFlags:BYTE
-	LOCAL ridMouse:RAWINPUTDEVICE
+	LOCAL rid:RAWINPUTDEVICE
 	ASSUME pcx:PTR BPForm
 	mov pcx, BPFormPtr
 	
@@ -1613,28 +2009,60 @@ bpSetInputFlags PROC EXPORT BPFormPtr:BPPtr, InputFlags:BYTE
 	mov ah, InputFlags
 	and ah, BP_IF_RAW_MOUSE
 	.IF (al) != (ah)
-		mov ridMouse.usUsagePage, 1		; Generic desktop
-		mov ridMouse.usUsage, 2			; Mouse
-		bpMPM ridMouse.hwndTarget, [pcx].Handle
+		mov rid.usUsagePage, 1		; Generic desktop
+		mov rid.usUsage, 2			; Mouse
+		bpMPM rid.hwndTarget, [pcx].Handle
 		.IF (ah)
-			mov ridMouse.dwFlags, RIDEV_INPUTSINK
+			mov rid.dwFlags, RIDEV_INPUTSINK
 		.ELSE
-			mov ridMouse.dwFlags, RIDEV_REMOVE
+			mov rid.dwFlags, RIDEV_REMOVE
 		.ENDIF
-		invoke RegisterRawInputDevices, ADDR ridMouse, 1, \
-		SIZEOF RAWINPUTDEVICE
+		invoke RegisterRawInputDevices, ADDR rid, 1, SIZEOF RAWINPUTDEVICE
 		mov pcx, BPFormPtr
 	.ENDIF
 	ENDIF
 	
+	; Raw joystick
 	mov al, [pcx].InputFlags
-	and al, BP_IF_JOYSTICK
+	and al, BP_IF_RAW_JOYSTICK
 	mov ah, InputFlags
-	and ah, BP_IF_JOYSTICK
+	and ah, BP_IF_RAW_JOYSTICK
 	.IF (al) != (ah)
+		IFNDEF BP_COMPATIBILITY_W9X
+		mov rid.usUsagePage, 1		; Generic desktop
+		mov rid.usUsage, 4			; Joystick (directinput I think)
+		bpMPM rid.hwndTarget, [pcx].Handle
 		.IF (ah)
-			call bpUpdateJoysticks
-			mov pcx, BPFormPtr
+			mov rid.dwFlags, RIDEV_INPUTSINK
+		.ELSE
+			mov rid.dwFlags, RIDEV_REMOVE
+		.ENDIF
+		invoke RegisterRawInputDevices, ADDR rid, 1, SIZEOF RAWINPUTDEVICE
+		mov pcx, BPFormPtr
+		
+		;mov rid.usUsagePage, 1		; Generic desktop
+		mov rid.usUsage, 5			; Joystick (XInput)
+		;bpMPM rid.hwndTarget, [pcx].Handle
+		mov ah, InputFlags
+		and ah, BP_IF_RAW_JOYSTICK
+		.IF (ah)
+			mov rid.dwFlags, RIDEV_INPUTSINK
+		.ELSE
+			mov rid.dwFlags, RIDEV_REMOVE
+		.ENDIF
+		invoke RegisterRawInputDevices, ADDR rid, 1, SIZEOF RAWINPUTDEVICE
+		mov pcx, BPFormPtr
+		ENDIF
+	.ELSEIF !(ah)
+		mov al, [pcx].InputFlags
+		and al, BP_IF_JOYSTICK
+		mov ah, InputFlags
+		and ah, BP_IF_JOYSTICK
+		.IF (al) != (ah)
+			.IF (ah)
+				call bpUpdateJoysticks
+				mov pcx, BPFormPtr
+			.ENDIF
 		.ENDIF
 	.ENDIF
 	
@@ -2032,7 +2460,7 @@ bpUpdateDisplayDevices PROC EXPORT
 	ret
 bpUpdateDisplayDevices ENDP
 
-;   Update bpJoysticks (and respective bpJoyInfoEx) to then capture their input.
+;   Update bpJoysticks to then capture their input.
 bpUpdateJoysticks PROC EXPORT
 	IFDEF JOYINFOFIX
 		LOCAL joyInfo:JOYINFOFIX
@@ -2043,6 +2471,10 @@ bpUpdateJoysticks PROC EXPORT
 		LOCAL joyCaps:JOYCAPSAFIX
 	ELSE
 		LOCAL joyCaps:JOYCAPS
+	ENDIF
+	
+	IFDEF joyConfigChanged
+		invoke joyConfigChanged, 0
 	ENDIF
 	
 	call joyGetNumDevs
@@ -2184,6 +2616,14 @@ bpDefWndProc PROC EXPORT hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
 				call bpUpdateDisplayDevices
 				call bpUpdateJoysticks
 			.ENDIF
+		.ELSEIF ([pcx].InputFlags & BP_IF_RAW_JOYSTICK)
+			mov al, [pcx].InputFlags
+			and al, not BP_IF_RAW_JOYSTICK
+			invoke bpSetInputFlags, pcx, al
+			mov pcx, dwRefData
+			mov al, [pcx].InputFlags
+			or al, BP_IF_RAW_JOYSTICK
+			invoke bpSetInputFlags, pcx, al
 		.ENDIF
 	
 	.ELSEIF (uMsg == WM_INPUT)
@@ -2216,6 +2656,13 @@ bpDefWndProc PROC EXPORT hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
 		shr eax, 16
 		movsx eax, ax
 		mov [pcx].ScreenPos.y, eax
+		
+		IFDEF BP_ONRESIZE_MOVE
+		.IF ([pcx].OnResize)
+			call [pcx].OnResize
+			mov pcx, dwRefData
+		.ENDIF
+		ENDIF
 		
 		.IF ([pcx].DefaultFlag)
 			invoke bpSetScreenCenter, dwRefData
@@ -2278,7 +2725,10 @@ bpDefWndProc PROC EXPORT hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
 		.IF ([pcx].DefaultFlag)
 			mov [pcx].DefaultFlag, FALSE
 			invoke SwapBuffers, [pcx].DeviceContext
-			invoke bpReadJoysticks, dwRefData
+			mov pcx, dwRefData
+			.IF ([pcx].InputFlags & BP_IF_JOYSTICK)
+				invoke bpReadJoysticks, dwRefData
+			.ENDIF
 		.ENDIF
 		
 	.ELSEIF (uMsg == WM_SIZE)
@@ -2310,9 +2760,9 @@ bpDefWndProc PROC EXPORT hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
 		
 		.IF ([pcx].OnResize)
 			call [pcx].OnResize
+			mov pcx, dwRefData
 		.ENDIF
 		
-		mov pcx, dwRefData
 		.IF ([pcx].DefaultFlag)
 			.IF ([pcx].GraphicsContext)
 				mov pax, pcx
@@ -2372,6 +2822,17 @@ bpDefWndProc PROC EXPORT hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
 			movsx eax, ax
 			add eax, 4
 			invoke bpInMouseButton, dwRefData, eax, FALSE
+		.ENDIF
+	.ELSEIF (uMsg == WM_MOUSEWHEEL)
+		.IF ([pcx].OnInput) && !([pcx].InputFlags & BP_IF_RAW_MOUSE)
+			mov pax, wParam
+			shr eax, 16
+			movsx eax, ax
+			.IF (SDWORD PTR eax > 0)
+				invoke bpInMouseButton, pcx, VK_MWHEEL_UP, TRUE
+			.ELSE
+				invoke bpInMouseButton, pcx, VK_MWHEEL_DOWN, TRUE
+			.ENDIF
 		.ENDIF
 	.ENDIF
 

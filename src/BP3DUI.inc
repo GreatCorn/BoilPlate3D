@@ -1,13 +1,13 @@
 ;
 ;   BP3DText.inc
 ;   Version 0.5ac1
-;   BP3D bitmap text rendering API extension.
+;   BP3D user interface API extension.
 ;
 ;   Copyright (c) 2025 Yevhenii Ionenko (aka GreatCorn). All rights reserved.
 ;   Licensed under the terms of the MIT license (see ..\LICENSE.txt).
 ;
 
-IFNDEF BP3D_TEXT_INC
+IFNDEF BP3D_UI_INC
 BP3D_TEXT_INC EQU <1>
 
 BP_ALIGN_LEFT	EQU 0
@@ -18,13 +18,14 @@ BP_ALIGN_BOTTOM	EQU BP_ALIGN_RIGHT
 
 .DATA
 bpCurrentFont	BPPtr OFFSET bpDefaultFont
-bpDefaultFont	DWORD 127 dup (0) 
+bpDefaultFont	DWORD 127 dup (0)
 
 bpFontWidth		REAL4 8.0
 bpFontHeight	REAL4 16.0
 bpFontSpacing	REAL4 1.15
 bpFontQuad		DWORD 0
 bpTextNL		BYTE 0
+bpUIItems		DWORD 0
 
 .DATA?
 
@@ -102,13 +103,11 @@ bpLoadFont PROC EXPORT DirPath:BPPtr, FontPTR:BPPtr
 	mov BYTE PTR [pax+pbx+6], "t"
 	
 	xor pbx, pbx
-	.WHILE (pbx < 256)
+	.WHILE (pbx < 128)
 		; Convert pbx to string
 		mov pax, dirLen
 		add pax, stringBuf
-		.IF (pbx >= 200)
-			mov BYTE PTR [pax], "2"
-		.ELSEIF (pbx >= 100)
+		.IF (pbx >= 100)
 			mov BYTE PTR [pax], "1"
 		.ELSE
 			mov BYTE PTR [pax], "0"
@@ -142,10 +141,8 @@ bpLoadFont PROC EXPORT DirPath:BPPtr, FontPTR:BPPtr
 		mul pcx
 		add pax, FontPTR
 		invoke bpLoadBPT, pax, stringBuf
-		.IF (pax)
-			invoke glTexParameteri, GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP 
-			invoke glTexParameteri, GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP
-		.ENDIF
+		invoke glTexParameteri, GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP 
+		invoke glTexParameteri, GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP 
 		
 		inc pbx
 	.ENDW
@@ -253,7 +250,13 @@ HorizontalAlign:BPEnum, VerticalAlign:BPEnum
 	.ENDIF
 	ret
 bpRenderText ENDP
+
+bpUIReset PROC EXPORT
+	mov bpUIItems, 0
+	ret
+bpUIReset ENDP
+
 ELSE
-	ECHO BP3D: Duplicate include file BP3DText.inc
+	ECHO BP3D: Duplicate include file BP3DUI.inc
 ENDIF
 	

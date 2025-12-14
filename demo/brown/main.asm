@@ -258,9 +258,16 @@ OnCreate PROC EXPORT
 	invoke glMaterialf, GL_FRONT, GL_SHININESS, f(20)
 	invoke glMaterialfv, GL_FRONT, GL_SPECULAR, ADDR clWhite
 	
-	invoke mciSendString, s("play music.mp3"), NULL, 0, 0
+	invoke mciSendString, s("open music.mp3 type MPEGVideo Alias MUSIC"), NULL, 0, 0
+	invoke mciSendString, s("play MUSIC"), NULL, 0, 0
 	ret
 OnCreate ENDP
+
+OnDestroy PROC EXPORT
+	invoke mciSendString, s("stop MUSIC"), NULL, 0, 0
+	invoke mciSendString, s("close MUSIC"), NULL, 0, 0
+	ret
+OnDestroy ENDP
 
 OnInput PROC EXPORT BPInType:BYTE, BPInStruct:BPPtr
 	.IF (BPInType == BP_INPUT_KEY)
@@ -326,6 +333,8 @@ start:
 	mov FMain.Caption,	pax
 	mov pax, OFFSET OnCreate
 	mov FMain.OnCreate,	pax
+	mov pax, OFFSET OnDestroy
+	mov FMain.OnDestroy,pax
 	mov pax, OFFSET OnInput
 	mov FMain.OnInput,	pax
 	mov pax, OFFSET OnRender

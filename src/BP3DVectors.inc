@@ -184,6 +184,15 @@ VectorMulF MACRO Cnt:REQ, A:REQ, B:REQ
 	ENDM
 ENDM
 
+VectorNegate MACRO Cnt:REQ, A:REQ
+	mov pax, A
+	PosOff = 0
+	REPEAT Cnt
+		xor REAL4 PTR [pax+PosOff], 80000000h
+		PosOff = PosOff + SIZEOF REAL4
+	ENDM
+ENDM
+
 VectorNormalize MACRO Cnt:REQ, A:REQ
 	VectorLengthSqr Cnt, A
 	.IF (!eax)
@@ -362,6 +371,11 @@ Vector2MulF PROC EXPORT A:BPPtr, B:REAL4
 	ret
 Vector2MulF ENDP
 
+Vector2Negate PROC EXPORT A:BPPtr
+	VectorNegate 2, A
+	ret
+Vector2Negate ENDP
+
 Vector2Normalize PROC EXPORT A:BPPtr
 	VectorNormalize 2, A
 	ret
@@ -505,18 +519,7 @@ Vector3MulF PROC EXPORT A:BPPtr, B:REAL4
 Vector3MulF ENDP
 
 Vector3Negate PROC EXPORT A:BPPtr
-	mov pax, A
-	
-	fld REAL4 PTR [pax]
-	fchs
-	fstp REAL4 PTR [pax]
-	fld REAL4 PTR [pax+4]
-	fchs
-	fstp REAL4 PTR [pax+4]
-	fld REAL4 PTR [pax+8]
-	fchs
-	fstp REAL4 PTR [pax+8]
-	
+	VectorNegate 3, A
 	ret
 Vector3Negate ENDP
 
@@ -628,6 +631,19 @@ Vector3ClampLength PROC EXPORT A:BPPtr, Len:REAL4
 	ret
 Vector3ClampLength ENDP
 
+Vector2LerpAngle PROC EXPORT A:BPPtr, B:BPPtr, T:REAL4
+	LOCAL _Ang:REAL4
+	mov pdx, A
+	mov pcx, B
+	
+	invoke flLerpAngle, REAL4 PTR [pdx], REAL4 PTR [pcx], T
+	mov REAL4 PTR [pdx], eax
+	invoke flLerpAngle, REAL4 PTR [pdx+4], REAL4 PTR [pcx+4], T
+	mov REAL4 PTR [pdx+4], eax
+		
+	ret
+Vector2LerpAngle ENDP
+
 Vector3Euler PROC EXPORT A:BPPtr
 	mov pcx, A
 	invoke flAngle, REAL4 PTR [pcx]
@@ -639,41 +655,18 @@ Vector3Euler PROC EXPORT A:BPPtr
 	ret
 Vector3Euler ENDP
 
-Vector3LerpAngle PROC EXPORT A:BPPtr, B:BPPtr, T:REAL4	;REDO WITH flLerpAngle
+Vector3LerpAngle PROC EXPORT A:BPPtr, B:BPPtr, T:REAL4
 	LOCAL _Ang:REAL4
 	mov pdx, A
 	mov pcx, B
 	
-	fld REAL4 PTR [pcx]
-	fsub REAL4 PTR [pdx]
-	fstp _Ang
-	invoke flAngle, _Ang
-	mov _Ang, eax
-	fld _Ang
-	fmul T
-	fadd REAL4 PTR [pdx]
-	fstp REAL4 PTR [pdx]
-	
-	fld REAL4 PTR [pcx+4]
-	fsub REAL4 PTR [pdx+4]
-	fstp _Ang
-	invoke flAngle, _Ang
-	mov _Ang, eax
-	fld _Ang
-	fmul T
-	fadd REAL4 PTR [pdx+4]
-	fstp REAL4 PTR [pdx+4]
-	
-	fld REAL4 PTR [pcx+8]
-	fsub REAL4 PTR [pdx+8]
-	fstp _Ang
-	invoke flAngle, _Ang
-	mov _Ang, eax
-	fld _Ang
-	fmul T
-	fadd REAL4 PTR [pdx+8]
-	fstp REAL4 PTR [pdx+8]
-	
+	invoke flLerpAngle, REAL4 PTR [pdx], REAL4 PTR [pcx], T
+	mov REAL4 PTR [pdx], eax
+	invoke flLerpAngle, REAL4 PTR [pdx+4], REAL4 PTR [pcx+4], T
+	mov REAL4 PTR [pdx+4], eax
+	invoke flLerpAngle, REAL4 PTR [pdx+8], REAL4 PTR [pcx+8], T
+	mov REAL4 PTR [pdx+8], eax
+		
 	ret
 Vector3LerpAngle ENDP
 

@@ -138,10 +138,12 @@ bpTexImage2D PROTO :DWORD, :DWORD, :BYTE, :BPPtr
 
 bpCheckFileInvalid MACRO
 	.IF (pax == INVALID_HANDLE_VALUE)
+		IFDEF BP_IMPORTERS_VERBOSE
 		IFDEF print
 			print "File "
 			print FilePath
 			print " not found!", 13, 10
+		ENDIF
 		ENDIF
 		xor pax, pax
 		ret
@@ -524,7 +526,7 @@ bpLoadBPT PROC EXPORT TexturePTR:BPPtr, FilePath:BPPtr
 		.ELSE
 			mov eax, 3
 		.ENDIF
-		; I can't even begin to fucking understand what x64 doesn't like here
+		
 		; Fuck you x64
 		invoke gluBuild2DMipmaps, GL_TEXTURE_2D, eax, texW, texH, texFormat, \
 		texDataType, buffer
@@ -740,7 +742,17 @@ TextureType:BYTE, Buffer:BPPtr
 bpTexImage2D ENDP
 
 IFDEF BP3D_MATHS_INC
-IFDEF BP3D_VECTORS_INC 
+IFDEF BP3D_VECTORS_INC
+bpAnimPlay PROC EXPORT BPAnimPlrPtr:BPPtr, BPAnimTrackPtr:BPPtr
+	mov pax, BPAnimPlrPtr
+	ASSUME pax:PTR BPAnimPlayer
+	mov [pax].FrameOffset, 0
+	mov [pax].Timer, 0
+	bpMPM [pax].TrackPtr, BPAnimTrackPtr
+	ASSUME pax:nothing
+	ret
+bpAnimPlay ENDP
+
 bpProcessAnimPlayer PROC EXPORT BPAnimPlrPTR:BPPtr
 	LOCAL floatVal:REAL4, animSpd:REAL4, fact:REAL4
 	LOCAL frameAddr:BPPtr

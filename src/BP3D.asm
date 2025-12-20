@@ -2011,11 +2011,12 @@ bpSetInputFlags PROC EXPORT BPFormPtr:BPPtr, InputFlags:BYTE
 	.IF (al) != (ah)
 		mov rid.usUsagePage, 1		; Generic desktop
 		mov rid.usUsage, 2			; Mouse
-		bpMPM rid.hwndTarget, [pcx].Handle
 		.IF (ah)
 			mov rid.dwFlags, RIDEV_INPUTSINK
+			bpMPM rid.hwndTarget, [pcx].Handle
 		.ELSE
 			mov rid.dwFlags, RIDEV_REMOVE
+			mov rid.hwndTarget, 0
 		.ENDIF
 		invoke RegisterRawInputDevices, ADDR rid, 1, SIZEOF RAWINPUTDEVICE
 		mov pcx, BPFormPtr
@@ -2031,18 +2032,17 @@ bpSetInputFlags PROC EXPORT BPFormPtr:BPPtr, InputFlags:BYTE
 		IFNDEF BP_COMPATIBILITY_W9X
 		mov rid.usUsagePage, 1		; Generic desktop
 		mov rid.usUsage, 4			; Joystick (directinput I think)
-		bpMPM rid.hwndTarget, [pcx].Handle
 		.IF (ah)
 			mov rid.dwFlags, RIDEV_INPUTSINK
+			bpMPM rid.hwndTarget, [pcx].Handle
 		.ELSE
 			mov rid.dwFlags, RIDEV_REMOVE
+			mov rid.hwndTarget, 0
 		.ENDIF
 		invoke RegisterRawInputDevices, ADDR rid, 1, SIZEOF RAWINPUTDEVICE
 		mov pcx, BPFormPtr
 		
-		;mov rid.usUsagePage, 1		; Generic desktop
 		mov rid.usUsage, 5			; Joystick (XInput)
-		;bpMPM rid.hwndTarget, [pcx].Handle
 		mov ah, InputFlags
 		and ah, BP_IF_RAW_JOYSTICK
 		.IF (ah)
@@ -2542,7 +2542,7 @@ bpUpdateWindowPos ENDP
 
 ;   The default fixed timer callback procedure (TimeProc).
 bpDefFixedProc PROC EXPORT lpParameter:LPVOID
-	LOCAL threadTimer:REAL4, lastTick:BPDelta, deltaFixed:REAL4
+	LOCAL threadTimer:REAL4, lastTick:BPDelta, deltaFixed:REAL4, tick:LARGE_INTEGER
 	
 	ASSUME pcx:PTR BPForm
 	mov threadTimer, 0
@@ -2554,7 +2554,7 @@ bpDefFixedProc PROC EXPORT lpParameter:LPVOID
 		fld bpFixedInterval
 		
 		fcom
-		fstsw ax
+		fnstsw ax
 		bt ax, 8
 		.IF (Carry?)
 			fsub
@@ -2562,7 +2562,7 @@ bpDefFixedProc PROC EXPORT lpParameter:LPVOID
 			mov pcx, lpParameter
 			call [pcx].OnFixed
 		.ELSE
-			fstp st
+			fstp st(0)
 			fstp threadTimer
 		.ENDIF
 	.ENDW
@@ -2702,10 +2702,10 @@ bpDefWndProc PROC EXPORT hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
 		
 		invoke bpCalculateDelta, ADDR bpLastTick, ADDR deltaUnscaled
 		fld deltaUnscaled
+		fld st
 		fmul deltaScale
 		fstp deltaTime
 
-		fld deltaUnscaled
 		fadd timeStart
 		fstp timeStart
 		

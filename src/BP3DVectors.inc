@@ -566,20 +566,50 @@ Vector4Copy PROC EXPORT To:BPPtr, From:BPPtr
 	ret
 Vector4Copy ENDP
 
+Vector4DistanceSqr PROC EXPORT A:BPPtr, B:BPPtr
+	VectorDistanceSqr 4, A, B
+	ret
+Vector4DistanceSqr ENDP
+
 Vector4F PROC EXPORT A:BPPtr
 	VectorF 4, A
 	ret
 Vector4F ENDP
+
+Vector4Length PROC EXPORT A:BPPtr
+	VectorLength 4, A
+	ret
+Vector4Length ENDP
+
+Vector4LengthSqr PROC EXPORT A:BPPtr
+	VectorLengthSqr 4, A
+	ret
+Vector4LengthSqr ENDP
 
 Vector4Lerp PROC EXPORT A:BPPtr, B:BPPtr, T:REAL4
 	VectorLerp 4, A, B, T
 	ret
 Vector4Lerp ENDP
 
+Vector4Mul PROC EXPORT A:BPPtr, B:BPPtr
+	VectorMul 4, A, B
+	ret
+Vector4Mul ENDP
+
 Vector4MulF PROC EXPORT A:BPPtr, B:REAL4
 	VectorMulF 4, A, B
 	ret
 Vector4MulF ENDP
+
+Vector4Negate PROC EXPORT A:BPPtr
+	VectorNegate 4, A
+	ret
+Vector4Negate ENDP
+
+Vector4Normalize PROC EXPORT A:BPPtr
+	VectorNormalize 4, A
+	ret
+Vector4Normalize ENDP
 
 Vector4RoundInt PROC EXPORT A:BPPtr
 	VectorRoundInt 4, A

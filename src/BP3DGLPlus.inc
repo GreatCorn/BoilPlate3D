@@ -294,6 +294,12 @@ gluSpheref PROC EXPORT quad:BPPtr, radius:REAL4, slices:SDWORD, stacks:SDWORD
 	ret
 gluSpheref ENDP
 
+glTranslate2fv PROC EXPORT v:BPPtr
+	mov pax, v
+	invoke glTranslatef, REAL4 PTR [pax], REAL4 PTR [pax+4], 0
+	ret
+glTranslate2fv ENDP
+
 glTranslate3fv PROC EXPORT v:BPPtr
 	mov pax, v
 	invoke glTranslatef, REAL4 PTR [pax], REAL4 PTR [pax+4], REAL4 PTR [pax+8]

@@ -129,12 +129,14 @@ bpCreate1DArray PROC EXPORT DataSize:BPPtr, ArrayLength:BPPtr
 		mov pcx, DataSize
 		mul pcx
 	.ENDIF
+	push pax
 	invoke bpMalloc, bpDefHeap, HEAP_ZERO_MEMORY, pax
+	pop pcx
 	ret
 bpCreate1DArray ENDP
 
 ;   Create 2D array of dimensions ArrayWidth x ArrayHeight, for elements of size
-; DataSize and return the pointer in pax.
+; DataSize, return the pointer in pax and resulting size in pcx.
 ;   DataSize:BPPtr - SIZEOF the data type in the array.
 ;   ArrayWidth:BPPtr - width of the array to create.
 ;   ArrayHeight:BPPtr - height of the array to create.
@@ -146,6 +148,8 @@ bpCreate2DArray PROC EXPORT DataSize:BPPtr, ArrayWidth:BPPtr, ArrayHeight:BPPtr
 		mov pcx, DataSize
 		mul pcx
 	.ENDIF
+	push pax
 	invoke bpMalloc, bpDefHeap, HEAP_ZERO_MEMORY, pax
+	pop pcx
 	ret
 bpCreate2DArray ENDP

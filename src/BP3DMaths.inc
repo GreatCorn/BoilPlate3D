@@ -10,6 +10,10 @@
 IFNDEF BP3D_MATHS_INC
 BP3D_MATHS_INC EQU <1>
 
+IFNDEF BP3D_TYPEDEF_INC
+	include BP3DTypedef.inc
+ENDIF
+
 ; -----	INTERFACE -----
 
 ; ----- CONSTANTS -----
@@ -455,22 +459,8 @@ flSign PROC EXPORT Val:REAL4
 	.ENDIF
 	.IF (Val & FLT_NEG)
 		mov eax, f(-1.0)
-		ret
 	.ELSE
 		mov eax, f(1.0)
-	.ENDIF
-	ret
-	fcmp Val
-	.IF (Carry?)
-		mov eax, f(-1.0); -1.0
-		ret
-	.ENDIF
-	fcmp Val
-	.IF (!Carry?)
-		mov eax, f(1.0)	; 1.0
-		ret
-	.ELSE
-		xor eax, eax	; 0.0
 	.ENDIF
 	ret
 flSign ENDP
@@ -648,7 +638,11 @@ nRand ENDP
 
 ;   Randomize the nRandSeed for nRand (set nRandSeed to current tick count).
 nRandomize PROC EXPORT
-	call GetTickCount
+	IFDEF GetTickCount
+		call GetTickCount
+	ELSEIF @Cpu GE 3359	; >= .486
+		rdtsc
+	ENDIF
 	mov nRandSeed, eax
 	ret
 nRandomize ENDP

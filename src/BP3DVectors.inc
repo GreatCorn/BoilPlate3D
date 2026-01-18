@@ -10,6 +10,10 @@
 IFNDEF BP3D_VECTORS_INC
 BP3D_VECTORS_INC EQU <1>
 
+IFNDEF BP3D_TYPEDEF_INC
+	include BP3DTypedef.inc
+ENDIF
+
 ; ----- INTERFACE -----
 
 ; ----- TYPES -----

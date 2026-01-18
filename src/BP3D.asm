@@ -30,6 +30,7 @@ IFDEF BP_WININC
 	include include\gl\gl.inc
 	includelib opengl32.lib
 	includelib ntdll.lib
+	include include\winuser.inc
 	includelib user32.lib
 	include include\mmsystem.inc
 	includelib winmm.lib
@@ -117,44 +118,14 @@ ENDIF
 ;   P.P.S. The x64 calling convention was made by the devil himself.
 IFDEF rax
 	BP_64 EQU <1>
-ENDIF
-IFDEF BP_64	; Cross-architecture compatibility (WIP)
 	ECHO BP3D: Compiling in 64-bit mode.
 	ECHO BP3D: WARNING! BP3D is compileable, but untested on x64.
-	BPPtr		TYPEDEF QWORD	; Pointer type
-	BPSPtr		TYPEDEF SQWORD	; Signed pointer type
-	BPPtrShift	EQU 3			; Byte shift amount (to use instead of mul/div)
-	
-	; Pointer registers
-	pax	EQU rax	
-	pbx	EQU rbx
-	pcx	EQU rcx
-	pdx	EQU rdx
-	pbp	EQU rbp
-	psp	EQU rsp
 ELSE
 	ECHO BP3D: Compiling in 32-bit mode.
-	BPPtr		TYPEDEF DWORD	; Pointer type
-	BPSPtr		TYPEDEF SDWORD	; Signed pointer type
-	BPPtrShift	EQU 2			; Byte shift amount (to use instead of mul/div)
-	
-	; Pointer registers
-	pax	EQU eax
-	pbx	EQU ebx
-	pcx	EQU ecx
-	pdx	EQU edx
-	pbp	EQU ebp
-	psp	EQU esp
 ENDIF
 
-;   Miscellaneous types for argument generalization
-BPBool	TYPEDEF BYTE		; Boolean type
-BPEnum	TYPEDEF BYTE		; Enumerator type
-IFDEF BP_DOUBLE_PRECISION	; Floating-point type
-	BPFloat	TYPEDEF REAL8
-ELSE
-	BPFloat	TYPEDEF REAL4
-ENDIF
+;   Import common type definitions
+include BP3DTypedef.inc
 
 BPDisplayDevice STRUCT	; Display device (monitor) structure
 	Active		BPBool FALSE

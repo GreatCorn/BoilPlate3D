@@ -666,7 +666,6 @@ Vector3ClampLength PROC EXPORT A:BPPtr, Len:REAL4
 Vector3ClampLength ENDP
 
 Vector2LerpAngle PROC EXPORT A:BPPtr, B:BPPtr, T:REAL4
-	LOCAL _Ang:REAL4
 	mov pdx, A
 	mov pcx, B
 	
@@ -690,7 +689,6 @@ Vector3Euler PROC EXPORT A:BPPtr
 Vector3Euler ENDP
 
 Vector3LerpAngle PROC EXPORT A:BPPtr, B:BPPtr, T:REAL4
-	LOCAL _Ang:REAL4
 	mov pdx, A
 	mov pcx, B
 	

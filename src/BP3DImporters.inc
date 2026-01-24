@@ -753,7 +753,7 @@ bpAnimPlay PROC EXPORT BPAnimPlrPtr:BPPtr, BPAnimTrackPtr:BPPtr
 	ret
 bpAnimPlay ENDP
 
-bpProcessAnimPlayer PROC EXPORT BPAnimPlrPTR:BPPtr
+bpProcessAnimPlayer PROC EXPORT BPAnimPlrPTR:BPPtr, Delta:REAL4
 	LOCAL floatVal:REAL4, animSpd:REAL4, fact:REAL4
 	LOCAL frameAddr:BPPtr
 	LOCAL timeOffset:BPPtr, intFrameSize:BPPtr, intStructSize:BPPtr
@@ -780,7 +780,7 @@ bpProcessAnimPlayer PROC EXPORT BPAnimPlrPTR:BPPtr
 		
 		fld [pcx].Speed
 		fmul bpAnimationFPS
-		fmul deltaTime
+		fmul Delta
 		fstp animSpd
 		
 		fld [pcx].Timer

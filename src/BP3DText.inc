@@ -254,12 +254,12 @@ HorizontalAlign:BPEnum, VerticalAlign:BPEnum
 	
 	.IF (lines > 1)
 		fld bpFontHeight
+		fmul bpFontSpacing
 		fiadd Y
 		.IF (VerticalAlign)
 			fld pos[4]
 			fmul bpFontHeight
 			fadd
-		;.ELSE
 		.ENDIF
 		fistp Y
 		mov pax, strLength

@@ -152,6 +152,14 @@ VectorLengthSqr MACRO Cnt:REQ, A:REQ
 ENDM
 
 VectorLerp MACRO Cnt:REQ, A:REQ, B:REQ, T:REQ
+	IFNDEF BP_LERP_UNCLAMPED
+		fcmp T, f(1)
+		.IF (!Carry?) || (Zero?)
+			VectorCopy Cnt, A, B
+			ret
+		.ENDIF
+	ENDIF
+	
 	mov pax, A
 	mov pcx, B
 	PosOff = 0
@@ -666,6 +674,14 @@ Vector3ClampLength PROC EXPORT A:BPPtr, Len:REAL4
 Vector3ClampLength ENDP
 
 Vector2LerpAngle PROC EXPORT A:BPPtr, B:BPPtr, T:REAL4
+	IFNDEF BP_LERP_UNCLAMPED
+		fcmp T, f(1)
+		.IF (!Carry?) || (Zero?)
+			invoke Vector2Copy, A, B
+			ret
+		.ENDIF
+	ENDIF
+	
 	mov pdx, A
 	mov pcx, B
 	
@@ -689,6 +705,14 @@ Vector3Euler PROC EXPORT A:BPPtr
 Vector3Euler ENDP
 
 Vector3LerpAngle PROC EXPORT A:BPPtr, B:BPPtr, T:REAL4
+	IFNDEF BP_LERP_UNCLAMPED
+		fcmp T, f(1)
+		.IF (!Carry?) || (Zero?)
+			invoke Vector3Copy, A, B
+			ret
+		.ENDIF
+	ENDIF
+	
 	mov pdx, A
 	mov pcx, B
 	

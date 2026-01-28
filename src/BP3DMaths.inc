@@ -309,6 +309,14 @@ flInRange ENDP
 ;   B:REAL4 - destination value.
 ;   T:REAL4 - interpolation value between the two.
 flLerp PROC EXPORT A:REAL4, B:REAL4, T:REAL4
+	IFNDEF BP_LERP_UNCLAMPED
+		fcmp T, f(1)
+		.IF (!Carry?) || (Zero?)
+			mov eax, B
+			ret
+		.ENDIF
+	ENDIF
+	
 	fld B
 	fsub A
 	fmul T
@@ -326,6 +334,14 @@ flLerp ENDP
 ;   T:REAL4 - interpolation value between the two.
 flLerpAngle PROC EXPORT A:REAL4, B:REAL4, T:REAL4
 	LOCAL _Ang:REAL4
+	IFNDEF BP_LERP_UNCLAMPED
+		fcmp T, f(1)
+		.IF (!Carry?) || (Zero?)
+			mov eax, B
+			ret
+		.ENDIF
+	ENDIF
+	
 	fld B
 	fsub A
 	fstp _Ang

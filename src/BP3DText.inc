@@ -18,7 +18,7 @@ BP_ALIGN_BOTTOM	EQU BP_ALIGN_RIGHT
 
 .DATA
 bpCurrentFont	BPPtr OFFSET bpDefaultFont
-bpDefaultFont	DWORD 127 dup (0) 
+bpDefaultFont	DWORD 256 dup (0) 
 
 bpFontWidth		REAL4 8.0
 bpFontHeight	REAL4 16.0

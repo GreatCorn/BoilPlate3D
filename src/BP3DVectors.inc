@@ -49,106 +49,138 @@ Vector3Zero	Vector3 <0.0, 0.0, 0.0>
 Vector2Set PROTO :BPPtr, :REAL4, :REAL4
 Vector3Set PROTO :BPPtr, :REAL4, :REAL4, :REAL4
 
+;   Internal macro for Vector3 2D. Checks if Cnt is <32D>, if so, sets CntRep to
+; 2 and OffSize to REAL4*2 to skip Y.
+Vector32DCheck MACRO Cnt:REQ, RetCnt:REQ
+	CntTxt TEXTEQU <Cnt>
+	IFIDNI CntTxt, <32D>
+		CntRep = 2
+		OffSize = SIZEOF REAL4*2
+	ELSE
+		CntRep = Cnt
+		OffSize = SIZEOF REAL4
+	ENDIF
+	IF RetCnt EQ 0
+		EXITM <OffSize>
+	ELSE
+		EXITM <CntRep>
+	ENDIF
+ENDM
 ; ----- Generic VectorN macros -----
 VectorAdd MACRO Cnt:REQ, A:REQ, B:REQ
+	CntRep = Vector32DCheck(Cnt, 1)
+	OffSize = Vector32DCheck(Cnt, 0)
+	
 	mov pax, A
 	mov pcx, B
 	PosOff = 0
-	REPEAT Cnt
+	REPEAT CntRep
 		fld REAL4 PTR [pax+PosOff]
 		fadd REAL4 PTR [pcx+PosOff]
 		fstp REAL4 PTR [pax+PosOff]
-		PosOff = PosOff + SIZEOF REAL4
+		PosOff = PosOff + OffSize
 	ENDM
 ENDM
 
 VectorCopy MACRO Cnt:REQ, To:REQ, From:REQ
+	CntRep = Vector32DCheck(Cnt, 1)
+	OffSize = Vector32DCheck(Cnt, 0)
+	
 	mov pax, From
 	PosOff = 0
-	REPEAT Cnt
+	REPEAT CntRep
 		IFDEF rax
 			mov ecx, REAL4 PTR [pax+PosOff]
 			push rcx
 		ELSE
 			push REAL4 PTR [pax+PosOff]
 		ENDIF
-		PosOff = PosOff + SIZEOF REAL4
+		PosOff = PosOff + OffSize
 	ENDM
 	mov pax, To
-	PosOff = (Cnt-1) * SIZEOF REAL4
-	REPEAT Cnt
+	PosOff = (CntRep-1) * OffSize
+	REPEAT CntRep
 		IFDEF rax
 			pop rcx
 			mov REAL4 PTR [pax+PosOff], ecx
 		ELSE
 			pop REAL4 PTR [pax+PosOff]
 		ENDIF
-		PosOff = PosOff - SIZEOF REAL4
+		PosOff = PosOff - OffSize
 	ENDM
 ENDM
 
 VectorDistanceSqr MACRO Cnt:REQ, A:REQ, B:REQ
+	CntRep = Vector32DCheck(Cnt, 1)
+	OffSize = Vector32DCheck(Cnt, 0)
+	
 	mov pax, A
 	mov pcx, B
 	PosOff = 0
-	REPEAT Cnt
+	REPEAT CntRep
 		fld REAL4 PTR [pcx+PosOff]
 		fsub REAL4 PTR [pax+PosOff]
 		fmul st, st
-		PosOff = PosOff + SIZEOF REAL4
+		PosOff = PosOff + OffSize
 	ENDM
-	REPEAT Cnt-1
+	REPEAT CntRep-1
 		fadd
 	ENDM
-	push pax
+	sub psp, SIZEOF BPPtr
 	fstp REAL4 PTR [psp]
-	mov eax, REAL4 PTR [psp]	; Thank you x64
-	add psp, SIZEOF BPPtr
+	pop pax
 ENDM
 
 VectorF MACRO Cnt:REQ, A:REQ
+	CntRep = Vector32DCheck(Cnt, 1)
+	OffSize = Vector32DCheck(Cnt, 0)
+	
 	mov pax, A
 	PosOff = 0
-	REPEAT Cnt
+	REPEAT CntRep
 		fild DWORD PTR [pax+PosOff]
 		fstp REAL4 PTR [pax+PosOff]
-		PosOff = PosOff + SIZEOF REAL4
+		PosOff = PosOff + OffSize
 	ENDM
 ENDM
 
 VectorLength MACRO Cnt:REQ, A:REQ
+	CntRep = Vector32DCheck(Cnt, 1)
+	OffSize = Vector32DCheck(Cnt, 0)
+	
 	mov pax, A
 	PosOff = 0
-	REPEAT Cnt
+	REPEAT CntRep
 		fld REAL4 PTR [pax+PosOff]
 		fmul st, st
-		PosOff = PosOff + SIZEOF REAL4
+		PosOff = PosOff + OffSize
 	ENDM
-	REPEAT Cnt-1
+	REPEAT CntRep-1
 		fadd
 	ENDM
 	fsqrt
-	push pax
+	sub psp, SIZEOF BPPtr
 	fstp REAL4 PTR [psp]
-	mov eax, REAL4 PTR [psp]
-	add psp, SIZEOF BPPtr
+	pop pax
 ENDM
 
 VectorLengthSqr MACRO Cnt:REQ, A:REQ
+	CntRep = Vector32DCheck(Cnt, 1)
+	OffSize = Vector32DCheck(Cnt, 0)
+	
 	mov pax, A
 	PosOff = 0
-	REPEAT Cnt
+	REPEAT CntRep
 		fld REAL4 PTR [pax+PosOff]
 		fmul st, st
-		PosOff = PosOff + SIZEOF REAL4
+		PosOff = PosOff + OffSize
 	ENDM
-	REPEAT Cnt-1
+	REPEAT CntRep-1
 		fadd
 	ENDM
-	push pax
+	sub psp, SIZEOF BPPtr
 	fstp REAL4 PTR [psp]
-	mov eax, REAL4 PTR [psp]
-	add psp, SIZEOF BPPtr
+	pop pax
 ENDM
 
 VectorLerp MACRO Cnt:REQ, A:REQ, B:REQ, T:REQ
@@ -160,97 +192,114 @@ VectorLerp MACRO Cnt:REQ, A:REQ, B:REQ, T:REQ
 		.ENDIF
 	ENDIF
 	
+	CntRep = Vector32DCheck(Cnt, 1)
+	OffSize = Vector32DCheck(Cnt, 0)
+	
 	mov pax, A
 	mov pcx, B
 	PosOff = 0
-	REPEAT Cnt
+	REPEAT CntRep
 		fld REAL4 PTR [pcx+PosOff]
 		fsub REAL4 PTR [pax+PosOff]
 		fmul T
 		fadd REAL4 PTR [pax+PosOff]
 		fstp REAL4 PTR [pax+PosOff]
-		PosOff = PosOff + SIZEOF REAL4
+		PosOff = PosOff + OffSize
 	ENDM	
 ENDM
 
 VectorMul MACRO Cnt:REQ, A:REQ, B:REQ
+	CntRep = Vector32DCheck(Cnt, 1)
+	OffSize = Vector32DCheck(Cnt, 0)
+	
 	mov pax, A
 	mov pcx, B
 	PosOff = 0
-	REPEAT Cnt
+	REPEAT CntRep
 		fld REAL4 PTR [pax+PosOff]
 		fmul REAL4 PTR [pcx+PosOff]
 		fstp REAL4 PTR [pax+PosOff]
-		PosOff = PosOff + SIZEOF REAL4
+		PosOff = PosOff + OffSize
 	ENDM
 ENDM
 
 VectorMulF MACRO Cnt:REQ, A:REQ, B:REQ
 	mov pax, A
 	PosOff = 0
-	REPEAT Cnt
+	REPEAT CntRep
 		fld REAL4 PTR [pax+PosOff]
 		fmul B
 		fstp REAL4 PTR [pax+PosOff]
-		PosOff = PosOff + SIZEOF REAL4
+		PosOff = PosOff + OffSize
 	ENDM
 ENDM
 
 VectorNegate MACRO Cnt:REQ, A:REQ
+	CntRep = Vector32DCheck(Cnt, 1)
+	OffSize = Vector32DCheck(Cnt, 0)
+	
 	mov pax, A
 	PosOff = 0
-	REPEAT Cnt
+	REPEAT CntRep
 		xor REAL4 PTR [pax+PosOff], 80000000h
-		PosOff = PosOff + SIZEOF REAL4
+		PosOff = PosOff + OffSize
 	ENDM
 ENDM
 
 VectorNormalize MACRO Cnt:REQ, A:REQ
+	CntRep = Vector32DCheck(Cnt, 1)
+	OffSize = Vector32DCheck(Cnt, 0)
+	
 	VectorLengthSqr Cnt, A
 	.IF (!eax)
 		mov pax, A
 		PosOff = 0
-		REPEAT Cnt
+		REPEAT CntRep
 			mov REAL4 PTR [pax+PosOff], 0
-			PosOff = PosOff + SIZEOF REAL4
+			PosOff = PosOff + OffSize
 		ENDM
 		ret
 	.ENDIF
 	push pax
-	mov REAL4 PTR [psp], eax
 	fld REAL4 PTR [psp]
 	fsqrt
 	fstp REAL4 PTR [psp]
 	
 	mov pax, A
 	PosOff = 0
-	REPEAT Cnt
+	REPEAT CntRep
 		fld REAL4 PTR [pax+PosOff]
 		fdiv REAL4 PTR [psp]
 		fstp REAL4 PTR [pax+PosOff]
-		PosOff = PosOff + SIZEOF REAL4
+		PosOff = PosOff + OffSize
 	ENDM
 	add psp, SIZEOF BPPtr
 ENDM
 
 VectorRound MACRO Cnt:REQ, A:REQ
+	CntRep = Vector32DCheck(Cnt, 1)
+	OffSize = Vector32DCheck(Cnt, 0)
+	
 	mov pax, A
 	PosOff = 0
-	REPEAT Cnt
+	REPEAT CntRep
 		fld DWORD PTR [pax+PosOff]
 		frndint
 		fstp REAL4 PTR [pax+PosOff]
-		PosOff = PosOff + SIZEOF REAL4
+		PosOff = PosOff + OffSize
 	ENDM
 ENDM
 
 VectorRoundInt MACRO Cnt:REQ, A:REQ
+	CntRep = Vector32DCheck(Cnt, 1)
+	OffSize = Vector32DCheck(Cnt, 0)
+	
 	mov pax, A
 	PosOff = 0
-	REPEAT Cnt
+	REPEAT CntRep
 		fld REAL4 PTR [pax+PosOff]
 		fistp DWORD PTR [pax+PosOff]
-		PosOff = PosOff + SIZEOF REAL4
+		PosOff = PosOff + OffSize
 	ENDM
 ENDM
 
@@ -270,14 +319,17 @@ VectorSet MACRO A:REQ, Coords:VARARG
 ENDM
 
 VectorSub MACRO Cnt:REQ, A:REQ, B:REQ
+	CntRep = Vector32DCheck(Cnt, 1)
+	OffSize = Vector32DCheck(Cnt, 0)
+	
 	mov pax, A
 	mov pcx, B
 	PosOff = 0
-	REPEAT Cnt
+	REPEAT CntRep
 		fld REAL4 PTR [pax+PosOff]
 		fsub REAL4 PTR [pcx+PosOff]
 		fstp REAL4 PTR [pax+PosOff]
-		PosOff = PosOff + SIZEOF REAL4
+		PosOff = PosOff + OffSize
 	ENDM
 ENDM
 
@@ -447,7 +499,7 @@ Vector3Angle PROC EXPORT From:BPPtr, To:BPPtr, Angle:BPPtr
 	fpatan
 	fstp REAL4 PTR [pdx+4]
 	
-	fld REAL4 PTR [pcx+4]
+	fld REAL4 PTR [pcx+4]	; ????????
 	fsub REAL4 PTR [pax+4]
 	fchs
 	fld d2d.X
@@ -559,6 +611,126 @@ Vector3Sub PROC EXPORT A:BPPtr, B:BPPtr
 	VectorSub 3, A, B
 	ret
 Vector3Sub ENDP
+
+; ----- Vector3 2D (X, Z) -----
+Vector32DPop MACRO A:REQ
+	bpPop32 A.X
+	bpPop32 A.Z
+ENDM
+
+Vector32DPrint MACRO A:REQ
+	print real4$(A.X), 9
+	print real4$(A.Z), 13, 10
+ENDM
+
+Vector32DPush MACRO A:REQ
+	bpPush32 A.Z
+	bpPush32 A.X
+ENDM
+
+Vector32DAngle PROC EXPORT From:BPPtr, To:BPPtr
+	LOCAL Val:REAL4
+	
+	mov pax, From
+	mov pcx, To
+	
+	fld REAL4 PTR [pcx]
+	fsub REAL4 PTR [pax]
+	fld REAL4 PTR [pcx+8]
+	fsub REAL4 PTR [pax+8]
+	fpatan
+	fstp Val
+	
+	mov eax, Val
+	ret
+Vector32DAngle ENDP
+
+Vector32DAdd PROC EXPORT A:BPPtr, B:BPPtr
+	VectorAdd 32D, A, B
+	ret
+Vector32DAdd ENDP
+
+Vector32DCopy PROC EXPORT To:BPPtr, From:BPPtr
+	VectorCopy 32D, To, From
+	ret
+Vector32DCopy ENDP
+
+Vector32DDistanceSqr PROC EXPORT A:BPPtr, B:BPPtr
+	VectorDistanceSqr 32D, A, B
+	ret
+Vector32DDistanceSqr ENDP
+
+Vector32DF PROC EXPORT A:BPPtr
+	VectorF 32D, A
+	ret
+Vector32DF ENDP
+
+Vector32DLength PROC EXPORT A:BPPtr
+	VectorLength 32D, A
+	ret
+Vector32DLength ENDP
+
+Vector32DLengthSqr PROC EXPORT A:BPPtr
+	VectorLengthSqr 32D, A
+	ret
+Vector32DLengthSqr ENDP
+
+Vector32DLerp PROC EXPORT A:BPPtr, B:BPPtr, T:REAL4
+	VectorLerp 32D, A, B, T
+	ret
+Vector32DLerp ENDP
+
+Vector32DMul PROC EXPORT A:BPPtr, B:BPPtr
+	VectorMul 32D, A, B
+	ret
+Vector32DMul ENDP
+
+Vector32DMulF PROC EXPORT A:BPPtr, B:REAL4
+	VectorMulF 32D, A, B
+	ret
+Vector32DMulF ENDP
+
+Vector32DNegate PROC EXPORT A:BPPtr
+	VectorNegate 32D, A
+	ret
+Vector32DNegate ENDP
+
+Vector32DNormalize PROC EXPORT A:BPPtr
+	VectorNormalize 32D, A
+	ret
+Vector32DNormalize ENDP
+
+Vector32DRound PROC EXPORT A:BPPtr
+	VectorRound 32D, A
+	ret
+Vector32DRound ENDP
+
+Vector32DRoundInt PROC EXPORT A:BPPtr
+	VectorRoundInt 32D, A
+	ret
+Vector32DRoundInt ENDP
+
+Vector32DSet PROC EXPORT A:BPPtr, X:REAL4, Z:REAL4
+	mov pax, A
+	IFDEF rax
+		mov ecx, X
+		mov REAL4 PTR [pax], ecx
+		mov ecx, Z
+		mov REAL4 PTR [pax+8], ecx
+	ELSE
+		push X
+		pop REAL4 PTR [pax]
+		push Z
+		pop REAL4 PTR [pax+8]
+	ENDIF
+	ret
+Vector32DSet ENDP
+
+Vector32DSub PROC EXPORT A:BPPtr, B:BPPtr
+	VectorSub 32D, A, B
+	ret
+Vector32DSub ENDP
+
 
 ; ----- Vector4 -----
 Vector4Print MACRO A:REQ
@@ -737,6 +909,35 @@ Vector3Move PROC EXPORT From:BPPtr, To:BPPtr, T:REAL4
 	mov REAL4 PTR [pdx+8], eax
 	ret
 Vector3Move ENDP
+
+Vector32DLerpAngle PROC EXPORT A:BPPtr, B:BPPtr, T:REAL4
+	IFNDEF BP_LERP_UNCLAMPED
+		fcmp T, f(1)
+		.IF (!Carry?) || (Zero?)
+			invoke Vector32DCopy, A, B
+			ret
+		.ENDIF
+	ENDIF
+	mov pdx, A
+	mov pcx, B
+	
+	invoke flLerpAngle, REAL4 PTR [pdx], REAL4 PTR [pcx], T
+	mov REAL4 PTR [pdx], eax
+	invoke flLerpAngle, REAL4 PTR [pdx+8], REAL4 PTR [pcx+8], T
+	mov REAL4 PTR [pdx+8], eax
+	ret
+Vector32DLerpAngle ENDP
+
+Vector32DMove PROC EXPORT From:BPPtr, To:BPPtr, T:REAL4
+	mov pdx, From
+	mov pcx, To
+	invoke flMove, REAL4 PTR [pdx], REAL4 PTR [pcx], T
+	mov REAL4 PTR [pdx], eax
+	invoke flMove, REAL4 PTR [pdx+8], REAL4 PTR [pcx+8], T
+	mov REAL4 PTR [pdx+8], eax
+	ret
+Vector32DMove ENDP
+
 ENDIF
 
 ELSE

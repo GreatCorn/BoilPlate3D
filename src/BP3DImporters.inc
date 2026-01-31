@@ -128,8 +128,9 @@ BPT_L8		EQU 6	; (L8)				8-bit (monochrome, luminance)
 
 ; ----- DATA FIELDS -----
 .DATA
-bpAnimationFPS		REAL4 30.0		; Exported FPS for speed calculation
-bpTextureFiltering	BPBool FALSE	; Enable texture filtering on import
+bpAnimationFPS			REAL4 30.0		; Exported FPS for speed calculation
+bpAnimInterpolateSpeed	REAL4 1.0		; Linear interpolation factor
+bpTextureFiltering		BPBool FALSE	; Enable texture filtering on import
 
 ; ----- IMPLEMENTATION -----
 .CODE
@@ -792,35 +793,71 @@ bpProcessAnimPlayer PROC EXPORT BPAnimPlrPTR:BPPtr, Delta:REAL4
 		mov frameAddr, pax
 		
 		push pbx	; We will be using pbx, so we'll pop it at the end
-		
+		; mom come pick me up I'm scared
 		mov eax, DWORD PTR [pax]	; Get current frame's time (first 4 bytes)
-		.WHILE (floatVal >= eax)
-			mov resFrame, TRUE
-			.IF ([pcx].FrameType == BPA_FRAME_PRS)
-				add [pcx].FrameOffset, SIZEOF BPAnimFramePRS
-				add frameAddr, SIZEOF BPAnimFramePRS
-			.ELSEIF ([pcx].FrameType == BPA_FRAME_MATRIX)
-				add [pcx].FrameOffset, SIZEOF BPAnimFrameMatrix
-				add frameAddr, SIZEOF BPAnimFrameMatrix
-			.ELSEIF ([pcx].FrameType == BPA_FRAME_VERTEX)
-				mov pax, [pcx].MeshFrameSize
-				add [pcx].FrameOffset, pax
-				add frameAddr, pax
-			.ENDIF
-			mov eax, [pdx].ByteSize
-			.IF ([pcx].FrameOffset >= pax)
-				.IF ([pdx].Looping)
-					mov [pcx].FrameOffset, 0
-					mov [pcx].Timer, 0 ; Should be sub (-) framecount*FPS or smth
-					jmp bpAnimExit
-				.ELSE
-					mov [pcx].TrackPtr, 0
-					jmp bpAnimExit
+		.IF ([pcx].Speed & FLT_NEG)	; Negative speed
+			.WHILE (floatVal <= eax)
+				mov resFrame, TRUE
+				.IF ([pcx].FrameType == BPA_FRAME_PRS)
+					sub [pcx].FrameOffset, SIZEOF BPAnimFramePRS
+					sub frameAddr, SIZEOF BPAnimFramePRS
+				.ELSEIF ([pcx].FrameType == BPA_FRAME_MATRIX)
+					sub [pcx].FrameOffset, SIZEOF BPAnimFrameMatrix
+					sub frameAddr, SIZEOF BPAnimFrameMatrix
+				.ELSEIF ([pcx].FrameType == BPA_FRAME_VERTEX)
+					mov pax, [pcx].MeshFrameSize
+					sub [pcx].FrameOffset, pax
+					sub frameAddr, pax
 				.ENDIF
-			.ENDIF
-			mov pax, frameAddr
-			mov eax, DWORD PTR [pax]
-		.ENDW
+				mov pax, [pcx].MeshFrameSize
+				.IF (SDWORD PTR [pcx].FrameOffset < 0)
+					.IF ([pdx].Looping)
+						bpMPM [pcx].FrameOffset, [pdx].ByteSize
+						sub [pcx].FrameOffset, pax	; MeshFrameSize
+						mov pax, [pcx].FrameOffset
+						add pax, [pdx].Frames
+						
+						bpMEM32 [pcx].Timer, DWORD PTR [pax]
+						fild [pcx].Timer
+						fstp [pcx].Timer
+						jmp bpAnimExit
+					.ELSE
+						mov [pcx].TrackPtr, 0
+						jmp bpAnimExit
+					.ENDIF
+				.ENDIF
+				mov pax, frameAddr
+				mov eax, DWORD PTR [pax]
+			.ENDW
+		.ELSE						; Positive speed
+			.WHILE (floatVal >= eax)
+				mov resFrame, TRUE
+				.IF ([pcx].FrameType == BPA_FRAME_PRS)
+					add [pcx].FrameOffset, SIZEOF BPAnimFramePRS
+					add frameAddr, SIZEOF BPAnimFramePRS
+				.ELSEIF ([pcx].FrameType == BPA_FRAME_MATRIX)
+					add [pcx].FrameOffset, SIZEOF BPAnimFrameMatrix
+					add frameAddr, SIZEOF BPAnimFrameMatrix
+				.ELSEIF ([pcx].FrameType == BPA_FRAME_VERTEX)
+					mov pax, [pcx].MeshFrameSize
+					add [pcx].FrameOffset, pax
+					add frameAddr, pax
+				.ENDIF
+				mov eax, [pdx].ByteSize
+				.IF ([pcx].FrameOffset >= pax)
+					.IF ([pdx].Looping)
+						mov [pcx].FrameOffset, 0
+						mov [pcx].Timer, 0 ; Should be sub (-) framecount*FPS or smth
+						jmp bpAnimExit
+					.ELSE
+						mov [pcx].TrackPtr, 0
+						jmp bpAnimExit
+					.ENDIF
+				.ENDIF
+				mov pax, frameAddr
+				mov eax, DWORD PTR [pax]
+			.ENDW
+		.ENDIF
 		.IF ([pcx].FrameType == BPA_FRAME_PRS)
 			mov intStructSize, SIZEOF Vector3
 			mov intFrameSize, SIZEOF BPAnimFramePRS
@@ -909,21 +946,32 @@ bpProcessAnimPlayer PROC EXPORT BPAnimPlrPTR:BPPtr, Delta:REAL4
 				bpMPM intStructSize, [pcx].MeshFrameSize	; The mesh itself
 				sub intStructSize, 4
 				.IF ([pcx].MeshUseNormals)	; The frame data is twice as large
-					push pcx
 					mov pax, intStructSize
-					xor pdx, pdx
-					mov pcx, 2
-					div pcx
+					shr pax, 1	; /2
 					mov intStructSize, pax
-					pop pcx
 				.ENDIF
 				.IF ([pcx].Interpolation == BP_INTERPOLATE_CONSTANT)
 					mov pax, [pcx].Mesh
-					mov BPPtr PTR [pax+4], pbx	; The pointer to vertices
+					; Move frame vertices to the mesh
+					IFDEF BP_INTERPOLATION_DYNAMIC
+						invoke RtlMoveMemory, BPPtr PTR [pax+4], pbx, \
+						intStructSize
+						mov pcx, BPAnimPlrPTR
+					ELSE	
+						mov BPPtr PTR [pax+4], pbx
+					ENDIF
 					.IF ([pcx].MeshUseNormals)
 						add pbx, intStructSize
 						mov pax, [pcx].Mesh
-						mov BPPtr PTR [pax+4+SIZEOF BPPtr*2], pbx	; Normals
+						; Move frame normals to the mesh
+						IFDEF BP_INTERPOLATION_DYNAMIC
+							add pax, 4+SIZEOF BPPtr*2
+							invoke RtlMoveMemory, \
+							BPPtr PTR [pax+4+SIZEOF BPPtr*2], pbx, intStructSize
+							mov pcx, BPAnimPlrPTR
+						ELSE	
+							mov BPPtr PTR [pax+4+SIZEOF BPPtr*2], pbx
+						ENDIF
 					.ENDIF
 				.ELSEIF ([pcx].Interpolation == BP_INTERPOLATE_LINEAR)
 					bpMPM intFrameSize, [pcx].MeshFrameSize	; Time + mesh
@@ -969,29 +1017,39 @@ bpProcessAnimPlayer PROC EXPORT BPAnimPlrPTR:BPPtr, Delta:REAL4
 	
 	bpAnimInterpolateLinear:
 		mov pdx, pbx			; pbx is the current frame's value
-		sub pdx, intFrameSize	; Get previous frame value in pdx
-		
+		.IF (animSpd & FLT_NEG)	; Get previous frame value in pdx
+			add pdx, intFrameSize	
+		.ELSE
+			sub pdx, intFrameSize
+		.ENDIF
 		push pbx			; Calculate time distance between two frames
 		push pdx
 		sub pbx, timeOffset	; The offset from first 4 bytes = Frame.Time
 		sub pdx, timeOffset
 		fild DWORD PTR [pbx]
-		fisub DWORD PTR [pdx]
+		.IF (animSpd & FLT_NEG)
+			fisubr DWORD PTR [pdx]
+		.ELSE
+			fisub DWORD PTR [pdx]
+		.ENDIF
 		pop pdx
 		pop pbx
 		fstp floatVal
+		
+		fld animSpd
+		fabs
+		fdiv floatVal
+		fmul bpAnimInterpolateSpeed
+		fstp fact
+		IFNDEF BP_INTERPOLATION_UNCLAMPED
+			push pax
+			invoke flClamp, fact, 0, 1065353216	; fact, 0, 1.0
+			mov fact, eax
+			pop pax
+		ENDIF
 			
 		xor pax, pax
 		.WHILE(pax < intStructSize)
-			fld animSpd
-			fdiv floatVal
-			fstp fact
-			IFNDEF BP_INTERPOLATION_UNCLAMPED
-				push pax
-				invoke flClamp, fact, 0, 1065353216	; fact, 0, 1.0
-				mov fact, eax
-				pop pax
-			ENDIF
 			fld REAL4 PTR [pbx+pax]	; Desired value (current frame)
 			fsub REAL4 PTR [pcx]	; Current value
 			

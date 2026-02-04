@@ -20,12 +20,11 @@ BP_ALIGN_BOTTOM	EQU BP_ALIGN_RIGHT
 bpCurrentFont	BPPtr OFFSET bpDefaultFont
 bpDefaultFont	DWORD 256 dup (0) 
 
-bpFontWidth		REAL4 8.0
-bpFontHeight	REAL4 16.0
-bpFontOutline	REAL4 1.0	; Draw as outline - thickness
-bpFontSpacing	REAL4 1.15
-bpFontQuad		DWORD 0
-bpTextNL		BYTE 0
+bpFontWidth			REAL4 8.0
+bpFontHeight		REAL4 16.0
+bpFontSpacing		REAL4 1.15
+bpFontQuad			DWORD 0
+bpTextNL			BYTE 0
 
 .DATA?
 
@@ -167,19 +166,17 @@ HorizontalAlign:BPEnum, VerticalAlign:BPEnum
 	
 	mov strLength, 0
 	mov lines, 1
-	push pbx
-	mov pbx, TextString
-	.WHILE (BYTE PTR [pbx])
-		mov al, BYTE PTR [pbx]
+	mov pcx, TextString
+	.WHILE (BYTE PTR [pcx])
+		mov al, BYTE PTR [pcx]
 		.IF (al == bpTextNL)
 			inc lines
 		.ENDIF
 		.IF (lines == 1)
 			inc strLength
 		.ENDIF
-		inc pbx
+		inc pcx
 	.ENDW
-	pop pbx
 	
 	call glPushMatrix
 	fild X
@@ -227,22 +224,7 @@ HorizontalAlign:BPEnum, VerticalAlign:BPEnum
 		mov pcx, bpCurrentFont
 		.IF (DWORD PTR [pcx+pax])
 			invoke glBindTexture, GL_TEXTURE_2D, DWORD PTR [pcx+pax]
-			.IF (bpFontOutline != 1065353216)
-				call glPushMatrix
-				invoke glScalef, bpFontOutline, bpFontOutline, 1065353216 ; 1.0
-				fld1
-				fsub bpFontOutline
-				sub psp, 4
-				fdiv bpFontOutline
-				fstp REAL4 PTR [psp]
-				pop eax
-				invoke glTranslatef, eax, eax, 0
-				
-				invoke glCallList, bpFontQuad
-				call glPopMatrix
-			.ELSE
-				invoke glCallList, bpFontQuad
-			.ENDIF
+			invoke glCallList, bpFontQuad
 		.ENDIF
 		
 		invoke glTranslatef, bpFontSpacing, 0, 0

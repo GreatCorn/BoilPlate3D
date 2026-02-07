@@ -61,11 +61,14 @@ ENDIF
 ;
 ;   BP_COMPATIBILITY_W9X - Windows 2000, ME, 98SE compatibility mode. Removes
 ; all calls of the APIs not supported on aforementioned systems to avoid DLL
-; errors. Unsupported APIs that are used: RAWINPUT.
+; errors. Unsupported APIs that are used: RAWINPUT, LoadLibrary 
+; (SetProcessDPIAware).
 ;
 ;   BP_CUSTOM_INCLUDES - Do not include MASM32 or WinInc headers and LIB files.
 ;
 ;   BP_ERROR_PASS - pass through errors and don't terminate the program.
+;
+;   BP_FIXED_BUSY - busy higher-precision OnFixed thread that uses 100% CPU.
 ;
 ;   BP_TRACEABLE_HEAP - BP3D defines symbolic TEXTEQUs for memory management:
 ; bpFree, bpMalloc and bpReAlloc. When this macro is defined, they will be
@@ -1066,6 +1069,24 @@ bpCreateForm PROC EXPORT BPFormPtr:BPPtr
 		mov pbx, BPFormPtr
 	.ENDIF
 	.IF ([pbx].DefaultFlag)
+		; Disable DPI scaling if possible
+		IFNDEF BP_COMPATIBILITY_W9X
+			IFNDEF SetProcessDPIAware
+				.CONST
+					bpUser32DLL				DB "user32.dll", 0
+					bpSetProcessDPIAware	DB "SetProcessDPIAware", 0
+				.CODE
+				invoke LoadLibrary, OFFSET bpUser32DLL
+				push pax
+				invoke GetProcAddress, pax, OFFSET bpSetProcessDPIAware
+				call pax
+				pop pax
+				invoke FreeLibrary, pax
+			ELSE
+				call SetProcessDPIAware
+			ENDIF
+		ENDIF
+		
 		mov al, [pbx].InputFlags
 		mov [pbx].InputFlags, 0
 		invoke bpSetInputFlags, pbx, al
@@ -2517,29 +2538,42 @@ bpUpdateWindowPos ENDP
 
 ;   The default fixed timer callback procedure (TimeProc).
 bpDefFixedProc PROC EXPORT lpParameter:LPVOID
-	LOCAL threadTimer:REAL4, lastTick:BPDelta, deltaFixed:REAL4, tick:LARGE_INTEGER
+	IFDEF BP_FIXED_BUSY
+		LOCAL threadTimer:REAL4, lastTick:BPDelta, deltaFixed:REAL4
+		LOCAL tick:LARGE_INTEGER
+		mov threadTimer, 0
+	ENDIF
 	
 	ASSUME pcx:PTR BPForm
-	mov threadTimer, 0
 	.WHILE (TRUE)
-		invoke bpCalculateDelta, ADDR lastTick, ADDR deltaFixed
-		
-		fld threadTimer
-		fadd deltaFixed
-		fld bpFixedInterval
-		
-		fcom
-		fnstsw ax
-		bt ax, 8
-		.IF (Carry?)
-			fsub
-			fstp threadTimer
+		IFDEF BP_FIXED_BUSY
+			invoke bpCalculateDelta, ADDR lastTick, ADDR deltaFixed
+			
+			fld threadTimer
+			fadd deltaFixed
+			fld bpFixedInterval
+			
+			fcom
+			fnstsw ax
+			bt ax, 8
+			.IF (Carry?)
+				fsub
+				fstp threadTimer
+		ELSE
+			push 1000
+			fild BPPtr PTR [psp]
+			fmul bpFixedInterval
+			fistp DWORD PTR [psp]
+			call Sleep
+		ENDIF
 			mov pcx, lpParameter
 			call [pcx].OnFixed
-		.ELSE
-			fstp st(0)
-			fstp threadTimer
-		.ENDIF
+		IFDEF BP_FIXED_BUSY
+			.ELSE
+				fstp st(0)
+				fstp threadTimer
+			.ENDIF
+		ENDIF
 	.ENDW
 	ASSUME pcx:nothing
 	ret

@@ -1,6 +1,6 @@
 ;
 ;   BP3D.asm
-;   Version 0.7ac1
+;   Version 0.8ac1
 ;   BP3D (short for BoilPlate3D) framework main base unit.
 ;
 ;   Copyright (c) 2025 Yevhenii Ionenko (aka GreatCorn). All rights reserved.

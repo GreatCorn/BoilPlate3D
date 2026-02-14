@@ -1,6 +1,6 @@
 ;
 ;   BP3DVectors.inc
-;   Version 0.7ac1
+;   Version 0.8ac1
 ;   BP3D common vector (2D, 3D, 4D) functions extension.
 ;
 ;   Copyright (c) 2025 Yevhenii Ionenko (aka GreatCorn). All rights reserved.

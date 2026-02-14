@@ -1,6 +1,6 @@
 ;
 ;   BP3DMaths.inc
-;   Version 0.7ac1
+;   Version 0.8ac1
 ;   BP3D common math (REAL4 (x87 FPU) & SDWORD) functions extension.
 ;
 ;   Copyright (c) 2025 Yevhenii Ionenko (aka GreatCorn). All rights reserved.
@@ -177,6 +177,14 @@ fcmpP PROC EXPORT
 	bt ax, 8
 	ret
 fcmpP ENDP
+
+;   Return the absolute of Val in eax.
+;   Val:REAL4 - value to get the absolute of.
+flAbs PROC EXPORT Val:REAL4
+	mov eax, Val
+	and eax, not FLT_NEG
+	ret
+flAbs ENDP
 
 ;   Calculate arccosine of Val.
 ;   Val:REAL4 - angle to find the arccosine of.

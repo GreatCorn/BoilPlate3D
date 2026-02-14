@@ -78,7 +78,8 @@ BPAnimPlayer STRUCT			; Animation player
 	
 	Interpolation	BPEnum BP_INTERPOLATE_LINEAR	; Frame interpolation type
 	
-	FrameType BPEnum BPA_FRAME_PRS	; Frame data type
+	FrameType	BPEnum BPA_FRAME_PRS	; Frame data type
+	FrameSize	BPPtr 0					; Size of individual frame 
 	
 	; Animation properties binds
 	; Case FrameType of BPA_FRAME_PRS
@@ -96,7 +97,6 @@ BPAnimPlayer STRUCT			; Animation player
 	; Case FrameType of BPA_FRAME_VERTEX
 	;UNION
 		Mesh			BPPtr 0		; Pointer to BPMesh
-		MeshFrameSize	BPPtr 0		; Size of the BPAnimFrameVertex
 		MeshUseNormals	BPBool TRUE	; If normals are included in the frame data
 	;ENDS
 BPAnimPlayer ENDS
@@ -765,16 +765,22 @@ bpProcessAnimPlayer PROC EXPORT BPAnimPlrPTR:BPPtr, Delta:REAL4
 	ASSUME pcx:PTR BPAnimPlayer
 	mov pcx, BPAnimPlrPTR
 	.IF ([pcx].TrackPtr)
-		.IF (([pcx].FrameType == BPA_FRAME_VERTEX) && !([pcx].MeshFrameSize))
-			mov pax, [pcx].Mesh			; Get frame size
-			mov eax, DWORD PTR [pax]	; Get count of vertices
-			.IF ([pcx].MeshUseNormals)
-				add eax, eax
+		.IF !([pcx].FrameSize)
+			.IF ([pcx].FrameType == BPA_FRAME_PRS)
+				mov [pcx].FrameSize, SIZEOF BPAnimFramePRS
+			.ELSEIF ([pcx].FrameType == BPA_FRAME_MATRIX)
+				mov [pcx].FrameSize, SIZEOF BPAnimFrameMatrix
+			.ELSEIF ([pcx].FrameType == BPA_FRAME_VERTEX)
+				mov pax, [pcx].Mesh			; Get frame size
+				mov eax, DWORD PTR [pax]	; Get count of vertices
+				.IF ([pcx].MeshUseNormals)
+					add eax, eax
+				.ENDIF
+				mov edx, 12
+				mul edx
+				add eax, 4	; This is the time DWORD
+				mov [pcx].FrameSize, pax
 			.ENDIF
-			mov edx, 12
-			mul edx
-			add eax, 4	; This is the time DWORD
-			mov [pcx].MeshFrameSize, pax
 		.ENDIF
 	
 		ASSUME pdx:PTR BPAnimTrack
@@ -783,6 +789,8 @@ bpProcessAnimPlayer PROC EXPORT BPAnimPlrPTR:BPPtr, Delta:REAL4
 		fmul bpAnimationFPS
 		fmul Delta
 		fstp animSpd
+		
+		bpAnimate:
 		
 		fld [pcx].Timer
 		fistp floatVal	; Round timer for comparing
@@ -805,15 +813,15 @@ bpProcessAnimPlayer PROC EXPORT BPAnimPlrPTR:BPPtr, Delta:REAL4
 					sub [pcx].FrameOffset, SIZEOF BPAnimFrameMatrix
 					sub frameAddr, SIZEOF BPAnimFrameMatrix
 				.ELSEIF ([pcx].FrameType == BPA_FRAME_VERTEX)
-					mov pax, [pcx].MeshFrameSize
+					mov pax, [pcx].FrameSize
 					sub [pcx].FrameOffset, pax
 					sub frameAddr, pax
 				.ENDIF
-				mov pax, [pcx].MeshFrameSize
+				mov pax, [pcx].FrameSize
 				.IF (SDWORD PTR [pcx].FrameOffset < 0)
 					.IF ([pdx].Looping)
 						bpMPM [pcx].FrameOffset, [pdx].ByteSize
-						sub [pcx].FrameOffset, pax	; MeshFrameSize
+						sub [pcx].FrameOffset, pax	; FrameSize
 						mov pax, [pcx].FrameOffset
 						add pax, [pdx].Frames
 						
@@ -839,16 +847,25 @@ bpProcessAnimPlayer PROC EXPORT BPAnimPlrPTR:BPPtr, Delta:REAL4
 					add [pcx].FrameOffset, SIZEOF BPAnimFrameMatrix
 					add frameAddr, SIZEOF BPAnimFrameMatrix
 				.ELSEIF ([pcx].FrameType == BPA_FRAME_VERTEX)
-					mov pax, [pcx].MeshFrameSize
+					mov pax, [pcx].FrameSize
 					add [pcx].FrameOffset, pax
 					add frameAddr, pax
 				.ENDIF
 				mov eax, [pdx].ByteSize
 				.IF ([pcx].FrameOffset >= pax)
 					.IF ([pdx].Looping)
+						add pax, [pdx].Frames
+						sub pax, [pcx].FrameSize
+						mov eax, DWORD PTR [pax]
+						push pax
+						fld [pcx].Timer
+						fisub DWORD PTR [psp]
+						fstp [pcx].Timer
+						add psp, SIZEOF BPPtr
+						
 						mov [pcx].FrameOffset, 0
-						mov [pcx].Timer, 0 ; Should be sub (-) framecount*FPS or smth
-						jmp bpAnimExit
+						;mov [pcx].Timer, 0
+						jmp bpAnimate
 					.ELSE
 						mov [pcx].TrackPtr, 0
 						jmp bpAnimExit
@@ -943,7 +960,7 @@ bpProcessAnimPlayer PROC EXPORT BPAnimPlrPTR:BPPtr, Delta:REAL4
 			add pbx, 4
 			
 			.IF ([pcx].Mesh)
-				bpMPM intStructSize, [pcx].MeshFrameSize	; The mesh itself
+				bpMPM intStructSize, [pcx].FrameSize	; The mesh itself
 				sub intStructSize, 4
 				.IF ([pcx].MeshUseNormals)	; The frame data is twice as large
 					mov pax, intStructSize
@@ -974,7 +991,7 @@ bpProcessAnimPlayer PROC EXPORT BPAnimPlrPTR:BPPtr, Delta:REAL4
 						ENDIF
 					.ENDIF
 				.ELSEIF ([pcx].Interpolation == BP_INTERPOLATE_LINEAR)
-					bpMPM intFrameSize, [pcx].MeshFrameSize	; Time + mesh
+					bpMPM intFrameSize, [pcx].FrameSize	; Time + mesh
 					
 					mov timeOffset, 4
 					mov pcx, [pcx].Mesh

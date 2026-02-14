@@ -1,3 +1,12 @@
+;
+;   BP3DTypedef.inc
+;   Version 0.8ac1
+;   BP3D generic types (for parity between BP3D and independently imported 
+; modules).
+;
+;   Copyright (c) 2025 Yevhenii Ionenko (aka GreatCorn). All rights reserved.
+;   Licensed under the terms of the MIT license (see ..\LICENSE.txt).
+;
 
 IFNDEF BP3D_TYPEDEF_INC
 BP3D_TYPEDEF_INC EQU <1>
@@ -29,7 +38,7 @@ ENDIF
 ;   Miscellaneous types for argument generalization
 BPBool	TYPEDEF BYTE		; Boolean type
 BPEnum	TYPEDEF BYTE		; Enumerator type
-BPPtr	TYPEDEF PTR	; Pointer type
+BPPtr	TYPEDEF PTR			; Pointer type
 
 IFDEF BP_DOUBLE_PRECISION	; Floating-point type
 	BPFloat	TYPEDEF REAL8
@@ -47,7 +56,7 @@ ENDIF
 .CODE
 IFNDEF RtlMoveMemory
 	;   Simple stack-based overlappable RtlMoveMemory implementation, if not 
-	;present. Assumes no alignment.
+	; present. Assumes no alignment.
 	RtlMoveMemory PROC EXPORT Dest:BPPtr, Src:BPPtr, SrcSize:BPPtr
 		sub psp, SrcSize
 		mov pdx, Src

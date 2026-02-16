@@ -969,33 +969,36 @@ bpProcessAnimPlayer PROC EXPORT BPAnimPlrPTR:BPPtr, Delta:REAL4
 				.ENDIF
 				.IF ([pcx].Interpolation == BP_INTERPOLATE_CONSTANT)
 					mov pax, [pcx].Mesh
+					ASSUME pax:PTR BPMesh
 					; Move frame vertices to the mesh
 					IFDEF BP_INTERPOLATION_DYNAMIC
-						invoke RtlMoveMemory, BPPtr PTR [pax+4], pbx, \
+						invoke RtlMoveMemory, [pax].Vertices, pbx, \
 						intStructSize
 						mov pcx, BPAnimPlrPTR
 					ELSE	
-						mov BPPtr PTR [pax+4], pbx
+						mov [pax].Vertices, pbx
 					ENDIF
 					.IF ([pcx].MeshUseNormals)
 						add pbx, intStructSize
 						mov pax, [pcx].Mesh
 						; Move frame normals to the mesh
 						IFDEF BP_INTERPOLATION_DYNAMIC
-							add pax, 4+SIZEOF BPPtr*2
-							invoke RtlMoveMemory, \
-							BPPtr PTR [pax+4+SIZEOF BPPtr*2], pbx, intStructSize
+							invoke RtlMoveMemory, [pax].Normals, pbx, \
+							intStructSize
 							mov pcx, BPAnimPlrPTR
 						ELSE	
-							mov BPPtr PTR [pax+4+SIZEOF BPPtr*2], pbx
+							mov [pax].Normals, pbx
 						ENDIF
 					.ENDIF
+					ASSUME pax:nothing
 				.ELSEIF ([pcx].Interpolation == BP_INTERPOLATE_LINEAR)
 					bpMPM intFrameSize, [pcx].FrameSize	; Time + mesh
 					
 					mov timeOffset, 4
 					mov pcx, [pcx].Mesh
-					mov pcx, BPPtr PTR [pcx+4]	; Vertices pointer
+					ASSUME pcx:PTR BPMesh
+					mov pcx, [pcx].Vertices
+					ASSUME pcx:PTR BPAnimPlayer
 					push bpAnimInterpolateVerticesEnd
 					jmp bpAnimInterpolateLinear
 					bpAnimInterpolateVerticesEnd:
@@ -1006,7 +1009,9 @@ bpProcessAnimPlayer PROC EXPORT BPAnimPlrPTR:BPPtr, Delta:REAL4
 						add pbx, pax
 						add timeOffset, pax
 						mov pcx, [pcx].Mesh
-						mov pcx, BPPtr PTR [pcx+4+SIZEOF BPPtr*2]	; Normals
+						ASSUME pcx:PTR BPMesh
+						mov pcx, [pcx].Normals
+						ASSUME pcx:PTR BPAnimPlayer
 						push bpAnimInterpolateEnd
 						jmp bpAnimInterpolateLinear						
 					.ENDIF

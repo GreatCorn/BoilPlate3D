@@ -811,28 +811,28 @@ Vector4Sub PROC EXPORT A:BPPtr, B:BPPtr
 Vector4Sub ENDP
 
 IFDEF BP3D_MATHS_INC
-VectorClampLength MACRO Cnt:REQ, A:REQ, Len:REQ
-	LOCAL ALen
-	.DATA?
-	ALen REAL4 ?
-	
-	.CODE
+VectorClampLength MACRO Cnt:REQ, A:REQ, Len:REQ	
 	VectorLength Cnt, A
-	mov ALen, eax
-	.IF (ALen)
-		fcmp Len, ALen
+	
+	CntRep = Vector32DCheck(Cnt, 1)
+	OffSize = Vector32DCheck(Cnt, 0)
+	
+	push pax
+	.IF (REAL4 PTR [psp])
+		fcmp Len, REAL4 PTR [psp]
 		.IF (Carry?)
 			mov pax, A
 			PosOff = 0
-			REPEAT Cnt
+			REPEAT CntRep
 				fld REAL4 PTR [pax+PosOff]
-				fdiv ALen
+				fdiv REAL4 PTR [psp]
 				fmul Len
 				fstp REAL4 PTR [pax+PosOff]
-				PosOff = PosOff + SIZEOF REAL4
+				PosOff = PosOff + OffSize
 			ENDM
 		.ENDIF
 	.ENDIF
+	pop pax
 ENDM
 
 Vector2ClampLength PROC EXPORT A:BPPtr, Len:REAL4
@@ -844,6 +844,16 @@ Vector3ClampLength PROC EXPORT A:BPPtr, Len:REAL4
 	VectorClampLength 3, A, Len
 	ret
 Vector3ClampLength ENDP
+
+Vector32DClampLength PROC EXPORT A:BPPtr, Len:REAL4
+	VectorClampLength 32D, A, Len
+	ret
+Vector32DClampLength ENDP
+
+Vector4ClampLength PROC EXPORT A:BPPtr, Len:REAL4
+	VectorClampLength 4, A, Len
+	ret
+Vector4ClampLength ENDP
 
 Vector2LerpAngle PROC EXPORT A:BPPtr, B:BPPtr, T:REAL4
 	IFNDEF BP_LERP_UNCLAMPED
@@ -864,17 +874,6 @@ Vector2LerpAngle PROC EXPORT A:BPPtr, B:BPPtr, T:REAL4
 		
 	ret
 Vector2LerpAngle ENDP
-
-Vector3Euler PROC EXPORT A:BPPtr
-	mov pcx, A
-	invoke flAngle, REAL4 PTR [pcx]
-	mov REAL4 PTR [pcx], eax
-	invoke flAngle, REAL4 PTR [pcx+4]
-	mov REAL4 PTR [pcx+4], eax
-	invoke flAngle, REAL4 PTR [pcx+8]
-	mov REAL4 PTR [pcx+8], eax
-	ret
-Vector3Euler ENDP
 
 Vector3LerpAngle PROC EXPORT A:BPPtr, B:BPPtr, T:REAL4
 	IFNDEF BP_LERP_UNCLAMPED
@@ -898,18 +897,6 @@ Vector3LerpAngle PROC EXPORT A:BPPtr, B:BPPtr, T:REAL4
 	ret
 Vector3LerpAngle ENDP
 
-Vector3Move PROC EXPORT From:BPPtr, To:BPPtr, T:REAL4
-	mov pdx, From
-	mov pcx, To
-	invoke flMove, REAL4 PTR [pdx], REAL4 PTR [pcx], T
-	mov REAL4 PTR [pdx], eax
-	invoke flMove, REAL4 PTR [pdx+4], REAL4 PTR [pcx+4], T
-	mov REAL4 PTR [pdx+4], eax
-	invoke flMove, REAL4 PTR [pdx+8], REAL4 PTR [pcx+8], T
-	mov REAL4 PTR [pdx+8], eax
-	ret
-Vector3Move ENDP
-
 Vector32DLerpAngle PROC EXPORT A:BPPtr, B:BPPtr, T:REAL4
 	IFNDEF BP_LERP_UNCLAMPED
 		fcmp T, f(1)
@@ -927,6 +914,29 @@ Vector32DLerpAngle PROC EXPORT A:BPPtr, B:BPPtr, T:REAL4
 	mov REAL4 PTR [pdx+8], eax
 	ret
 Vector32DLerpAngle ENDP
+
+Vector3Euler PROC EXPORT A:BPPtr
+	mov pcx, A
+	invoke flAngle, REAL4 PTR [pcx]
+	mov REAL4 PTR [pcx], eax
+	invoke flAngle, REAL4 PTR [pcx+4]
+	mov REAL4 PTR [pcx+4], eax
+	invoke flAngle, REAL4 PTR [pcx+8]
+	mov REAL4 PTR [pcx+8], eax
+	ret
+Vector3Euler ENDP
+
+Vector3Move PROC EXPORT From:BPPtr, To:BPPtr, T:REAL4
+	mov pdx, From
+	mov pcx, To
+	invoke flMove, REAL4 PTR [pdx], REAL4 PTR [pcx], T
+	mov REAL4 PTR [pdx], eax
+	invoke flMove, REAL4 PTR [pdx+4], REAL4 PTR [pcx+4], T
+	mov REAL4 PTR [pdx+4], eax
+	invoke flMove, REAL4 PTR [pdx+8], REAL4 PTR [pcx+8], T
+	mov REAL4 PTR [pdx+8], eax
+	ret
+Vector3Move ENDP
 
 Vector32DMove PROC EXPORT From:BPPtr, To:BPPtr, T:REAL4
 	mov pdx, From

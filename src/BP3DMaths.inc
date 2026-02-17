@@ -132,7 +132,7 @@ ENDM
 ; empty, compare against 0. 'Inspired' by jj2007's macro.
 fcmp MACRO cmp1:REQ, cmp2
 	LOCAL oa
-	IF @Cpu GE 3423	; .686 has fcomip
+	IF @Cpu and 1000000b	; .686 has fcomip
 		IFB <cmp2>
 			fldz
 		ELSE
@@ -664,7 +664,7 @@ nRand ENDP
 nRandomize PROC EXPORT
 	IFDEF GetTickCount
 		call GetTickCount
-	ELSEIF @Cpu GE 3359	; >= .486
+	ELSEIF @Cpu and 0010000b	; >= .486
 		rdtsc
 	ENDIF
 	mov nRandSeed, eax

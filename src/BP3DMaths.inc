@@ -132,31 +132,33 @@ ENDM
 ; empty, compare against 0. 'Inspired' by jj2007's macro.
 fcmp MACRO cmp1:REQ, cmp2
 	LOCAL oa
-	IF @Cpu and 1000000b	; .686 has fcomip
-		IFB <cmp2>
-			fldz
+	; Load compare arguments
+	IFB <cmp2>
+		fldz	; No second arg, compare against 0
+	ELSE
+		IF (OPATTR (cmp2) and 100100b) or (OPATTR (cmp2) and 110000b)
+			; Second arg is an imm or reg, load from stack
+			push cmp2
+			fild REAL4 PTR [psp]
+			pop pax
 		ELSE
-			fld cmp2
+			fld cmp2	; Second arg is a mem real
 		ENDIF
-		fld cmp1
+	ENDIF
+	IF (OPATTR (cmp1) and 100100b) or (OPATTR (cmp1) and 110000b)
+		; First arg is an imm or reg, load from stack
+		push cmp1
+		fild REAL4 PTR [psp]
+		pop pax
+	ELSE
+		fld cmp1	; Second arg is a mem real
+	ENDIF
+	
+	IF @Cpu and BP_CPU_686	; .686 has fcomip
 		fcomip st, st(1)
 		fstp st
 	ELSE
 		;ffree st(7)
-		ifb <cmp2>
-			fldz	; No second arg; compare against zero
-		else
-			oa = (opattr cmp2) and 127
-			if (oa eq 36) or (oa eq 48)
-				push cmp2
-				fild DWORD PTR [esp]	; Integer or reg32 on stack, then on FPU
-				pop eax
-			else
-				fld cmp2	; Real on FPU
-			endif
-		endif
-		;ffree st(7)
-		fld cmp1
 		call fcmpP
 	ENDIF
 ENDM
@@ -664,7 +666,7 @@ nRand ENDP
 nRandomize PROC EXPORT
 	IFDEF GetTickCount
 		call GetTickCount
-	ELSEIF @Cpu and 0010000b	; >= .486
+	ELSEIF @Cpu and BP_CPU_486	; >= .486
 		rdtsc
 	ENDIF
 	mov nRandSeed, eax

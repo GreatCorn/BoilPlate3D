@@ -1239,18 +1239,27 @@ Position:REAL4
 	fld Position
 	fabs
 	fld bpJoyThreshold[0]
-	fcomp
-	fstsw ax
-	bt ax, 8
+	IF @Cpu AND BP_CPU_686	; TODO test properly 
+		fcomip st, st(1)
+	ELSE
+		fcomp
+		fstsw ax
+		bt ax, 8
+	ENDIF
 	
 	.IF (!Carry?)
 		fstp st
 		mov pos, 0
 	.ELSE
 		fld bpJoyThreshold[4]
-		fcompp
-		fstsw ax
-		bt ax, 8
+		IF @Cpu AND BP_CPU_686
+			fcomip st, st(1)
+			fstp st
+		ELSE
+			fcompp
+			fstsw ax
+			bt ax, 8
+		ENDIF
 		
 		.IF (Carry?)
 			.IF (Position & 80000000h)
@@ -2553,9 +2562,13 @@ bpDefFixedProc PROC EXPORT lpParameter:LPVOID
 			fadd deltaFixed
 			fld bpFixedInterval
 			
-			fcom
-			fnstsw ax
-			bt ax, 8
+			IF @Cpu and BP_CPU_686
+				fcomip st, st(1)
+			ELSE
+				fcom
+				fnstsw ax
+				bt ax, 8
+			ENDIF
 			.IF (Carry?)
 				fsub
 				fstp threadTimer

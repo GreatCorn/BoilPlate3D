@@ -53,6 +53,22 @@ IFNDEF TRUE
 	TRUE EQU 1
 ENDIF
 
+;   @Cpu exclusive demystification flags
+;   Version bits (generally all add up, except for 586)
+BP_CPU_8086			EQU 0000001b
+BP_CPU_186			EQU 0000010b
+BP_CPU_286			EQU 0000100b
+BP_CPU_386			EQU 0001000b
+BP_CPU_486			EQU 0010000b
+BP_CPU_586			EQU 0100000b	; 686 doesn't have this bit
+BP_CPU_686			EQU 1000000b
+;   Higher privilege level instructions (like .286P, .386P, etc)
+BP_CPU_PRIVILEGE	EQU 1 shl 7
+;   Math coprocessor instruction sets
+BP_FPU_8087			EQU 0001 shl 8
+BP_FPU_287			EQU 0100 shl 8	; Bit 9 is skipped
+BP_FPU_387			EQU 1000 shl 8
+
 .CODE
 IFNDEF RtlMoveMemory
 	;   Simple stack-based overlappable RtlMoveMemory implementation, if not 

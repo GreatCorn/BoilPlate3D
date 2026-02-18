@@ -131,27 +131,32 @@ ENDM
 ;   Float comparison macro. Carry? is cmp1<cmp2. Zero? is cmp==cmp2. If cmp2 is
 ; empty, compare against 0. 'Inspired' by jj2007's macro.
 fcmp MACRO cmp1:REQ, cmp2
-	LOCAL oa
 	; Load compare arguments
 	IFB <cmp2>
 		fldz	; No second arg, compare against 0
 	ELSE
-		IF (OPATTR (cmp2) and 100100b) or (OPATTR (cmp2) and 110000b)
+		IF ((OPATTR (cmp2)) and 34) EQ 34
+			fld cmp2	; Second arg is a mem real
+		ELSE
 			; Second arg is an imm or reg, load from stack
 			push cmp2
-			fild REAL4 PTR [psp]
+			fld REAL4 PTR [psp]
 			pop pax
-		ELSE
-			fld cmp2	; Second arg is a mem real
+			
+			;oa TEXTEQU %(OPATTR (cmp2))
+			;%ECHO fcmp cmp1, cmp2	OPATTR cmp2 is oa
 		ENDIF
 	ENDIF
-	IF (OPATTR (cmp1) and 100100b) or (OPATTR (cmp1) and 110000b)
+	IF ((OPATTR (cmp1)) and 34) EQ 34
+		fld cmp1	; First arg is a mem real
+	ELSE
 		; First arg is an imm or reg, load from stack
 		push cmp1
-		fild REAL4 PTR [psp]
+		fld REAL4 PTR [psp]
 		pop pax
-	ELSE
-		fld cmp1	; Second arg is a mem real
+			
+		;oa TEXTEQU %(OPATTR (cmp1))
+		;%ECHO fcmp cmp1, cmp2	OPATTR cmp1 is oa
 	ENDIF
 	
 	IF @Cpu and BP_CPU_686	; .686 has fcomip

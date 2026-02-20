@@ -1,5 +1,5 @@
 ;
-;   BP3DImporters.inc
+;   BP3DAssets.inc
 ;   Version 0.5ac1
 ;   BP3D raw asset format importers (animations, GL lists, dynamic meshes, 
 ; textures) extension.
@@ -9,8 +9,8 @@
 ;
 
 
-IFNDEF BP3D_IMPORTERS_INC
-BP3D_IMPORTERS_INC EQU <1>
+IFNDEF BP3D_ASSETS_INC
+BP3D_ASSETS_INC EQU <1>
 
 IFNDEF BP_GLU
 BP_GLU EQU <1>
@@ -24,7 +24,7 @@ ENDIF
 ENDIF
 
 IFDEF rax
-	ECHO BP3D: WARNING! BP3DImporters.inc GLU calls are invalid and untested on x64.
+	ECHO BP3D: WARNING! BP3DAssets.inc GLU calls are invalid and untested on x64.
 ENDIF
 
 ; ----- INTERFACE -----
@@ -103,10 +103,19 @@ BPAnimPlayer ENDS
 
 
 ; ----- CONSTANTS -----
-; BP animation interpolation types
-BP_INTERPOLATE_CONSTANT	EQU 0	; No interpolation
-BP_INTERPOLATE_LINEAR	EQU 1	; Linear interpolation
-BP_INTERPOLATE_LOG		EQU 2	; Logarithmic interpolation (based on lerp, WIP)
+;   BP animation interpolation types
+;   No interpolation (doesn't copy vertex data and simply changes the BPMesh 
+; pointer value if BPAnimPlayer.FrameType is BPA_FRAME_VERTEX and
+; BPL_INTERPOLATION_DYNAMIC is not defined).
+BP_INTERPOLATE_CONSTANT	EQU 0
+;   True linear interpolation. Sets value to interpolated between previous and
+; next frame.
+BP_INTERPOLATE_LINEAR	EQU 1
+;   Speed-based linear interpolation. Calculates amount to move from previous 
+; frame value to next frame value in set amount of time. Allows smoothing 
+; between animations.
+BP_INTERPOLATE_LINEAR_S	EQU 2
+BP_INTERPOLATE_LOG		EQU 3	; Logarithmic interpolation (WIP)
 
 ; BP animation frame data types
 BPA_FRAME_PRS		EQU 0	; BPAnimFramePRS
@@ -184,7 +193,7 @@ LoadBPM MACRO BPMeshPtr:REQ, FilePath:REQ
 	invoke bpLoadBPM, BPMeshPtr, s(FilePath)
 ENDM
 
-;   Load a Boil Plate texture - a raw image file with a BPT_HEADER-byte header
+;   Load a BoilPlate texture - a raw image file with a BPT_HEADER-byte header
 ; which specifies its color format and dimensions.
 ;   TexturePtr:BPPtr - pointer to an uninitialized OpenGL texture.
 ;   FilePath:String - quoted file path string.
@@ -754,7 +763,7 @@ bpAnimPlay PROC EXPORT BPAnimPlrPtr:BPPtr, BPAnimTrackPtr:BPPtr
 	ret
 bpAnimPlay ENDP
 
-bpProcessAnimPlayer PROC EXPORT BPAnimPlrPTR:BPPtr, Delta:REAL4
+bpProcessAnimPlayer PROC EXPORT BPAnimPlrPtr:BPPtr, Delta:REAL4
 	LOCAL floatVal:REAL4, animSpd:REAL4, fact:REAL4
 	LOCAL frameAddr:BPPtr
 	LOCAL timeOffset:BPPtr, intFrameSize:BPPtr, intStructSize:BPPtr
@@ -763,8 +772,9 @@ bpProcessAnimPlayer PROC EXPORT BPAnimPlrPTR:BPPtr, Delta:REAL4
 	mov resFrame, FALSE
 	
 	ASSUME pcx:PTR BPAnimPlayer
-	mov pcx, BPAnimPlrPTR
+	mov pcx, BPAnimPlrPtr
 	.IF ([pcx].TrackPtr)
+		; Get frame size
 		.IF !([pcx].FrameSize)
 			.IF ([pcx].FrameType == BPA_FRAME_PRS)
 				mov [pcx].FrameSize, SIZEOF BPAnimFramePRS
@@ -785,6 +795,7 @@ bpProcessAnimPlayer PROC EXPORT BPAnimPlrPTR:BPPtr, Delta:REAL4
 	
 		ASSUME pdx:PTR BPAnimTrack
 		
+		; Get animation speed
 		fld [pcx].Speed
 		fmul bpAnimationFPS
 		fmul Delta
@@ -793,7 +804,7 @@ bpProcessAnimPlayer PROC EXPORT BPAnimPlrPTR:BPPtr, Delta:REAL4
 		bpAnimate:
 		
 		fld [pcx].Timer
-		fistp floatVal	; Round timer for comparing
+		fistp floatVal	; Round timer for comparing with frame numbers
 		
 		mov pdx, [pcx].TrackPtr		; Get the current track
 		mov pax, [pdx].Frames		; Get the track's frames
@@ -801,10 +812,9 @@ bpProcessAnimPlayer PROC EXPORT BPAnimPlrPTR:BPPtr, Delta:REAL4
 		mov frameAddr, pax
 		
 		push pbx	; We will be using pbx, so we'll pop it at the end
-		; mom come pick me up I'm scared
 		mov eax, DWORD PTR [pax]	; Get current frame's time (first 4 bytes)
 		.IF ([pcx].Speed & FLT_NEG)	; Negative speed
-			.WHILE (floatVal <= eax)
+			.WHILE (SDWORD PTR floatVal <= eax); Progress frame (if needed)
 				mov resFrame, TRUE
 				.IF ([pcx].FrameType == BPA_FRAME_PRS)
 					sub [pcx].FrameOffset, SIZEOF BPAnimFramePRS
@@ -817,18 +827,22 @@ bpProcessAnimPlayer PROC EXPORT BPAnimPlrPTR:BPPtr, Delta:REAL4
 					sub [pcx].FrameOffset, pax
 					sub frameAddr, pax
 				.ENDIF
-				mov pax, [pcx].FrameSize
-				.IF (SDWORD PTR [pcx].FrameOffset < 0)
+				.IF (SDWORD PTR [pcx].FrameOffset < 0)	; End frame
 					.IF ([pdx].Looping)
-						bpMPM [pcx].FrameOffset, [pdx].ByteSize
-						sub [pcx].FrameOffset, pax	; FrameSize
-						mov pax, [pcx].FrameOffset
+						; Set FrameOffset to last frame OFFSET
+						mov pax, [pdx].ByteSize
+						sub pax, [pcx].FrameSize	
+						mov [pcx].FrameOffset, pax
 						add pax, [pdx].Frames
 						
-						bpMEM32 [pcx].Timer, DWORD PTR [pax]
-						fild [pcx].Timer
+						; Get last frame index and add to timer
+						mov eax, DWORD PTR [pax]
+						push pax
+						fld [pcx].Timer
+						fiadd DWORD PTR [psp]
 						fstp [pcx].Timer
-						jmp bpAnimExit
+						add psp, SIZEOF BPPtr
+						jmp bpAnimate
 					.ELSE
 						mov [pcx].TrackPtr, 0
 						jmp bpAnimExit
@@ -838,7 +852,7 @@ bpProcessAnimPlayer PROC EXPORT BPAnimPlrPTR:BPPtr, Delta:REAL4
 				mov eax, DWORD PTR [pax]
 			.ENDW
 		.ELSE						; Positive speed
-			.WHILE (floatVal >= eax)
+			.WHILE (SDWORD PTR floatVal >= eax); Progress frame
 				mov resFrame, TRUE
 				.IF ([pcx].FrameType == BPA_FRAME_PRS)
 					add [pcx].FrameOffset, SIZEOF BPAnimFramePRS
@@ -852,8 +866,9 @@ bpProcessAnimPlayer PROC EXPORT BPAnimPlrPTR:BPPtr, Delta:REAL4
 					add frameAddr, pax
 				.ENDIF
 				mov eax, [pdx].ByteSize
-				.IF ([pcx].FrameOffset >= pax)
+				.IF (SDWORD PTR [pcx].FrameOffset >= pax)	; End frame
 					.IF ([pdx].Looping)
+						; Get last frame's index to subtract from timer
 						add pax, [pdx].Frames
 						sub pax, [pcx].FrameSize
 						mov eax, DWORD PTR [pax]
@@ -863,6 +878,7 @@ bpProcessAnimPlayer PROC EXPORT BPAnimPlrPTR:BPPtr, Delta:REAL4
 						fstp [pcx].Timer
 						add psp, SIZEOF BPPtr
 						
+						; FrameOffset from beginning
 						mov [pcx].FrameOffset, 0
 						;mov [pcx].Timer, 0
 						jmp bpAnimate
@@ -875,6 +891,8 @@ bpProcessAnimPlayer PROC EXPORT BPAnimPlrPTR:BPPtr, Delta:REAL4
 				mov eax, DWORD PTR [pax]
 			.ENDW
 		.ENDIF
+		
+		; Interpolate different frame types
 		.IF ([pcx].FrameType == BPA_FRAME_PRS)
 			mov intStructSize, SIZEOF Vector3
 			mov intFrameSize, SIZEOF BPAnimFramePRS
@@ -885,11 +903,16 @@ bpProcessAnimPlayer PROC EXPORT BPAnimPlrPTR:BPPtr, Delta:REAL4
 			.IF ([pcx].Position)
 				.IF ([pcx].Interpolation == BP_INTERPOLATE_CONSTANT)
 					invoke Vector3Copy, [pcx].Position, pbx
-				.ELSEIF ([pcx].Interpolation == BP_INTERPOLATE_LINEAR)
+				.ELSEIF ([pcx].Interpolation == BP_INTERPOLATE_LINEAR) \
+				|| ([pcx].Interpolation == BP_INTERPOLATE_LINEAR_S)
 					mov timeOffset, 4			; Byte offset from Frame.Time
 					mov pcx, [pcx].Position		; Output to this address
 					push bpAnimInterpolatePositionEnd	; To avoid ret
-					jmp bpAnimInterpolateLinear
+					.IF ([pcx].Interpolation == BP_INTERPOLATE_LINEAR)
+						jmp bpAnimInterpolateLinear
+					.ELSE
+						jmp bpAnimInterpolateLinearS
+					.ENDIF
 				.ELSEIF ([pcx].Interpolation == BP_INTERPOLATE_LOG)
 				
 				.ENDIF
@@ -897,15 +920,20 @@ bpProcessAnimPlayer PROC EXPORT BPAnimPlrPTR:BPPtr, Delta:REAL4
 			bpAnimInterpolatePositionEnd:
 			
 			add pbx, SIZEOF Vector3	; Now pbx is Rotation:Vector3
-			mov pcx, BPAnimPlrPTR
+			mov pcx, BPAnimPlrPtr
 			.IF ([pcx].Rotation)
 				.IF ([pcx].Interpolation == BP_INTERPOLATE_CONSTANT)
 					invoke Vector3Copy, [pcx].Rotation, pbx
-				.ELSEIF ([pcx].Interpolation == BP_INTERPOLATE_LINEAR)
+				.ELSEIF ([pcx].Interpolation == BP_INTERPOLATE_LINEAR) \
+				|| ([pcx].Interpolation == BP_INTERPOLATE_LINEAR_S)
 					mov timeOffset, 4+SIZEOF Vector3
 					mov pcx, [pcx].Rotation
 					push bpAnimInterpolateRotationEnd
-					jmp bpAnimInterpolateLinear
+					.IF ([pcx].Interpolation == BP_INTERPOLATE_LINEAR)
+						jmp bpAnimInterpolateLinear
+					.ELSE
+						jmp bpAnimInterpolateLinearS
+					.ENDIF
 				.ELSEIF ([pcx].Interpolation == BP_INTERPOLATE_LOG)
 				
 				.ENDIF
@@ -913,15 +941,20 @@ bpProcessAnimPlayer PROC EXPORT BPAnimPlrPTR:BPPtr, Delta:REAL4
 			bpAnimInterpolateRotationEnd:
 			
 			add pbx, SIZEOF Vector3	; Now pbx is Scale:Vector3
-			mov pcx, BPAnimPlrPTR
+			mov pcx, BPAnimPlrPtr
 			.IF ([pcx].Scale)
 				.IF ([pcx].Interpolation == BP_INTERPOLATE_CONSTANT)
 					invoke Vector3Copy, [pcx].Scale, pbx
-				.ELSEIF ([pcx].Interpolation == BP_INTERPOLATE_LINEAR)
+				.ELSEIF ([pcx].Interpolation == BP_INTERPOLATE_LINEAR) \
+				|| ([pcx].Interpolation == BP_INTERPOLATE_LINEAR_S)
 					mov timeOffset, 4+SIZEOF Vector3*2
 					mov pcx, [pcx].Scale
 					push bpAnimInterpolateEnd
-					jmp bpAnimInterpolateLinear
+					.IF ([pcx].Interpolation == BP_INTERPOLATE_LINEAR)
+						jmp bpAnimInterpolateLinear
+					.ELSE
+						jmp bpAnimInterpolateLinearS
+					.ENDIF
 				.ELSEIF ([pcx].Interpolation == BP_INTERPOLATE_LOG)
 				
 				.ENDIF
@@ -943,14 +976,19 @@ bpProcessAnimPlayer PROC EXPORT BPAnimPlrPTR:BPPtr, Delta:REAL4
 						ENDIF
 						add pax, 4
 					.ENDW
-				.ELSEIF ([pcx].Interpolation == BP_INTERPOLATE_LINEAR)
+				.ELSEIF ([pcx].Interpolation == BP_INTERPOLATE_LINEAR) \
+				|| ([pcx].Interpolation == BP_INTERPOLATE_LINEAR_S)
 					mov intStructSize, SIZEOF REAL4 * 16
 					mov intFrameSize, SIZEOF BPAnimFrameMatrix
 					
 					mov timeOffset, 4
 					mov pcx, [pcx].Matrix
 					push bpAnimInterpolateEnd
-					jmp bpAnimInterpolateLinear
+					.IF ([pcx].Interpolation == BP_INTERPOLATE_LINEAR)
+						jmp bpAnimInterpolateLinear
+					.ELSE
+						jmp bpAnimInterpolateLinearS
+					.ENDIF
 				.ELSEIF ([pcx].Interpolation == BP_INTERPOLATE_LOG)
 					
 				.ENDIF
@@ -974,7 +1012,7 @@ bpProcessAnimPlayer PROC EXPORT BPAnimPlrPTR:BPPtr, Delta:REAL4
 					IFDEF BP_INTERPOLATION_DYNAMIC
 						invoke RtlMoveMemory, [pax].Vertices, pbx, \
 						intStructSize
-						mov pcx, BPAnimPlrPTR
+						mov pcx, BPAnimPlrPtr
 					ELSE	
 						mov [pax].Vertices, pbx
 					ENDIF
@@ -985,13 +1023,14 @@ bpProcessAnimPlayer PROC EXPORT BPAnimPlrPTR:BPPtr, Delta:REAL4
 						IFDEF BP_INTERPOLATION_DYNAMIC
 							invoke RtlMoveMemory, [pax].Normals, pbx, \
 							intStructSize
-							mov pcx, BPAnimPlrPTR
+							mov pcx, BPAnimPlrPtr
 						ELSE	
 							mov [pax].Normals, pbx
 						ENDIF
 					.ENDIF
 					ASSUME pax:nothing
-				.ELSEIF ([pcx].Interpolation == BP_INTERPOLATE_LINEAR)
+				.ELSEIF ([pcx].Interpolation == BP_INTERPOLATE_LINEAR) \
+				|| ([pcx].Interpolation == BP_INTERPOLATE_LINEAR_S)
 					bpMPM intFrameSize, [pcx].FrameSize	; Time + mesh
 					
 					mov timeOffset, 4
@@ -1000,10 +1039,14 @@ bpProcessAnimPlayer PROC EXPORT BPAnimPlrPTR:BPPtr, Delta:REAL4
 					mov pcx, [pcx].Vertices
 					ASSUME pcx:PTR BPAnimPlayer
 					push bpAnimInterpolateVerticesEnd
-					jmp bpAnimInterpolateLinear
+					.IF ([pcx].Interpolation == BP_INTERPOLATE_LINEAR)
+						jmp bpAnimInterpolateLinear
+					.ELSE
+						jmp bpAnimInterpolateLinearS
+					.ENDIF
 					bpAnimInterpolateVerticesEnd:
 					
-					mov pcx, BPAnimPlrPTR
+					mov pcx, BPAnimPlrPtr
 					.IF ([pcx].MeshUseNormals)
 						mov pax, intStructSize
 						add pbx, pax
@@ -1013,7 +1056,11 @@ bpProcessAnimPlayer PROC EXPORT BPAnimPlrPTR:BPPtr, Delta:REAL4
 						mov pcx, [pcx].Normals
 						ASSUME pcx:PTR BPAnimPlayer
 						push bpAnimInterpolateEnd
-						jmp bpAnimInterpolateLinear						
+						.IF ([pcx].Interpolation == BP_INTERPOLATE_LINEAR)
+							jmp bpAnimInterpolateLinear
+						.ELSE
+							jmp bpAnimInterpolateLinearS
+						.ENDIF					
 					.ENDIF
 				.ELSEIF ([pcx].Interpolation == BP_INTERPOLATE_LOG)
 					
@@ -1022,7 +1069,7 @@ bpProcessAnimPlayer PROC EXPORT BPAnimPlrPTR:BPPtr, Delta:REAL4
 		.ENDIF
 		bpAnimInterpolateEnd:
 		
-		mov pcx, BPAnimPlrPTR
+		mov pcx, BPAnimPlrPtr
 		fld animSpd		; Inc timer, for some reason deltaTime doesn't really work and is shit
 		fadd [pcx].Timer	; Tested on other stuff, really takes a toll on animation only
 		fstp [pcx].Timer
@@ -1032,7 +1079,6 @@ bpProcessAnimPlayer PROC EXPORT BPAnimPlrPTR:BPPtr, Delta:REAL4
 	.ENDIF
 	
 	bpAnimExit:
-	ASSUME pcx:nothing
 	
 	mov pax, resFrame
 	ret
@@ -1040,6 +1086,45 @@ bpProcessAnimPlayer PROC EXPORT BPAnimPlrPTR:BPPtr, Delta:REAL4
 	bpAnimInterpolateLinear:
 		mov pdx, pbx			; pbx is the current frame's value
 		.IF (animSpd & FLT_NEG)	; Get previous frame value in pdx
+			add pbx, intFrameSize	
+		.ELSE
+			sub pdx, intFrameSize
+		.ENDIF
+		; Calculate lerp factor based on Timer position between frames
+		push pbx			; Get frame indexes (time values)
+		push pcx
+		push pdx
+		sub pbx, timeOffset	; The offset from first 4 bytes = Frame.Time
+		sub pdx, timeOffset
+		mov pcx, BPAnimPlrPtr
+		fld [pcx].Timer
+		fisub DWORD PTR [pdx]
+		fild DWORD PTR [pbx]
+		fisub DWORD PTR [pdx]
+		fdiv
+		fstp floatVal
+		pop pdx
+		pop pcx
+		pop pbx
+			
+		xor pax, pax
+		.WHILE(pax < intStructSize)
+			fld REAL4 PTR [pbx+pax]	; B value (current frame)
+			fsub REAL4 PTR [pdx+pax]; A value
+			
+			fmul floatVal
+			fadd REAL4 PTR [pdx+pax]
+			fstp REAL4 PTR [pcx]
+			
+			add pcx, 4	; Output offset
+			add pax, 4	; i++
+		.ENDW
+		pop pax	; pop label from stack
+		jmp pax
+	
+	bpAnimInterpolateLinearS:
+		mov pdx, pbx			; pbx is the current frame's value
+		.IF (animSpd & FLT_NEG)	; Get previous (or next) frame value in pdx
 			add pdx, intFrameSize	
 		.ELSE
 			sub pdx, intFrameSize
@@ -1058,6 +1143,7 @@ bpProcessAnimPlayer PROC EXPORT BPAnimPlrPTR:BPPtr, Delta:REAL4
 		pop pbx
 		fstp floatVal
 		
+		; Calculate lerp factor based on speed and distance between frames
 		fld animSpd
 		fabs
 		fdiv floatVal
@@ -1084,6 +1170,8 @@ bpProcessAnimPlayer PROC EXPORT BPAnimPlrPTR:BPPtr, Delta:REAL4
 		.ENDW
 		pop pax	; pop label from stack
 		jmp pax
+		
+	ASSUME pcx:nothing
 bpProcessAnimPlayer ENDP
 ENDIF
 ENDIF

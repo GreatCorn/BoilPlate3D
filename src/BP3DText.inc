@@ -30,7 +30,7 @@ bpTextNL			BYTE 0
 
 .CODE
 
-IFDEF BP3D_IMPORTERS_INC
+IFDEF BP3D_ASSETS_INC
 LoadFont MACRO DirPath:REQ, FontPTR
 	IFB <FontPTR>
 		invoke bpLoadFont, s(DirPath), OFFSET bpDefaultFont
@@ -75,7 +75,7 @@ bpBuildFontQuad PROC EXPORT
 	ret
 bpBuildFontQuad ENDP
 
-IFDEF BP3D_IMPORTERS_INC
+IFDEF BP3D_ASSETS_INC
 bpLoadFont PROC EXPORT DirPath:BPPtr, FontPTR:BPPtr
 	LOCAL dirLen:BPPtr, stringBuf:BPPtr
 	

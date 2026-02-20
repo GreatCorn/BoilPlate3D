@@ -168,8 +168,8 @@ fcmp MACRO cmp1:REQ, cmp2
 	ENDIF
 ENDM
 
-;   Compares FPU st(0) with st(1). Is called if CPU is < 686 by fcmp. See fcmp
-; for flag results.
+;   Compares FPU st(0) with st(1) by fcom. Is called if CPU is < 686 by fcmp.
+; See fcmp for flag results.
 fcmpP PROC EXPORT
 	fcompp
 	fnstsw ax

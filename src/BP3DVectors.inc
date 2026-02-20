@@ -37,11 +37,12 @@ Vector4 ENDS
 
 ; ----- CONSTANTS -----
 .CONST
-Vector2One	Vector2 <1.0, 1.0>
-Vector2Zero	Vector2 <0.0, 0.0>
-Vector3One	Vector3 <1.0, 1.0, 1.0>
-Vector3Up	Vector3 <0.0, 1.0, 0.0>
-Vector3Zero	Vector3 <0.0, 0.0, 0.0>
+Vector2One		Vector2 <1.0, 1.0>
+Vector2Zero		Vector2 <0.0, 0.0>
+Vector3Forward	Vector3 <0.0, 0.0, 1.0>
+Vector3One		Vector3 <1.0, 1.0, 1.0>
+Vector3Up		Vector3 <0.0, 1.0, 0.0>
+Vector3Zero		Vector3 <0.0, 0.0, 0.0>
 
 ; ----- IMPLEMENTATION -----
 .CODE

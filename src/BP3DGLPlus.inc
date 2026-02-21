@@ -84,15 +84,6 @@ piad MACRO Integer:REQ
 	ENDIF
 ENDM
 
-glClearDepthf PROC EXPORT depth:REAL4
-	IFDEF BP_MULTITHREADED_CONTEXT
-		LOCAL bp3DDbl:REAL8
-	ENDIF
-	pfad depth
-	call glClearDepth
-	ret
-glClearDepthf ENDP
-
 glClearColor3fv PROC EXPORT v:BPPtr
 	mov pcx, v
 	bpPush32 clWhite[12]
@@ -113,6 +104,15 @@ glClearColor4fv PROC EXPORT v:BPPtr
 	ret
 glClearColor4fv ENDP
 
+glClearDepthf PROC EXPORT depth:REAL4
+	IFDEF BP_MULTITHREADED_CONTEXT
+		LOCAL bp3DDbl:REAL8
+	ENDIF
+	pfad depth
+	call glClearDepth
+	ret
+glClearDepthf ENDP
+
 glOrthof PROC EXPORT left:REAL4, right:REAL4, bottom:REAL4, top:REAL4, \
 nearVal:REAL4, farVal:REAL4
 	IFDEF BP_MULTITHREADED_CONTEXT
@@ -127,110 +127,6 @@ nearVal:REAL4, farVal:REAL4
 	call glOrtho
 	ret
 glOrthof ENDP
-
-glScalei PROC EXPORT x:SDWORD, y:SDWORD, z:SDWORD
-	sub esp, 12
-	fild z
-	fstp REAL4 PTR [esp+8]
-	fild y
-	fstp REAL4 PTR [esp+4]
-	fild x
-	fstp REAL4 PTR [esp]
-	call glScalef
-	ret
-glScalei ENDP
-
-glTranslatei PROC EXPORT x:SDWORD, y:SDWORD, z:SDWORD
-	sub esp, 12
-	fild z
-	fstp REAL4 PTR [esp+8]
-	fild y
-	fstp REAL4 PTR [esp+4]
-	fild x
-	fstp REAL4 PTR [esp]
-	call glTranslatef
-	ret
-glTranslatei ENDP
-
-gluLookAtf PROC EXPORT eyeX:REAL4, eyeY:REAL4, eyeZ:REAL4, centerX:REAL4, \
-centerY:REAL4, centerZ:REAL4, upX:REAL4, upY:REAL4, upZ:REAL4
-	IFDEF BP_MULTITHREADED_CONTEXT
-		LOCAL bp3DDbl:REAL8
-	ENDIF
-	pfad upZ
-	pfad upY
-	pfad upX
-	pfad centerZ
-	pfad centerY
-	pfad centerX
-	pfad eyeZ
-	pfad eyeY
-	pfad eyeX
-	call gluLookAt
-gluLookAtf ENDP
-
-gluLookAtfv PROC EXPORT eyePos:BPPtr, centerPos:BPPtr, upVector:BPPtr
-	IFDEF BP_MULTITHREADED_CONTEXT
-		LOCAL bp3DDbl:REAL8
-	ENDIF
-	mov pax, upVector
-	pfad REAL4 PTR [pax+8]
-	pfad REAL4 PTR [pax+4]
-	pfad REAL4 PTR [pax]
-	mov pax, centerPos
-	pfad REAL4 PTR [pax+8]
-	pfad REAL4 PTR [pax+4]
-	pfad REAL4 PTR [pax]
-	mov pax, eyePos
-	pfad REAL4 PTR [pax+8]
-	pfad REAL4 PTR [pax+4]
-	pfad REAL4 PTR [pax]
-	call gluLookAt
-gluLookAtfv ENDP
-
-gluPerspectivef PROC EXPORT fovy:REAL4, aspect:REAL4, zNear:REAL4, zFar:REAL4
-	IFDEF BP_MULTITHREADED_CONTEXT
-		LOCAL bp3DDbl:REAL8
-	ENDIF
-	pfad zFar
-	pfad zNear
-	pfad aspect
-	pfad fovy
-	call gluPerspective
-	ret
-gluPerspectivef ENDP
-
-gluOrtho2Df PROC EXPORT left:REAL4, right:REAL4, bottom:REAL4, top:REAL4
-	IFDEF BP_MULTITHREADED_CONTEXT
-		LOCAL bp3DDbl:REAL8
-	ENDIF
-	pfad top
-	pfad bottom
-	pfad right
-	pfad left
-	call gluOrtho2D
-	ret
-gluOrtho2Df ENDP
-
-gluOrtho2Di PROC EXPORT left:SDWORD, right:SDWORD, bottom:SDWORD, top:SDWORD
-	IFDEF BP_MULTITHREADED_CONTEXT
-		LOCAL bp3DDbl:REAL8
-	ENDIF
-	piad top
-	piad bottom
-	piad right
-	piad left
-	call gluOrtho2D
-	ret
-gluOrtho2Di ENDP
-
-glRotatefr PROC EXPORT angle:REAL4, x:REAL4, y:REAL4, z:REAL4
-	fld angle
-	fmul bpGLPlusR2D
-	fstp angle
-	invoke glRotatef, angle, x, y, z
-	ret
-glRotatefr ENDP
 
 glRotate2fv PROC EXPORT v:BPPtr
 	mov pax, v
@@ -285,14 +181,51 @@ glRotate3fvr PROC EXPORT v:BPPtr
 	ret
 glRotate3fvr ENDP
 
-gluSpheref PROC EXPORT quad:BPPtr, radius:REAL4, slices:SDWORD, stacks:SDWORD
-	push stacks
-	push slices
-	pfad radius
-	push quad
-	call gluSphere
+glRotatefr PROC EXPORT angle:REAL4, x:REAL4, y:REAL4, z:REAL4
+	fld angle
+	fmul bpGLPlusR2D
+	fstp angle
+	invoke glRotatef, angle, x, y, z
 	ret
-gluSpheref ENDP
+glRotatefr ENDP
+
+glRotatei PROC EXPORT angle:SDWORD, x:SDWORD, y:SDWORD, z:SDWORD
+	sub esp, 16
+	fild angle
+	fstp REAL4 PTR [esp+12]
+	fild z
+	fstp REAL4 PTR [esp+8]
+	fild y
+	fstp REAL4 PTR [esp+4]
+	fild x
+	fstp REAL4 PTR [esp]
+	call glRotatef
+	ret
+glRotatei ENDP
+
+glScale2fv PROC EXPORT v:BPPtr
+	mov pax, v
+	invoke glScalef, REAL4 PTR [pax], REAL4 PTR [pax+4], 1065353216	; 1.0
+	ret
+glScale2fv ENDP
+
+glScale3fv PROC EXPORT v:BPPtr
+	mov pax, v
+	invoke glScalef, REAL4 PTR [pax], REAL4 PTR [pax+4], REAL4 PTR [pax+8]
+	ret
+glScale2fv ENDP
+
+glScalei PROC EXPORT x:SDWORD, y:SDWORD, z:SDWORD
+	sub esp, 12
+	fild z
+	fstp REAL4 PTR [esp+8]
+	fild y
+	fstp REAL4 PTR [esp+4]
+	fild x
+	fstp REAL4 PTR [esp]
+	call glScalef
+	ret
+glScalei ENDP
 
 glTranslate2fv PROC EXPORT v:BPPtr
 	mov pax, v
@@ -305,6 +238,100 @@ glTranslate3fv PROC EXPORT v:BPPtr
 	invoke glTranslatef, REAL4 PTR [pax], REAL4 PTR [pax+4], REAL4 PTR [pax+8]
 	ret
 glTranslate3fv ENDP
+
+glTranslatei PROC EXPORT x:SDWORD, y:SDWORD, z:SDWORD
+	sub esp, 12
+	fild z
+	fstp REAL4 PTR [esp+8]
+	fild y
+	fstp REAL4 PTR [esp+4]
+	fild x
+	fstp REAL4 PTR [esp]
+	call glTranslatef
+	ret
+glTranslatei ENDP
+
+
+gluLookAtf PROC EXPORT eyeX:REAL4, eyeY:REAL4, eyeZ:REAL4, centerX:REAL4, \
+centerY:REAL4, centerZ:REAL4, upX:REAL4, upY:REAL4, upZ:REAL4
+	IFDEF BP_MULTITHREADED_CONTEXT
+		LOCAL bp3DDbl:REAL8
+	ENDIF
+	pfad upZ
+	pfad upY
+	pfad upX
+	pfad centerZ
+	pfad centerY
+	pfad centerX
+	pfad eyeZ
+	pfad eyeY
+	pfad eyeX
+	call gluLookAt
+gluLookAtf ENDP
+
+gluLookAtfv PROC EXPORT eyePos:BPPtr, centerPos:BPPtr, upVector:BPPtr
+	IFDEF BP_MULTITHREADED_CONTEXT
+		LOCAL bp3DDbl:REAL8
+	ENDIF
+	mov pax, upVector
+	pfad REAL4 PTR [pax+8]
+	pfad REAL4 PTR [pax+4]
+	pfad REAL4 PTR [pax]
+	mov pax, centerPos
+	pfad REAL4 PTR [pax+8]
+	pfad REAL4 PTR [pax+4]
+	pfad REAL4 PTR [pax]
+	mov pax, eyePos
+	pfad REAL4 PTR [pax+8]
+	pfad REAL4 PTR [pax+4]
+	pfad REAL4 PTR [pax]
+	call gluLookAt
+gluLookAtfv ENDP
+
+gluOrtho2Df PROC EXPORT left:REAL4, right:REAL4, bottom:REAL4, top:REAL4
+	IFDEF BP_MULTITHREADED_CONTEXT
+		LOCAL bp3DDbl:REAL8
+	ENDIF
+	pfad top
+	pfad bottom
+	pfad right
+	pfad left
+	call gluOrtho2D
+	ret
+gluOrtho2Df ENDP
+
+gluOrtho2Di PROC EXPORT left:SDWORD, right:SDWORD, bottom:SDWORD, top:SDWORD
+	IFDEF BP_MULTITHREADED_CONTEXT
+		LOCAL bp3DDbl:REAL8
+	ENDIF
+	piad top
+	piad bottom
+	piad right
+	piad left
+	call gluOrtho2D
+	ret
+gluOrtho2Di ENDP
+
+gluPerspectivef PROC EXPORT fovy:REAL4, aspect:REAL4, zNear:REAL4, zFar:REAL4
+	IFDEF BP_MULTITHREADED_CONTEXT
+		LOCAL bp3DDbl:REAL8
+	ENDIF
+	pfad zFar
+	pfad zNear
+	pfad aspect
+	pfad fovy
+	call gluPerspective
+	ret
+gluPerspectivef ENDP
+
+gluSpheref PROC EXPORT quad:BPPtr, radius:REAL4, slices:SDWORD, stacks:SDWORD
+	push stacks
+	push slices
+	pfad radius
+	push quad
+	call gluSphere
+	ret
+gluSpheref ENDP
 ELSE
 	ECHO BP3D: Duplicate include file BP3DGLPlus.inc
 ENDIF

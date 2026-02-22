@@ -756,8 +756,31 @@ IFDEF BP3D_VECTORS_INC
 bpAnimPlay PROC EXPORT BPAnimPlrPtr:BPPtr, BPAnimTrackPtr:BPPtr
 	mov pax, BPAnimPlrPtr
 	ASSUME pax:PTR BPAnimPlayer
-	mov [pax].FrameOffset, 0
-	mov [pax].Timer, 0
+	.IF ([pax].Speed & FLT_NEG)
+		; Set FrameOffset to last frame OFFSET
+		ASSUME pdx:PTR BPAnimTrack
+		mov pdx, BPAnimTrackPtr
+		; Get framesize
+		ASSUME pcx:PTR BPMesh
+		mov pcx, [pax].Mesh
+		mov pcx, [pcx].V3Size	; Get vector3 array size (vert,norm)
+		.IF ([pax].MeshUseNormals)
+			add pcx, pcx
+		.ENDIF
+		neg pcx
+		add pcx, [pdx].ByteSize
+		mov [pax].FrameOffset, pcx
+		add pcx, [pdx].Frames
+		mov ecx, DWORD PTR [pcx]
+		push pcx
+		fild DWORD PTR [psp]
+		fstp [pax].Timer
+		add psp, SIZEOF BPPtr
+		ASSUME pdx:nothing
+	.ELSE
+		mov [pax].FrameOffset, 0
+		mov [pax].Timer, 0
+	.ENDIF
 	bpMPM [pax].TrackPtr, BPAnimTrackPtr
 	ASSUME pax:nothing
 	ret
@@ -781,13 +804,12 @@ bpProcessAnimPlayer PROC EXPORT BPAnimPlrPtr:BPPtr, Delta:REAL4
 			.ELSEIF ([pcx].FrameType == BPA_FRAME_MATRIX)
 				mov [pcx].FrameSize, SIZEOF BPAnimFrameMatrix
 			.ELSEIF ([pcx].FrameType == BPA_FRAME_VERTEX)
-				mov pax, [pcx].Mesh			; Get frame size
-				mov eax, DWORD PTR [pax]	; Get count of vertices
+				mov pax, [pcx].Mesh
+				ASSUME pax:PTR BPMesh
+				mov eax, [pax].V3Size	; Get vector3 array size (vert,norm)
 				.IF ([pcx].MeshUseNormals)
 					add eax, eax
 				.ENDIF
-				mov edx, 12
-				mul edx
 				add eax, 4	; This is the time DWORD
 				mov [pcx].FrameSize, pax
 			.ENDIF

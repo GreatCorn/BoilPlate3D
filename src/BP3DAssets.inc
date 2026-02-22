@@ -754,6 +754,7 @@ bpTexImage2D ENDP
 IFDEF BP3D_MATHS_INC
 IFDEF BP3D_VECTORS_INC
 bpAnimPlay PROC EXPORT BPAnimPlrPtr:BPPtr, BPAnimTrackPtr:BPPtr
+	LOCAL frSize:BPPtr
 	mov pax, BPAnimPlrPtr
 	ASSUME pax:PTR BPAnimPlayer
 	.IF ([pax].Speed & FLT_NEG)
@@ -761,21 +762,25 @@ bpAnimPlay PROC EXPORT BPAnimPlrPtr:BPPtr, BPAnimTrackPtr:BPPtr
 		ASSUME pdx:PTR BPAnimTrack
 		mov pdx, BPAnimTrackPtr
 		; Get framesize
-		ASSUME pcx:PTR BPMesh
 		mov pcx, [pax].Mesh
+		ASSUME pcx:PTR BPMesh
 		mov pcx, [pcx].V3Size	; Get vector3 array size (vert,norm)
+		ASSUME pcx:nothing
 		.IF ([pax].MeshUseNormals)
 			add pcx, pcx
 		.ENDIF
-		neg pcx
-		add pcx, [pdx].ByteSize
+		mov frSize, pcx
+		mov pcx, [pdx].ByteSize
+		sub pcx, frSize
+		sub pcx, 4
+		mov pax, BPAnimPlrPtr
 		mov [pax].FrameOffset, pcx
 		add pcx, [pdx].Frames
 		mov ecx, DWORD PTR [pcx]
 		push pcx
 		fild DWORD PTR [psp]
 		fstp [pax].Timer
-		add psp, SIZEOF BPPtr
+		add psp, SIZEOF BPPtr		
 		ASSUME pdx:nothing
 	.ELSE
 		mov [pax].FrameOffset, 0

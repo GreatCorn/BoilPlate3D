@@ -213,7 +213,7 @@ glScale3fv PROC EXPORT v:BPPtr
 	mov pax, v
 	invoke glScalef, REAL4 PTR [pax], REAL4 PTR [pax+4], REAL4 PTR [pax+8]
 	ret
-glScale2fv ENDP
+glScale3fv ENDP
 
 glScalei PROC EXPORT x:SDWORD, y:SDWORD, z:SDWORD
 	sub esp, 12

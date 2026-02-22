@@ -20,6 +20,56 @@ ENDIF
 ; ----- IMPLEMENTATION -----
 .CODE
 
+bpArraySize MACRO ArrayDims:VARARG
+	FirstComma INSTR <ArrayDims>,<,>
+	IF FirstComma NE 0
+		FirstArg SUBSTR <ArrayDims>, 1, FirstComma-1
+	ELSE
+		FirstArg TEXTEQU <ArrayDims>
+	ENDIF
+	
+	AllImm = TRUE
+	ArrSize = FirstArg
+	
+	FOR Dim, <ArrayDims>
+		; Check if all arguments are immediate values
+		IF ((OPATTR (Dim)) and 36) NE 36
+			AllImm = FALSE
+			EXITM
+		ENDIF
+		ArrSize = ArrSize * Dim
+	ENDM
+	IF AllImm EQ FALSE
+		FOR Dim, <ArrayDims>
+			push Dim
+		ENDM
+		mov pax, FirstArg
+		FOR Dim, <ArrayDims>
+			pop pcx
+			mul pcx
+		ENDM
+		EXITM <pax>
+	ELSE
+		EXITM <ArrSize>
+	ENDIF
+ENDM
+
+;   Create 1D array of length ArrayLength, for elements of size DataSize and 
+; return the pointer in pax.
+;   DataSize:BPPtr - SIZEOF the data type in the array.
+;   ArrayLength:BPPtr - length of the array to create.
+bp1DArrayCreate PROC EXPORT DataSize:BPPtr, ArrayLength:BPPtr
+	mov pax, ArrayLength
+	.IF (DataSize > 1)
+		mov pcx, DataSize
+		mul pcx
+	.ENDIF
+	push pax
+	invoke bpMalloc, bpDefHeap, HEAP_ZERO_MEMORY, pax
+	pop pcx
+	ret
+bp1DArrayCreate ENDP
+
 ;   Calculate the offset (index * DataSize) in 1D array by position X and return
 ; it in pax.
 ;   X:BPPtr - position in 1D array.
@@ -42,6 +92,25 @@ bp1DArrayGetPosition PROC EXPORT ArrayOffset:BPPtr, DataSize:BPPtr
 	div pcx
 	ret
 bp1DArrayGetPosition ENDP
+
+;   Create 2D array of dimensions ArrayWidth x ArrayHeight, for elements of size
+; DataSize, return the pointer in pax and resulting size in pcx.
+;   DataSize:BPPtr - SIZEOF the data type in the array.
+;   ArrayWidth:BPPtr - width of the array to create.
+;   ArrayHeight:BPPtr - height of the array to create.
+bp2DArrayCreate PROC EXPORT DataSize:BPPtr, ArrayWidth:BPPtr, ArrayHeight:BPPtr
+	mov pax, ArrayWidth
+	mov pcx, ArrayHeight
+	mul pcx
+	.IF (DataSize > 1)
+		mov pcx, DataSize
+		mul pcx
+	.ENDIF
+	push pax
+	invoke bpMalloc, bpDefHeap, HEAP_ZERO_MEMORY, pax
+	pop pcx
+	ret
+bp2DArrayCreate ENDP
 
 ;   Calculate the offset (index * DataSize) in 2D array by position [X, Y] and
 ; return it in pax.
@@ -73,8 +142,8 @@ DataSize:BPPtr
 	ret
 bp2DArrayGetOffset ENDP
 
-;   Calculate the position [X, Y] in 2D array by offset (index * DataSize) and
-; return it as [pdx, pax] or [pax, pdx] (bp2DArrayOrder == "XY").
+;   Calculate the position (by bp2DArrayOrder) in 2D array by offset (index * 
+; DataSize) and return it as [pdx, pax].
 ;   ArrayOffset:BPPtr - the array data block offset to calculate position from.
 ;   ArrayWidth - the width of the array to calculate Y position.
 ;   DataSize - SIZEOF the data type in the array.
@@ -91,14 +160,37 @@ DataSize:BPPtr
 	div pcx
 	IFDEF BP_ARRAY_USE_ORDER
 	.IF (bp2DArrayOrder[0] == 'X')
-		xchg
+		xchg pdx, pax
 	.ENDIF
 	ENDIF
 	ret
 bp2DArrayGetPosition ENDP
 
+;   Create 3D array of dimensions ArrayWidth x ArrayHeight x ArrayDepth, for
+; elements of size DataSize, return pointer in pax and resulting size in pcx.
+;   DataSize:BPPtr - SIZEOF the data type in the array.
+;   ArrayWidth:BPPtr - width of the array to create.
+;   ArrayHeight:BPPtr - height of the array to create.
+;   ArrayDepth:BPPtr - depth of the array to create.
+bp3DArrayCreate PROC EXPORT DataSize:BPPtr, ArrayWidth:BPPtr, \
+ArrayHeight:BPPtr, ArrayDepth:BPPtr
+	mov pax, ArrayWidth
+	mov pcx, ArrayHeight
+	mul pcx
+	mov pcx, ArrayDepth
+	mul pcx
+	.IF (DataSize > 1)
+		mov pcx, DataSize
+		mul pcx
+	.ENDIF
+	push pax
+	invoke bpMalloc, bpDefHeap, HEAP_ZERO_MEMORY, pax
+	pop pcx
+	ret
+bp3DArrayCreate ENDP
+
 ;   Append data to end of an array and return new reallocated array pointer in 
-; pax (mov pax to [ArrayPtr] after calling).
+; pax (mov pax to ArrayPtr after calling).
 bpArrayAppend PROC EXPORT ArrayPtr:BPPtr, DataPtr:BPPtr, DataSize:BPPtr
 	LOCAL retVal:BPPtr
 	.IF (ArrayPtr)
@@ -118,38 +210,3 @@ bpArrayAppend PROC EXPORT ArrayPtr:BPPtr, DataPtr:BPPtr, DataSize:BPPtr
 	
 	ret
 bpArrayAppend ENDP
-
-;   Create 1D array of length ArrayLength, for elements of size DataSize and 
-; return the pointer in pax.
-;   DataSize:BPPtr - SIZEOF the data type in the array.
-;   ArrayLength:BPPtr - length of the array to create.
-bpCreate1DArray PROC EXPORT DataSize:BPPtr, ArrayLength:BPPtr
-	mov pax, ArrayLength
-	.IF (DataSize > 1)
-		mov pcx, DataSize
-		mul pcx
-	.ENDIF
-	push pax
-	invoke bpMalloc, bpDefHeap, HEAP_ZERO_MEMORY, pax
-	pop pcx
-	ret
-bpCreate1DArray ENDP
-
-;   Create 2D array of dimensions ArrayWidth x ArrayHeight, for elements of size
-; DataSize, return the pointer in pax and resulting size in pcx.
-;   DataSize:BPPtr - SIZEOF the data type in the array.
-;   ArrayWidth:BPPtr - width of the array to create.
-;   ArrayHeight:BPPtr - height of the array to create.
-bpCreate2DArray PROC EXPORT DataSize:BPPtr, ArrayWidth:BPPtr, ArrayHeight:BPPtr
-	mov pax, ArrayWidth
-	mov pcx, ArrayHeight
-	mul pcx
-	.IF (DataSize > 1)
-		mov pcx, DataSize
-		mul pcx
-	.ENDIF
-	push pax
-	invoke bpMalloc, bpDefHeap, HEAP_ZERO_MEMORY, pax
-	pop pcx
-	ret
-bpCreate2DArray ENDP

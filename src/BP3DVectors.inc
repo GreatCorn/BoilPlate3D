@@ -132,6 +132,26 @@ VectorDistanceSqr MACRO Cnt:REQ, A:REQ, B:REQ
 	pop pax
 ENDM
 
+VectorDot MACRO Cnt:REQ, A:REQ, B:REQ
+	CntRep = Vector32DCheck(Cnt, 1)
+	OffSize = Vector32DCheck(Cnt, 0)
+	
+	mov pax, A
+	mov pcx, B
+	PosOff = 0
+	REPEAT CntRep
+		fld REAL4 PTR [pax+PosOff]
+		fmul REAL4 PTR [pcx+PosOff]
+		PosOff = PosOff + OffSize
+	ENDM
+	REPEAT CntRep-1
+		fadd
+	ENDM
+	sub psp, SIZEOF BPPtr
+	fstp REAL4 PTR [psp]
+	pop pax
+ENDM
+
 VectorF MACRO Cnt:REQ, A:REQ
 	CntRep = Vector32DCheck(Cnt, 1)
 	OffSize = Vector32DCheck(Cnt, 0)
@@ -392,17 +412,7 @@ Vector2Cross PROC EXPORT A:BPPtr, B:BPPtr
 Vector2Cross ENDP
 
 Vector2Dot PROC EXPORT A:BPPtr, B:BPPtr
-	LOCAL Val:REAL4
-	mov pax, A
-	mov pcx, B
-	
-	fld REAL4 PTR [pax]
-	fmul REAL4 PTR [pcx]
-	fld REAL4 PTR [pax+4]
-	fmul REAL4 PTR [pcx+4]
-	fadd
-	fstp Val
-	mov eax, Val
+	VectorDot 2, A, B
 	ret
 Vector2Dot ENDP
 
@@ -553,6 +563,11 @@ Vector3DistanceSqr PROC EXPORT A:BPPtr, B:BPPtr
 	ret
 Vector3DistanceSqr ENDP
 
+Vector3Dot PROC EXPORT A:BPPtr, B:BPPtr
+	VectorDot 3, A, B
+	ret
+Vector3Dot ENDP
+
 Vector3F PROC EXPORT A:BPPtr
 	VectorF 3, A
 	ret
@@ -613,6 +628,7 @@ Vector3Sub PROC EXPORT A:BPPtr, B:BPPtr
 	ret
 Vector3Sub ENDP
 
+
 ; ----- Vector3 2D (X, Z) -----
 Vector32DPop MACRO A:REQ
 	bpPop32 A.X
@@ -660,6 +676,11 @@ Vector32DDistanceSqr PROC EXPORT A:BPPtr, B:BPPtr
 	VectorDistanceSqr 32D, A, B
 	ret
 Vector32DDistanceSqr ENDP
+
+Vector32DDot PROC EXPORT A:BPPtr, B:BPPtr
+	VectorDot 32D, A, B
+	ret
+Vector32DDot ENDP
 
 Vector32DF PROC EXPORT A:BPPtr
 	VectorF 32D, A
@@ -755,6 +776,11 @@ Vector4DistanceSqr PROC EXPORT A:BPPtr, B:BPPtr
 	VectorDistanceSqr 4, A, B
 	ret
 Vector4DistanceSqr ENDP
+
+Vector4Dot PROC EXPORT A:BPPtr, B:BPPtr
+	VectorDot 4, A, B
+	ret
+Vector4Dot ENDP
 
 Vector4F PROC EXPORT A:BPPtr
 	VectorF 4, A

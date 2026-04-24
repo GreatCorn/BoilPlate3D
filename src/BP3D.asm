@@ -115,7 +115,7 @@ ENDIF
 ; without register role standardization and bloated invokes here and there. Even
 ; so, there are some cases where STDCALL is used explicitly (BPForm.OnInput) and
 ; I get a head-splitting headache whenever I just try to decipher how exactly
-; the x64 calling convention works. 
+; the x64 calling convention would work. 
 ;   P.S. FFS just use 32-bit as long as 32-bit binaries are supported on 64-bit
 ; systems.
 ;   P.P.S. The x64 calling convention was made by the devil himself.
@@ -148,25 +148,13 @@ BPForm STRUCT			; Windows form (window) structure
 	GraphicsContext	BPPtr 0		; Form graphics context (GL)
 	Handle			HWND 0		; Form window handle
 	
-	;   Input flags bitmask. See possible input flags at BP_IF_*.
+	;   Input flags bitmask. See possible input flags at BP_IF_*. Set with
+	; bpSetInputFlags or before calling bpCreateForm.
 	InputFlags		BYTE 0
 	
 	WindowStyle		LONG WS_OVERLAPPEDWINDOW
 	
 	WndProc			BPPtr OFFSET bpDefWndProc	; WndProc procedure offset
-	
-	; Read-only fields (set by internal BP3D or abstracted by procedures)
-	Aspect			REAL4 0.0	; Form width divided by height (for GL viewport)
-	DisplayDevice	DWORD 0		; Display device, set with bpSetDisplayDevice
-	Focused			BPBool TRUE	; Is the form in focus
-	MouseMode		BPEnum BP_MOUSE_MODE_VISIBLE	; Set with bpSetMouseMode
-	WindowMode		BPEnum BP_WINDOW_MODE_WINDOWED	; Set with bpSetWindowMode
-	
-	ScreenCnt		POINT <0, 0>					; Global screen center
-	ScreenPos		POINT <CW_USEDEFAULT, CW_USEDEFAULT>
-	ScreenSize		POINT <CW_USEDEFAULT, CW_USEDEFAULT>
-	WindowPos		POINT <CW_USEDEFAULT, CW_USEDEFAULT>
-	WindowSize		POINT <CW_USEDEFAULT, CW_USEDEFAULT>
 	
 	; Event procedures
 	;   OnCreate	PROC STDCALL
@@ -203,8 +191,22 @@ BPForm STRUCT			; Windows form (window) structure
 	OnResize		BPPtr 0
 	
 	;   OnStart		PROC STDCALL
-	;   Gets called after one frame has passed after form creation.
+	;   Gets called on the first frame after form creation.
 	OnStart			BPPtr 0
+	
+	
+	; Read-only fields (set by internal BP3D or abstracted by procedures)
+	Aspect			REAL4 0.0	; Form width divided by height (for GL viewport)
+	DisplayDevice	DWORD 0		; Display device, set with bpSetDisplayDevice
+	Focused			BPBool TRUE	; Is the form in focus
+	MouseMode		BPEnum BP_MOUSE_MODE_VISIBLE	; Set with bpSetMouseMode
+	WindowMode		BPEnum BP_WINDOW_MODE_WINDOWED	; Set with bpSetWindowMode
+	
+	ScreenCnt		POINT <0, 0>					; Global screen center
+	ScreenPos		POINT <CW_USEDEFAULT, CW_USEDEFAULT>
+	ScreenSize		POINT <CW_USEDEFAULT, CW_USEDEFAULT>
+	WindowPos		POINT <CW_USEDEFAULT, CW_USEDEFAULT>
+	WindowSize		POINT <CW_USEDEFAULT, CW_USEDEFAULT>
 BPForm ENDS
 
 BPInJoyAxis STRUCT		; Joystick axis input structure
@@ -250,8 +252,8 @@ BPJoystick ENDS
 
 ;   MASM has some bad headers, fixed redefinitions are here. The ones that have
 ; unions in them are the ones that are messed up, with the exception of the 
-; joystick, ones which are of an entirely different size due to Microsoft 
-; switching UINT size from WORD to DWORD (symbolic field prefixes are still w).
+; joystick, ones which are of an entirely different size due to Microsoft
+; silently switching UINT size from WORD to DWORD (field prefixes are still w).
 IFNDEF BP_CUSTOM_INCLUDES
 DEVMODEAFIX STRUCT
 	dmDeviceName	BYTE	CCHDEVICENAME dup(?)
@@ -1071,6 +1073,7 @@ bpCreateForm PROC EXPORT BPFormPtr:BPPtr
 	.IF ([pbx].DefaultFlag)
 		; Disable DPI scaling if possible
 		IFNDEF BP_COMPATIBILITY_W9X
+		IFNDEF BP_DPI_UNAWARE
 			IFNDEF SetProcessDPIAware
 				.CONST
 					bpUser32DLL				DB "user32.dll", 0
@@ -1085,6 +1088,7 @@ bpCreateForm PROC EXPORT BPFormPtr:BPPtr
 			ELSE
 				call SetProcessDPIAware
 			ENDIF
+		ENDIF
 		ENDIF
 		
 		mov al, [pbx].InputFlags

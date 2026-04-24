@@ -139,6 +139,7 @@ BPT_L8		EQU 6	; (L8)				8-bit (monochrome, luminance)
 .DATA
 bpAnimationFPS			REAL4 30.0		; Exported FPS for speed calculation
 bpAnimInterpolateSpeed	REAL4 1.0		; Linear interpolation factor
+bpTextureClamp			BPBool FALSE	; Enable texture wrap clamp on import
 bpTextureFiltering		BPBool FALSE	; Enable texture filtering on import
 
 ; ----- IMPLEMENTATION -----
@@ -496,6 +497,11 @@ bpLoadBPT PROC EXPORT TexturePTR:BPPtr, FilePath:BPPtr
 		invoke glTexParameteri, GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST
 	.ENDIF
 	
+	.IF (bpTextureClamp)
+		invoke glTexParameteri, GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP
+		invoke glTexParameteri, GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP
+	.ENDIF
+	
 	.IF (texType == BPT_RGB8)
 		mov texFormat, GL_RGB
 		mov texDataType, GL_UNSIGNED_BYTE
@@ -827,7 +833,6 @@ bpProcessAnimPlayer PROC EXPORT BPAnimPlrPtr:BPPtr, Delta:REAL4
 		fmul bpAnimationFPS
 		fmul Delta
 		fstp animSpd
-		
 		bpAnimate:
 		
 		fld [pcx].Timer

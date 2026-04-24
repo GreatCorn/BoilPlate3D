@@ -19,7 +19,7 @@ BP_COMPATIBILITY_W9X	EQU <1>	; Exclude unsupported APIs
 include ..\..\src\BP3D.asm
 include ..\..\src\BP3DMaths.inc
 include ..\..\src\BP3DVectors.inc
-include ..\..\src\BP3DImporters.inc
+include ..\..\src\BP3DAssets.inc
 include ..\..\src\BP3DGLPlus.inc
 include ..\..\src\BP3DText.inc
 

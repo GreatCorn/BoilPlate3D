@@ -17,7 +17,7 @@ ENDIF
 ; -----	INTERFACE -----
 
 ; ----- CONSTANTS -----
-; FPU codeword interrupt mask field flags
+; FPU control word interrupt mask field flags
 FPU_EXCEPTION_PRECISION		EQU 0000000000100000b	; Precision mask
 FPU_EXCEPTION_UNDERFLOW		EQU 0000000000010000b	; Underflow mask
 FPU_EXCEPTION_OVERFLOW		EQU 0000000000001000b	; Overflow mask
@@ -25,12 +25,12 @@ FPU_EXCEPTION_ZERO_DIVIDE	EQU 0000000000000100b	; Zero divide mask
 FPU_EXCEPTION_DENORMALIZED	EQU 0000000000000010b	; Denormalized operand mask
 FPU_EXCEPTION_INVALID		EQU 0000000000000001b	; Invalid operation mask
 
-; FPU codeword precision control field values
+; FPU control word precision control field values
 FPU_PRECISION_REAL4		EQU 0000000000000000b	; REAL4 (24 bits)
 FPU_PRECISION_REAL8		EQU 0000001000000000b	; REAL8 (53 bits)
 FPU_PRECISION_REAL10	EQU 0000001100000000b	; REAL10 (64 bits) 
 
-; FPU codeword rounding control field values
+; FPU control word rounding control field values
 FPU_ROUND_TRUNC	EQU 0000110000000000b	; Truncate (toward 0)
 FPU_ROUND_CEIL	EQU 0000100000000000b	; Round up (toward +infinity)
 FPU_ROUND_FLOOR	EQU 0000010000000000b	; Round down (toward -infinity)
@@ -93,6 +93,7 @@ intInRange	 	PROTO :SDWORD, :SDWORD, :SDWORD
 intRandRange 	PROTO :SDWORD, :SDWORD
 intSign 		PROTO :SDWORD
 nRand 			PROTO :DWORD
+nRandLocal 		PROTO :DWORD, :BPPtr
 nRandomize 		PROTO
 
 ;   Immediate REAL4 to reusable data field (format fl+int+n+frac(+N)).
@@ -640,7 +641,13 @@ intSign ENDP
 ; a random number in the range of [0 - Base). Uses nRandSeed value as seed.
 ;   Base:DWORD - random algorithm base, the maximum exclusive range.
 nRand PROC EXPORT Base:DWORD
-	mov eax, nRandSeed
+	invoke nRandLocal, Base, OFFSET nRandSeed
+	ret
+nRand ENDP
+
+nRandLocal PROC EXPORT Base:DWORD, Seed:BPPtr
+	mov pax, Seed
+	mov eax, DWORD PTR [pax]
 
 	test eax, 80000000h
 	jz @F
@@ -658,14 +665,15 @@ nRand PROC EXPORT Base:DWORD
 	mov eax, 2836
 	mul edx
 	sub ecx, eax
-	xor edx, edx
 	mov eax, ecx
-	mov nRandSeed, ecx
+	mov pdx, Seed
+	mov DWORD PTR [pdx], ecx
+	xor edx, edx
 	div Base
 
 	mov eax, edx
 	ret
-nRand ENDP
+nRandLocal ENDP
 
 ;   Randomize the nRandSeed for nRand (set nRandSeed to current tick count).
 nRandomize PROC EXPORT

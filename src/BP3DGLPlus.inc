@@ -130,24 +130,24 @@ glOrthof ENDP
 
 glRotate2fv PROC EXPORT v:BPPtr
 	mov pax, v
-	invoke glRotatef, REAL4 PTR [pax], 1065353216, 0, 0
-	mov pax, v
 	invoke glRotatef, REAL4 PTR [pax+4], 0, 1065353216, 0
+	mov pax, v
+	invoke glRotatef, REAL4 PTR [pax], 1065353216, 0, 0
 	ret
 glRotate2fv ENDP
 
 glRotate2fvr PROC EXPORT v:BPPtr
 	LOCAL _Val:REAL4
 	mov pax, v
-	fld REAL4 PTR [pax]
-	fmul bpGLPlusR2D
-	fstp _Val
-	invoke glRotatef, _Val, 1065353216, 0, 0
-	mov pax, v
 	fld REAL4 PTR [pax+4]
 	fmul bpGLPlusR2D
 	fstp _Val
 	invoke glRotatef, _Val, 0, 1065353216, 0
+	mov pax, v
+	fld REAL4 PTR [pax]
+	fmul bpGLPlusR2D
+	fstp _Val
+	invoke glRotatef, _Val, 1065353216, 0, 0
 	ret
 glRotate2fvr ENDP
 
@@ -238,6 +238,12 @@ glTranslate3fv PROC EXPORT v:BPPtr
 	invoke glTranslatef, REAL4 PTR [pax], REAL4 PTR [pax+4], REAL4 PTR [pax+8]
 	ret
 glTranslate3fv ENDP
+
+glTranslate32Dfv PROC EXPORT v:BPPtr
+	mov pax, v
+	invoke glTranslatef, REAL4 PTR [pax], 0, REAL4 PTR [pax+8]
+	ret
+glTranslate32Dfv ENDP
 
 glTranslatei PROC EXPORT x:SDWORD, y:SDWORD, z:SDWORD
 	sub esp, 12

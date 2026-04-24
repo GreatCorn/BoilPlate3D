@@ -10,14 +10,14 @@ include ..\src\BP3D.asm
 FMain BPForm <>
 
 .CODE
-OnCreate PROC
+OnCreate PROC EXPORT
 	; Code to be executed at form creation goes here
 	invoke bpInitGLContext, ADDR FMain	; Initialize OpenGL context
 	ret
 OnCreate ENDP
 
-OnInput PROC BPInType:BYTE, BPInStruct:BPPtr
-	; Code for receiving input of types BPIN_* goes here
+OnInput PROC EXPORT BPInType:BYTE, BPInStruct:BPPtr
+	; Code for receiving input of types BP_INPUT_* goes here
 	
 	mov pbx, BPInStruct
 	.IF (BPInType == BP_INPUT_MOUSE_MOVE)
@@ -32,7 +32,7 @@ OnInput PROC BPInType:BYTE, BPInStruct:BPPtr
 	ret
 OnInput ENDP
 
-OnRender PROC
+OnRender PROC EXPORT
 	; Code for rendering goes here
 	
 	ret

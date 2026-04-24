@@ -207,6 +207,22 @@ bpArrayAppend PROC EXPORT ArrayPtr:BPPtr, DataPtr:BPPtr, DataSize:BPPtr
 	.ENDIF
 	invoke RtlMoveMemory, pax, DataPtr, DataSize
 	mov pax, retVal
-	
 	ret
 bpArrayAppend ENDP
+
+;   Remove data at DataIndex position in array, move the data accordingly and
+; return new reallocated array pointer in pax.
+bpArrayRemove PROC EXPORT ArrayPtr:BPPtr, DataIndex:BPPtr, DataSize:BPPtr
+	invoke HeapSize, bpDefHeap, 0, ArrayPtr
+	mov pcx, ArrayPtr
+	add pcx, DataIndex
+	mov pdx, pcx
+	add pdx, DataSize
+	push pax
+	sub pax, pdx
+	invoke RtlMoveMemory, pcx, pdx, pax
+	pop pax
+	sub pax, DataSize
+	invoke bpReAlloc, bpDefHeap, 0, ArrayPtr, pax
+	ret
+bpArrayRemove ENDP

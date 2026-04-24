@@ -245,6 +245,9 @@ VectorMul MACRO Cnt:REQ, A:REQ, B:REQ
 ENDM
 
 VectorMulF MACRO Cnt:REQ, A:REQ, B:REQ
+	CntRep = Vector32DCheck(Cnt, 1)
+	OffSize = Vector32DCheck(Cnt, 0)
+	
 	mov pax, A
 	PosOff = 0
 	REPEAT CntRep

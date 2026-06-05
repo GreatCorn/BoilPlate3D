@@ -3,7 +3,8 @@
 ;   Version 0.5ac1
 ;   BP3D bitmap text rendering API extension.
 ;
-;   Copyright (c) 2025 Yevhenii Ionenko (aka GreatCorn). All rights reserved.
+;   Copyright (c) 2025-2026 Yevhenii Ionenko (aka GreatCorn).
+;   All rights reserved.
 ;   Licensed under the terms of the MIT license (see ..\LICENSE.txt).
 ;
 

@@ -3,7 +3,8 @@
 ;   Version 0.8ac1
 ;   BP3D common math (REAL4 (x87 FPU) & SDWORD) functions extension.
 ;
-;   Copyright (c) 2025 Yevhenii Ionenko (aka GreatCorn). All rights reserved.
+;   Copyright (c) 2025-2026 Yevhenii Ionenko (aka GreatCorn
+;   All rights reserved.
 ;   Licensed under the terms of the MIT license (see ..\LICENSE.txt).
 ;
 
@@ -309,9 +310,9 @@ flFrac ENDP
 ;   Max:REAL4 - maximum range value.
 flInRange PROC EXPORT Val:REAL4, Min:REAL4, Max:REAL4
 	fcmp Val, Min
-	.IF (!Carry?)
+	.IF (!Carry?) || (Zero?)
 		fcmp Val, Max
-		.IF (Carry?)
+		.IF (Carry?) || (Zero?)
 			mov pax, TRUE
 			ret
 		.ENDIF

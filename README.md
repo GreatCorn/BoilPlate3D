@@ -15,10 +15,10 @@ Various BP3D extensions (src\\\*.inc) are present, but for now are generally not
 
 ## WinAPI client support
 
-BP3D aims to support various WinAPI clients out-of-the-box, with minimal (if any) configuration. The targeted supported clients include:
+BP3D aims to support various WinAPI clients out-of-the-box, with minimal (if any) configuration. The targeted (tested) supported clients include:
 
 - Windows 98SE, ME, 2000 (see BP_COMPATIBILITY_W9X)
-- Windows XP - 10
+- Windows XP - 11
 - ReactOS
 - Wine (Android (<a href="https://github.com/brunodev85/winlator">Winlator</a>), Linux, BSD)
 
@@ -30,7 +30,7 @@ BP3D is built with future x64 support in mind, though it now remains untested an
 
 ***
 
-Copyright © 2025 Yevhenii Ionenko (aka GreatCorn). All rights reserved.
+Copyright © 2025-2026 Yevhenii Ionenko (aka GreatCorn). All rights reserved.
 
 Licensed under the terms of the MIT license (see <a href="https://github.com/GreatCorn/BoilPlate3D/blob/main/LICENSE.txt">LICENSE.txt</a>).
 

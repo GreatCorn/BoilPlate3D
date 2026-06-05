@@ -139,24 +139,24 @@ if %_asm%==uasm (
 
 if %_link%==jwlink (
 	if [%_quiet%] EQU [1] (
-		JWlink RUNTIME WINDOWS FILE %_project%.obj LIBPATH %_libpath% OP START=_start NAME "%_appName%" OPTION QUIET OPTION NOLARGE
+		JWlink RUNTIME CONSOLE FILE %_project%.obj LIBPATH %_libpath% OP START=_start NAME "%_appName%" OPTION QUIET OPTION NOLARGE
 	) else (
-		JWlink RUNTIME WINDOWS FILE %_project%.obj LIBPATH %_libpath% OP START=_start NAME "%_appName%" OPTION NOLARGE
+		JWlink RUNTIME CONSOLE FILE %_project%.obj LIBPATH %_libpath% OP START=_start NAME "%_appName%" OPTION NOLARGE
 	)
 ) else if %_link%==link (
 	if [%_quiet%] EQU [1] (
-		link /subsystem:WINDOWS %_project%.obj /libpath:%_libpath% /entry:start /out:"%_appName%" /nologo
+		link /subsystem:CONSOLE %_project%.obj /libpath:%_libpath% /entry:start /out:"%_appName%" /nologo
 	) else (
-		link /subsystem:WINDOWS %_project%.obj /libpath:%_libpath% /entry:start /out:"%_appName%"
+		link /subsystem:CONSOLE %_project%.obj /libpath:%_libpath% /entry:start /out:"%_appName%"
 	)
 ) else if %_link%==linkw (
 	if [%_quiet%] EQU [1] (
-		linkw /subsystem:WINDOWS /libpath:%_libpath% /entry:_start /out:"%_appName%" /nologo %_project%.obj 
+		linkw /subsystem:CONSOLE /libpath:%_libpath% /entry:_start /out:"%_appName%" /nologo %_project%.obj 
 	) else (
-		linkw /subsystem:WINDOWS /libpath:%_libpath% /entry:_start /out:"%_appName%" %_project%.obj 
+		linkw /subsystem:CONSOLE /libpath:%_libpath% /entry:_start /out:"%_appName%" %_project%.obj 
 	)
 ) else if %_link%==polink (
-	polink /subsystem:WINDOWS %_project%.obj /libpath:%_libpath% /entry:start /out:"%_appName%"
+	polink /subsystem:CONSOLE %_project%.obj /libpath:%_libpath% /entry:start /out:"%_appName%"
 )
 if [%_build%] NEQ [1] (
 	%_project%.exe

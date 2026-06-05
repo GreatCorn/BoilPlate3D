@@ -34,18 +34,6 @@ Sphere	BPPtr 0
 
 QuitFlag	BPBool FALSE
 
-;   Simple MASM rv replacement. Calls a PROC and returns pax.
-;   ProcName:PROC - procedure name.
-;   Args:VARARG - procedure arguments.
-r MACRO ProcName:REQ,Args:VARARG
-	procCall EQU <invoke ProcName>
-	FOR var,<Args>
-		procCall CATSTR procCall,<, var>
-	ENDM
-	procCall
-	EXITM <pax>
-ENDM
-
 ;   Simple MASM SADD replacement. Declares a string and returns its ADDR in pax.
 ;   qStr:String - quoted string.
 s MACRO qStr:REQ
@@ -116,7 +104,7 @@ OnResize ENDP
 FPrimary_OnCreate PROC EXPORT
 	invoke bpInitGLContext, ADDR FPrimary
 	
-	mov Sphere, r(gluNewQuadric)
+	mov Sphere, bpR(gluNewQuadric)
 	
 	call SetupGL
 	ret
@@ -174,5 +162,5 @@ start:
 	invoke bpCreateForm, ADDR FPrimary
 
 	; This code is reached when forms' execution is done
-	invoke TerminateProcess, r(GetCurrentProcess), 0
+	invoke TerminateProcess, bpR(GetCurrentProcess), 0
 end start

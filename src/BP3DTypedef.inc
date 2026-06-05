@@ -4,7 +4,8 @@
 ;   BP3D generic types (for parity between BP3D and independently imported 
 ; modules).
 ;
-;   Copyright (c) 2025 Yevhenii Ionenko (aka GreatCorn). All rights reserved.
+;   Copyright (c) 2025-2026 Yevhenii Ionenko (aka GreatCorn).
+;   All rights reserved.
 ;   Licensed under the terms of the MIT license (see ..\LICENSE.txt).
 ;
 
@@ -68,31 +69,6 @@ BP_CPU_PRIVILEGE	EQU 1 shl 7
 BP_FPU_8087			EQU 0001 shl 8
 BP_FPU_287			EQU 0100 shl 8	; Bit 9 is skipped
 BP_FPU_387			EQU 1000 shl 8
-
-.CODE
-IFNDEF RtlMoveMemory
-	;   Simple stack-based overlappable RtlMoveMemory implementation, if not 
-	; present. Assumes no alignment.
-	RtlMoveMemory PROC EXPORT Dest:BPPtr, Src:BPPtr, SrcSize:BPPtr
-		sub psp, SrcSize
-		mov pdx, Src
-		xor pcx, pcx
-		.WHILE (pcx < SrcSize)
-			mov al, BYTE PTR [pdx+pcx]
-			mov BYTE PTR [psp+pcx], al
-			inc pcx
-		.ENDW
-		mov pdx, Dest
-		xor pcx, pcx
-		.WHILE (pcx < SrcSize)
-			mov al, BYTE PTR [psp+pcx]
-			mov BYTE PTR [pdx+pcx], al
-			inc pcx
-		.ENDW
-		add psp, SrcSize
-		ret
-	RtlMoveMemory ENDP
-ENDIF
 
 ELSE
 	ECHO BP3D: Duplicate include file BP3DTypedef.inc

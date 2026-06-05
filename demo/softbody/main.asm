@@ -60,18 +60,6 @@ ModelTVelocity	BPPtr ?
 
 ModelTexture	DWORD ?
 
-;   Simple MASM rv replacement. Calls a PROC and returns pax.
-;   ProcName:PROC - procedure name.
-;   Args:VARARG - procedure arguments.
-r MACRO ProcName:REQ,Args:VARARG
-	procCall EQU <invoke ProcName>
-	FOR var,<Args>
-		procCall CATSTR procCall,<, var>
-	ENDM
-	procCall
-	EXITM <pax>
-ENDM
-
 .CODE
 
 FlDampedSpring PROC EXPORT Velocity:BPPtr, Val:REAL4, ValTarget:REAL4,
@@ -210,7 +198,7 @@ ProcessPhysics PROC
 			fsubr f(0.75)
 			fstp dist
 			
-			mov dist, r(flClamp, dist, 0, f(1.0))
+			mov dist, bpR(flClamp, dist, 0, f(1.0))
 			
 			pop pax
 			push pax
@@ -349,10 +337,10 @@ OnCreate PROC EXPORT
 	bpMEM32 bpFontWidth, f(16)
 	bpMEM32 bpFontHeight, f(32)
 	
-	mov ModelTarget, r(bpMalloc, bpDefHeap, 0, ModelDeformed.V3Size)
+	mov ModelTarget, bpR(bpMalloc, bpDefHeap, 0, ModelDeformed.V3Size)
 	invoke RtlMoveMemory, ModelTarget, ModelDeformed.Vertices, ModelDeformed.V3Size
-	mov ModelVelocity, r(bpMalloc, bpDefHeap, 0, ModelDeformed.V3Size)
-	mov ModelTVelocity, r(bpMalloc, bpDefHeap, 0, ModelDeformed.V3Size)
+	mov ModelVelocity, bpR(bpMalloc, bpDefHeap, 0, ModelDeformed.V3Size)
+	mov ModelTVelocity, bpR(bpMalloc, bpDefHeap, 0, ModelDeformed.V3Size)
 	
 	invoke glMaterialf, GL_FRONT, GL_SHININESS, f(64.0)
 	invoke glMaterialfv, GL_FRONT, GL_AMBIENT, ADDR clBlack
@@ -498,5 +486,5 @@ start:
 	
 	invoke bpCreateForm, ADDR FMain
 	
-	invoke TerminateProcess, r(GetCurrentProcess), 0
+	invoke TerminateProcess, bpR(GetCurrentProcess), 0
 end start

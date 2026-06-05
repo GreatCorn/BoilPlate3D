@@ -56,18 +56,6 @@ MdlToilet	DWORD ?	; Toilet model, loaded from toilet.bpl
 TexParticle	DWORD ?	; Particle texture, a radial gradient generated at runtime
 TexToilet	DWORD ?	; Toilet texture, loaded from toilet.bpt
 
-;   Simple MASM rv replacement. Calls a PROC and returns pax.
-;   ProcName:PROC - procedure name.
-;   Args:VARARG - procedure arguments.
-r MACRO ProcName:REQ,Args:VARARG
-	procCall EQU <invoke ProcName>
-	FOR var,<Args>
-		procCall CATSTR procCall,<, var>
-	ENDM
-	procCall
-	EXITM <pax>
-ENDM
-
 .CODE
 ; Render and process particles.
 RenderParticles PROC EXPORT
@@ -194,7 +182,7 @@ OnCreate PROC EXPORT
 	
 	;   Create the particle texture - a radial gradient from ParticleColor1 to
 	; ParticleColor2 with radial alpha cutoff.
-	mov texPixels, r(bpMalloc, bpDefHeap, 0, 64*64*4*4)
+	mov texPixels, bpR(bpMalloc, bpDefHeap, 0, 64*64*4*4)
 	xor pbx, pbx
 	.WHILE (pbx < 64)
 		xor pcx, pcx
@@ -257,17 +245,8 @@ OnCreate PROC EXPORT
 	
 	invoke glMaterialf, GL_FRONT, GL_SHININESS, f(20)
 	invoke glMaterialfv, GL_FRONT, GL_SPECULAR, ADDR clWhite
-	
-	invoke mciSendString, s("open music.mp3 type MPEGVideo Alias MUSIC"), NULL, 0, 0
-	invoke mciSendString, s("play MUSIC"), NULL, 0, 0
 	ret
 OnCreate ENDP
-
-OnDestroy PROC EXPORT
-	invoke mciSendString, s("stop MUSIC"), NULL, 0, 0
-	invoke mciSendString, s("close MUSIC"), NULL, 0, 0
-	ret
-OnDestroy ENDP
 
 OnInput PROC EXPORT BPInType:BYTE, BPInStruct:BPPtr
 	.IF (BPInType == BP_INPUT_KEY)
@@ -333,15 +312,16 @@ start:
 	mov FMain.Caption,	pax
 	mov pax, OFFSET OnCreate
 	mov FMain.OnCreate,	pax
-	mov pax, OFFSET OnDestroy
-	mov FMain.OnDestroy,pax
 	mov pax, OFFSET OnInput
 	mov FMain.OnInput,	pax
 	mov pax, OFFSET OnRender
 	mov FMain.OnRender,	pax
 	
+	mov FMain.WindowSize.x, 800
+	mov FMain.WindowSize.y, 600
+	
 	invoke bpCreateForm, ADDR FMain	; Create form
 	
 	; This code is reached when form's execution is done
-	invoke TerminateProcess, r(GetCurrentProcess), 0
+	invoke TerminateProcess, bpR(GetCurrentProcess), 0
 end start

@@ -4,7 +4,8 @@
 ;   BP3D raw asset format importers (animations, GL lists, dynamic meshes, 
 ; textures) extension.
 ;
-;   Copyright (c) 2025 Yevhenii Ionenko (aka GreatCorn). All rights reserved.
+;   Copyright (c) 2025-2026 Yevhenii Ionenko (aka GreatCorn).
+;   All rights reserved.
 ;   Licensed under the terms of the MIT license (see ..\LICENSE.txt).
 ;
 
@@ -612,6 +613,19 @@ bpLoadFile PROC EXPORT FilePath:BPPtr, FileSizePtr:BPPtr
 	mov pax, buffer
 	ret
 bpLoadFile ENDP
+
+bpSaveFile PROC EXPORT FilePath:BPPtr, Buffer:BPPtr, BufferSize:BPPtr
+	LOCAL hFile:HANDLE
+	
+	invoke CreateFile, FilePath, GENERIC_WRITE, FILE_SHARE_WRITE, 0, \
+	CREATE_ALWAYS, FILE_FLAG_SEQUENTIAL_SCAN, 0
+	mov hFile, pax
+	
+	invoke WriteFile, hFile, Buffer, BufferSize, 0, 0
+	
+	invoke CloseHandle, hFile
+	ret
+bpSaveFile ENDP
 
 bpTexImage2D PROC EXPORT TextureWidth:DWORD, TextureHeight:DWORD, \
 TextureType:BYTE, Buffer:BPPtr

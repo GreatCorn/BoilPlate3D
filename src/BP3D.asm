@@ -3,7 +3,8 @@
 ;   Version 0.8ac1
 ;   BP3D (short for BoilPlate3D) framework main base unit.
 ;
-;   Copyright (c) 2025 Yevhenii Ionenko (aka GreatCorn). All rights reserved.
+;   Copyright (c) 2025-2026 Yevhenii Ionenko (aka GreatCorn).
+;   All rights reserved.
 ;   Licensed under the terms of the MIT license (see ..\LICENSE.txt).
 ;
 
@@ -128,7 +129,9 @@ ELSE
 ENDIF
 
 ;   Import common type definitions
-include BP3DTypedef.inc
+IFNDEF BP3D_TYPEDEF_INC
+	include BP3DTypedef.inc
+ENDIF
 
 BPDisplayDevice STRUCT	; Display device (monitor) structure
 	Active		BPBool FALSE
@@ -734,6 +737,18 @@ bpPush32 MACRO m1:REQ
 	ELSE
 		push m1
 	ENDIF
+ENDM
+
+;   Simple MASM rv replacement. Invokes a PROC and returns pax.
+;   ProcName:PROC - procedure name.
+;   Args:VARARG - procedure arguments.
+bpR MACRO ProcName:REQ, Args:VARARG
+	procCall EQU <invoke ProcName>
+	FOR var,<Args>
+		procCall CATSTR procCall,<, var>
+	ENDM
+	procCall
+	EXITM <pax>
 ENDM
 
 IFDEF BP_TRACEABLE_HEAP
@@ -1418,7 +1433,7 @@ bpInRaw PROC EXPORT BPFormPtr:BPPtr, RawHandle:LPARAM
 	invoke GetRawInputData, RawHandle, RID_INPUT, lpb, ADDR dwSize, \
 	SIZEOF RAWINPUTHEADER
 	
-	.IF (pax == dwSize)	; Check for valid input read
+	.IF (eax == dwSize)	; Check for valid input read
 		mov pcx, lpb
 		ASSUME pcx:PTR RAWINPUT
 		
@@ -1491,20 +1506,17 @@ bpInRaw PROC EXPORT BPFormPtr:BPPtr, RawHandle:LPARAM
 				ASSUME pdx:PTR BPForm
 				mov pdx, BPFormPtr
 				
-				mov eax, [pdx].ScreenCnt.x
-				mov ecx, [pdx].ScreenCnt.y
-				
 				;   Wine implements (implemented?) "raw mouse" through cursor.
 				; There was a very specific problem, where clicking on a
 				; fullscreen (BP_WINDOW_MODE_FULLSCREEN) window would make
 				; SetCursorPos send WM_INPUT events due to that implementation.
 				
-				bpMPM bpMouseClient[0], bpMouseScreen[0]
-				bpMPM bpMouseClient[4], bpMouseScreen[4]
+				bpMEM32 bpMouseClient[0], bpMouseScreen[0]
+				bpMEM32 bpMouseClient[4], bpMouseScreen[4]
 				invoke ScreenToClient, [pdx].Handle, ADDR bpMouseClient
 				
-				bpMPM bpInMouseMoveStruct.Position.x, bpMouseClient
-				bpMPM bpInMouseMoveStruct.Position.y, bpMouseClient[4]
+				bpMEM32 bpInMouseMoveStruct.Position.x, bpMouseClient
+				bpMEM32 bpInMouseMoveStruct.Position.y, bpMouseClient[4]
 				
 				mov pdx, BPFormPtr
 				lea pax, bpInMouseMoveStruct
@@ -1589,14 +1601,14 @@ bpInRawJoystick PROC EXPORT BPFormPtr:BPPtr, InputDataPtr:BPPtr
 			bpMEM32 usgLen, btnCnt
 			mov pcx, InputDataPtr
 			mov pdx, pbCaps
+			mov eax, [pcx].data.hid.dwSizeHid	; you absolute fucking fool
 			invoke HidP_GetUsages, HidP_Input, [pdx].UsagePage, 0, ADDR usg, \
-			ADDR usgLen, prep, ADDR [pcx].data.hid.bRawData,\
-			[pcx].data.hid.dwSizeHid	; what why bRawData pointer
+			ADDR usgLen, prep, ADDR [pcx].data.hid.bRawData, ax
 			
 			; Set buttons DWORD (reimplementing WinMM huh)
 			mov btns, 0
 			xor pcx, pcx
-			.WHILE (pcx < usgLen)
+			.WHILE (ecx < usgLen)
 				mov pax, pcx
 				shl pax, 1	; *2
 				movzx pax, usg[pax]
@@ -1649,10 +1661,11 @@ bpInRawJoystick PROC EXPORT BPFormPtr:BPPtr, InputDataPtr:BPPtr
 				push pcx
 				push pdx
 				mov pcx, InputDataPtr
+				mov eax, [pcx].data.hid.dwSizeHid
 				ASSUME pdx:PTR HIDP_VALUE_CAPS
 				invoke HidP_GetUsageValue, HidP_Input, [pdx].UsagePage, 0, \
 				[pdx].Range.UsageMin, ADDR usgVal, prep, \
-				ADDR [pcx].data.hid.bRawData, [pcx].data.hid.dwSizeHid
+				ADDR [pcx].data.hid.bRawData, ax
 				pop pdx
 				
 				.IF ([pdx].Range.UsageMin == 39h)
@@ -1740,7 +1753,8 @@ bpInRawJoystick PROC EXPORT BPFormPtr:BPPtr, InputDataPtr:BPPtr
 							fmul bpRawJoyFM128
 						.ENDIF
 						fstp usgVal
-						invoke bpInJoyAxis, BPFormPtr, 0, ecx, usgVal
+						mov eax, ecx
+						invoke bpInJoyAxis, BPFormPtr, 0, eax, usgVal
 					.ENDIF
 				.ENDIF
 				ASSUME pdx:nothing
@@ -2860,6 +2874,9 @@ bpDefWndProc PROC EXPORT hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
 				invoke bpInMouseButton, pcx, VK_MWHEEL_DOWN, TRUE
 			.ENDIF
 		.ENDIF
+	;.ELSEIF (uMsg == WM_ERASEBKGND)
+		;mov pax, 1
+		;mov [pcx].DefaultFlag, FALSE
 	.ENDIF
 
 	mov pcx, dwRefData

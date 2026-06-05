@@ -3,7 +3,8 @@
 ;   Version 0.8ac1
 ;   BP3D common vector (2D, 3D, 4D) functions extension.
 ;
-;   Copyright (c) 2025 Yevhenii Ionenko (aka GreatCorn). All rights reserved.
+;   Copyright (c) 2025-2026 Yevhenii Ionenko (aka GreatCorn).
+;   All rights reserved.
 ;   Licensed under the terms of the MIT license (see ..\LICENSE.txt).
 ;
 
@@ -12,6 +13,10 @@ BP3D_VECTORS_INC EQU <1>
 
 IFNDEF BP3D_TYPEDEF_INC
 	include BP3DTypedef.inc
+ENDIF
+
+IFNDEF BP3D_MATHS_INC
+	BP_LERP_UNCLAMPED EQU <1>
 ENDIF
 
 ; ----- INTERFACE -----
@@ -43,12 +48,83 @@ Vector3Forward	Vector3 <0.0, 0.0, 1.0>
 Vector3One		Vector3 <1.0, 1.0, 1.0>
 Vector3Up		Vector3 <0.0, 1.0, 0.0>
 Vector3Zero		Vector3 <0.0, 0.0, 0.0>
+Vector4One		Vector4 <1.0, 1.0, 1.0, 1.0>
+Vector4Zero		Vector4 <0.0, 0.0, 0.0, 0.0>
 
 ; ----- IMPLEMENTATION -----
 .CODE
 
-Vector2Set PROTO :BPPtr, :REAL4, :REAL4
-Vector3Set PROTO :BPPtr, :REAL4, :REAL4, :REAL4
+Vector2Add				PROTO :BPPtr, :BPPtr
+Vector2Angle			PROTO :BPPtr, :BPPtr
+Vector2Copy				PROTO :BPPtr, :BPPtr
+Vector2Cross			PROTO :BPPtr, :BPPtr
+Vector2Dot				PROTO :BPPtr, :BPPtr
+Vector2DistanceSqr		PROTO :BPPtr, :BPPtr
+Vector2F				PROTO :BPPtr
+Vector2LengthSqr		PROTO :BPPtr
+Vector2Lerp				PROTO :BPPtr, :BPPtr, :REAL4
+Vector2Mul				PROTO :BPPtr, :BPPtr
+Vector2MulF 			PROTO :BPPtr, :REAL4
+Vector2Negate			PROTO :BPPtr
+Vector2Normalize		PROTO :BPPtr
+Vector2Round			PROTO :BPPtr
+Vector2RoundInt			PROTO :BPPtr
+Vector2Set				PROTO :BPPtr, :REAL4, :REAL4
+Vector2Sub				PROTO :BPPtr, :BPPtr
+
+Vector3Add				PROTO :BPPtr, :BPPtr
+Vector3Angle			PROTO :BPPtr, :BPPtr, :BPPtr
+Vector3Copy				PROTO :BPPtr, :BPPtr
+Vector3Cross			PROTO :BPPtr, :BPPtr, :BPPtr
+Vector3Dot				PROTO :BPPtr, :BPPtr
+Vector3DistanceSqr		PROTO :BPPtr, :BPPtr
+Vector3F				PROTO :BPPtr
+Vector3LengthSqr		PROTO :BPPtr
+Vector3Lerp				PROTO :BPPtr, :BPPtr, :REAL4
+Vector3Mul				PROTO :BPPtr, :BPPtr
+Vector3MulF 			PROTO :BPPtr, :REAL4
+Vector3Negate			PROTO :BPPtr
+Vector3Normalize		PROTO :BPPtr
+Vector2Round			PROTO :BPPtr
+Vector3RoundInt			PROTO :BPPtr
+Vector3Set				PROTO :BPPtr, :REAL4, :REAL4, :REAL4
+Vector3Sub				PROTO :BPPtr, :BPPtr
+
+Vector32DAdd			PROTO :BPPtr, :BPPtr
+Vector32DAngle			PROTO :BPPtr, :BPPtr
+Vector32DCopy			PROTO :BPPtr, :BPPtr
+Vector32DCross			PROTO :BPPtr, :BPPtr, :BPPtr
+Vector32DDot			PROTO :BPPtr, :BPPtr
+Vector32DDistanceSqr	PROTO :BPPtr, :BPPtr
+Vector32DF				PROTO :BPPtr
+Vector32DLengthSqr		PROTO :BPPtr
+Vector32DLerp			PROTO :BPPtr, :BPPtr, :REAL4
+Vector32DMul			PROTO :BPPtr, :BPPtr
+Vector32DMulF 			PROTO :BPPtr, :REAL4
+Vector32DNegate			PROTO :BPPtr
+Vector32DNormalize		PROTO :BPPtr
+Vector22DRound			PROTO :BPPtr
+Vector32DRoundInt		PROTO :BPPtr
+Vector32DSet			PROTO :BPPtr, :REAL4, :REAL4
+Vector32DSub			PROTO :BPPtr, :BPPtr
+
+Vector4Add				PROTO :BPPtr, :BPPtr
+Vector4Angle			PROTO :BPPtr, :BPPtr, :BPPtr
+Vector4Copy				PROTO :BPPtr, :BPPtr
+Vector4Cross			PROTO :BPPtr, :BPPtr, :BPPtr
+Vector4Dot				PROTO :BPPtr, :BPPtr
+Vector4DistanceSqr		PROTO :BPPtr, :BPPtr
+Vector4F				PROTO :BPPtr
+Vector4LengthSqr		PROTO :BPPtr
+Vector4Lerp				PROTO :BPPtr, :BPPtr, :REAL4
+Vector4Mul				PROTO :BPPtr, :BPPtr
+Vector4MulF 			PROTO :BPPtr, :REAL4
+Vector4Negate			PROTO :BPPtr
+Vector4Normalize		PROTO :BPPtr
+Vector4Round			PROTO :BPPtr
+Vector4RoundInt			PROTO :BPPtr
+Vector4Set				PROTO :BPPtr, :REAL4, :REAL4, :REAL4, :REAL4
+Vector4Sub				PROTO :BPPtr, :BPPtr
 
 ;   Internal macro for Vector3 2D. Checks if Cnt is <32D>, if so, sets CntRep to
 ; 2 and OffSize to REAL4*2 to skip Y.
@@ -67,6 +143,7 @@ Vector32DCheck MACRO Cnt:REQ, RetCnt:REQ
 		EXITM <CntRep>
 	ENDIF
 ENDM
+
 ; ----- Generic VectorN macros -----
 VectorAdd MACRO Cnt:REQ, A:REQ, B:REQ
 	CntRep = Vector32DCheck(Cnt, 1)
@@ -458,6 +535,11 @@ Vector2Normalize PROC EXPORT A:BPPtr
 	VectorNormalize 2, A
 	ret
 Vector2Normalize ENDP
+
+Vector2Round PROC EXPORT A:BPPtr
+	VectorRound 2, A
+	ret
+Vector2Round ENDP
 
 Vector2RoundInt PROC EXPORT A:BPPtr
 	VectorRoundInt 2, A

@@ -67,18 +67,6 @@ D3DParams	D3DPRESENT_PARAMETERS < \
 	0 \
 >
 
-;   Simple MASM rv replacement. Calls a PROC and returns pax.
-;   ProcName:PROC - procedure name.
-;   Args:VARARG - procedure arguments.
-r MACRO ProcName:REQ,Args:VARARG
-	procCall EQU <invoke ProcName>
-	FOR var,<Args>
-		procCall CATSTR procCall,<, var>
-	ENDM
-	procCall
-	EXITM <pax>
-ENDM
-
 ;   Simple MASM SADD replacement. Declares a string and returns its ADDR in pax.
 ;   qStr:String - quoted string.
 s MACRO qStr:REQ
@@ -127,7 +115,7 @@ OnCreate PROC EXPORT
 	; but hey let's use the BP3D API where it doesn't make much sense to
 	
 	; Initalize Direct3D object
-	mov FMain.GraphicsContext, r(Direct3DCreate9, D3D_SDK_VERSION)
+	mov FMain.GraphicsContext, bpR(Direct3DCreate9, D3D_SDK_VERSION)
 	.IF !(pax)
 		invoke bpError, s("Failed to create Direct3D object."), 0
 	.ENDIF
@@ -236,5 +224,5 @@ start:
 	invoke bpCreateForm, ADDR FMain
 
 	; This code is reached when form's execution is done
-	invoke TerminateProcess, r(GetCurrentProcess), 0
+	invoke TerminateProcess, bpR(GetCurrentProcess), 0
 end start

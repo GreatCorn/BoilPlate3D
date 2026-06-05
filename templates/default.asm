@@ -16,7 +16,7 @@ OnCreate PROC EXPORT
 	ret
 OnCreate ENDP
 
-OnInput PROC EXPORT BPInType:BYTE, BPInStruct:BPPtr
+OnInput PROC EXPORT BPInType:BPEnum, BPInStruct:BPPtr
 	; Code for receiving input of types BP_INPUT_* goes here
 	
 	mov pbx, BPInStruct
@@ -29,6 +29,7 @@ OnInput PROC EXPORT BPInType:BYTE, BPInStruct:BPPtr
 		; Process key / mouse button input here
 		
 	.ENDIF
+	ASSUME pbx:nothing
 	ret
 OnInput ENDP
 
@@ -47,6 +48,5 @@ start:
 	invoke bpCreateForm, ADDR FMain
 	
 	; Form processing exited, safely terminate process
-	call GetCurrentProcess
-	invoke TerminateProcess, pax, 0
+	invoke TerminateProcess, bpR(GetCurrentProcess), 0
 end start

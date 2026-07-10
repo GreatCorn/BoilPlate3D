@@ -2,8 +2,7 @@
 ;   BP3D Brown Demo
 ;
 ;   Demonstrates the usage of importers, maths, vectors and implements a basic
-; particle system. Tests the basic audio capabilities of the system (MCI).
-;   64-bit compileable (UASM, untested).
+; particle system. Tests the basic audio capabilities of the system.
 ;
 ;   Copyright (c) 2025 Yevhenii Ionenko (aka GreatCorn). All rights reserved.
 ;   Licensed under the terms of the MIT license (see ..\LICENSE.txt).
@@ -15,8 +14,6 @@ IFNDEF rax
 .model flat, stdcall
 ENDIF
 option casemap:none
-
-BP_COMPATIBILITY_W9X	EQU <1>	; Exclude unsupported APIs
 
 ; BP3D includes
 include ..\..\src\BP3D.asm

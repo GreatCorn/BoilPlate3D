@@ -3,17 +3,15 @@
 ;
 ;   Demonstrates the usage of dynamic meshes and implements a sort of softbody
 ; physics object. Tests MSAA capabilities via ARB and, if available, applies it.
-;   32-bit only.
 ;
-;   Copyright (c) 2025 Yevhenii Ionenko (aka GreatCorn). All rights reserved.
+;   Copyright (c) 2025-2026 Yevhenii Ionenko (aka GreatCorn).
+;   All rights reserved.
 ;   Licensed under the terms of the MIT license (see ..\LICENSE.txt).
 ;
 
 .386
 .model flat, stdcall
 option casemap:none
-
-BP_COMPATIBILITY_W9X	EQU <1>	; Exclude unsupported APIs
 
 ; BP3D includes
 include ..\..\src\BP3D.asm
@@ -327,6 +325,7 @@ OnCreate PROC EXPORT
 		invoke bpInitGLContext, ADDR FMain
 	.ENDIF
 	
+	
 	LoadBPM ADDR Model, "gc.bpm"
 	LoadBPM ADDR ModelDeformed, "gc.bpm"
 	mov bpTextureFiltering, TRUE
@@ -469,7 +468,6 @@ FARBOnCreate PROC EXPORT
 		mov ARB, TRUE
 	.ENDIF
 	invoke bpDestroyForm, ADDR FARB
-	mov FARB.DefaultFlag, FALSE
 	ret
 FARBOnCreate ENDP
 

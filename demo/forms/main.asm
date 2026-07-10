@@ -12,7 +12,6 @@
 .model flat, stdcall
 option casemap:none
 
-BP_COMPATIBILITY_W9X	EQU <1>	; Exclude unsupported APIs
 BP_ONRESIZE_MOVE		EQU <1>	; Call OnResize on WM_MOVE
 
 ; BP3D includes

@@ -25,9 +25,7 @@ IFDEF BP_WININC
 	
 	includelib gdi32.lib
 	includelib kernel32.lib
-	IFNDEF BP_COMPATIBILITY_W9X
-		includelib hid.lib	; You will have to generate it yourself from hid.dll
-	ENDIF
+	includelib hid.lib	; You will have to generate it yourself from hid.dll
 	include include\gl\gl.inc
 	includelib opengl32.lib
 	includelib ntdll.lib
@@ -47,9 +45,7 @@ ELSEIFNDEF BP_CUSTOM_INCLUDES
 	includelib kernel32.lib
 	include include\opengl32.inc
 	includelib opengl32.lib
-	IFNDEF BP_COMPATIBILITY_W9X
-		includelib hid.lib
-	ENDIF
+	includelib hid.lib
 	include include\user32.inc
 	includelib user32.lib
 	include include\winmm.inc
@@ -60,16 +56,19 @@ ENDIF
 ;   Available compile-time symbolic macros to define (EQU) before including 
 ; BP3D, for additional or alternative functionality in the build:
 ;
-;   BP_COMPATIBILITY_W9X - Windows 2000, ME, 98SE compatibility mode. Removes
-; all calls of the APIs not supported on aforementioned systems to avoid DLL
-; errors. Unsupported APIs that are used: RAWINPUT, LoadLibrary 
-; (SetProcessDPIAware).
+;   BP_COMPATIBILITY_W9X - Strict Windows 2000, ME, 98SE compatibility mode.
+; Removes all calls of the APIs not supported on aforementioned systems to avoid
+; static linking errors. Unsupported APIs that are used: GetRawInput*.
 ;
 ;   BP_CUSTOM_INCLUDES - Do not include MASM32 or WinInc headers and LIB files.
 ;
 ;   BP_ERROR_PASS - pass through errors and don't terminate the program.
 ;
 ;   BP_FIXED_BUSY - busy higher-precision OnFixed thread that uses 100% CPU.
+;
+;   BP_STATIC_LINK_XP - force static-linking of dynamically loaded procedures
+; that start from XP by referencing them directly. Unsupported APIs that are
+; used: GetRawInput*.
 ;
 ;   BP_TRACEABLE_HEAP - BP3D defines symbolic TEXTEQUs for memory management:
 ; bpFree, bpMalloc and bpReAlloc. When this macro is defined, they will be
@@ -391,7 +390,6 @@ RAWINPUT STRUCT
 RAWINPUT ENDS
 ENDIF
 
-IFNDEF BP_COMPATIBILITY_W9X
 ;   HidP definitions (no structs defined in any headers, WinInc doesn't have HID
 ; at all). These definitions are limited only to the procedures and structs used
 ; in BP3D. God save you if you want to use other HID procedures for yourself.
@@ -544,7 +542,6 @@ IFNDEF RIDEV_INPUTSINK
 	RIDEV_INPUTSINK EQU 00000100h	; Thank you WinInc
 ENDIF
 ENDIF
-ENDIF
 
 ; ----- CONSTANTS -----
 BP_ORIENTATION_LANDSCAPE		EQU 0
@@ -616,6 +613,32 @@ bpRawJoyFM128	REAL4 0.0078125
 
 ; ----- DATA FIELDS -----
 .DATA
+;   So as dynamic procedure loading is supported on at least Windows 2000, it
+; offers a possible compromise to ensure single-executable compatibility. This
+; is implemented with the GetRawInput* functionality here, related to RAWINPUT.
+; A major refactor is possible to implement old-fashioned raw input by SetupAPI
+; (maybe CfgMgr32?), but needs more consideration and research.
+bpRawInput	BPBool FALSE
+BP_RAWINPUT_MAX EQU 3
+IFDEF BP_STATIC_LINK_XP
+bpGetRawInputData			TEXTEQU <GetRawInputData>
+bpGetRawInputDeviceInfo		TEXTEQU <GetRawInputDeviceInfo>
+bpRegisterRawInputDevices	TEXTEQU <RegisterRawInputDevices>
+ELSE
+BPTGetRawInputData TYPEDEF PROTO :DWORD, :DWORD, :LPVOID, :LPDWORD, :DWORD
+BPPGetRawInputData TYPEDEF PTR BPTGetRawInputData
+bpGetRawInputData BPPGetRawInputData 0
+
+BPTGetRawInputDeviceInfo TYPEDEF PROTO :HANDLE, :UINT, :LPVOID, :PUINT
+BPPGetRawInputDeviceInfo TYPEDEF PTR BPTGetRawInputDeviceInfo
+bpGetRawInputDeviceInfo BPPGetRawInputDeviceInfo 0
+
+BPTRegisterRawInputDevices TYPEDEF PROTO :BPPtr, :UINT, :UINT
+BPPRegisterRawInputDevices TYPEDEF PTR BPTRegisterRawInputDevices
+bpRegisterRawInputDevices BPPRegisterRawInputDevices 0
+ENDIF
+
+
 bpDefHeap	HANDLE 0	; Default heap (to not GetProcessHeap every time)
 
 ;   Delta time calculation variables (QueryPerformanceCounter uses
@@ -1001,15 +1024,71 @@ bpCalculateDelta ENDP
 ;   BPFormPtr:BPPtr - pointer to a form structure.
 bpCreateForm PROC EXPORT BPFormPtr:BPPtr
 	LOCAL wc:WNDCLASSEX, msg:MSG, testFreq:LARGE_INTEGER, quitFlag:BPBool
-	LOCAL ridMouse:RAWINPUTDEVICE, rect:RECT
+	LOCAL ridMouse:RAWINPUTDEVICE, rect:RECT, pUser32:BPPtr
 	push pbx
 	ASSUME pbx:PTR BPForm
 	mov pbx, BPFormPtr
 	
+	; BoilPlate3D system initialization
+	
+	; Get process heap as default heap to not call GetProcessHeap all the time.
 	.IF (!bpDefHeap)
 		call GetProcessHeap
 		mov bpDefHeap, pax
 	.ENDIF
+	
+	; LoadLibrary works on Windows 2000 after all, I guess. Needs more testing.
+	.CONST
+		bpUser32DLL				DB "user32.dll", 0
+	.CODE
+	mov pUser32, bpR(GetModuleHandle, OFFSET bpUser32DLL)
+	.IF !(pax)
+		mov pUser32, bpR(LoadLibrary, OFFSET bpUser32DLL)
+	.ENDIF
+	; Load stuff unsupported on Windows 2000 dynamically
+	.IF (pax)
+		IFNDEF BP_STATIC_LINK_XP
+			.CONST
+				bpGetRawInputDataS			DB "GetRawInputData", 0
+				bpGetRawInputDeviceInfoS	DB "GetRawInputDeviceInfo", 0
+				bpRegisterRawInputDevicesS	DB "RegisterRawInputDevices", 0
+			.CODE
+			mov bpGetRawInputData, \
+			bpR(GetProcAddress, pUser32, OFFSET bpGetRawInputDataS)
+			.IF (pax)
+				inc bpRawInput
+			.ENDIF
+			mov bpGetRawInputDeviceInfo, \
+			bpR(GetProcAddress, pUser32, OFFSET bpGetRawInputDeviceInfoS)
+			.IF (pax)
+				inc bpRawInput
+			.ENDIF
+			mov bpRegisterRawInputDevices, \
+			bpR(GetProcAddress, pUser32, OFFSET bpRegisterRawInputDevicesS)
+			.IF (pax)
+				inc bpRawInput
+			.ENDIF
+		ENDIF
+	.ENDIF
+	
+	; Disable DPI scaling if possible
+	IFNDEF BP_DPI_UNAWARE
+		IFNDEF SetProcessDPIAware
+			.CONST
+				bpSetProcessDPIAwareS	DB "SetProcessDPIAware", 0
+			.CODE
+			.IF (pUser32)
+				invoke GetProcAddress, pUser32, OFFSET bpSetProcessDPIAwareS
+				.IF (pax)
+					call pax
+				.ENDIF
+			.ENDIF
+		ELSE
+			call SetProcessDPIAware
+		ENDIF
+	ENDIF
+	
+	invoke FreeLibrary, pUser32
 	
 	mov wc.cbSize, SIZEOF WNDCLASSEX
 	mov wc.style, CS_HREDRAW or CS_VREDRAW
@@ -1085,27 +1164,7 @@ bpCreateForm PROC EXPORT BPFormPtr:BPPtr
 		push pbx
 		mov pbx, BPFormPtr
 	.ENDIF
-	.IF ([pbx].DefaultFlag)
-		; Disable DPI scaling if possible
-		IFNDEF BP_COMPATIBILITY_W9X
-		IFNDEF BP_DPI_UNAWARE
-			IFNDEF SetProcessDPIAware
-				.CONST
-					bpUser32DLL				DB "user32.dll", 0
-					bpSetProcessDPIAware	DB "SetProcessDPIAware", 0
-				.CODE
-				invoke LoadLibrary, OFFSET bpUser32DLL
-				push pax
-				invoke GetProcAddress, pax, OFFSET bpSetProcessDPIAware
-				call pax
-				pop pax
-				invoke FreeLibrary, pax
-			ELSE
-				call SetProcessDPIAware
-			ENDIF
-		ENDIF
-		ENDIF
-		
+	.IF ([pbx].DefaultFlag)		
 		mov al, [pbx].InputFlags
 		mov [pbx].InputFlags, 0
 		invoke bpSetInputFlags, pbx, al
@@ -1423,14 +1482,20 @@ bpInRaw PROC EXPORT BPFormPtr:BPPtr, RawHandle:LPARAM
 	LOCAL bpInMouseMoveStruct:BPInMouseMove
 	LOCAL dwSize:DWORD, lpb:BPPtr
 	
+	IFNDEF BP_STATIC_LINK_XP
+	.IF !(bpGetRawInputData)
+		ret
+	.ENDIF
+	ENDIF
+	
 	; Get buffer size for RAWINPUT and allocate
-	invoke GetRawInputData, RawHandle, RID_INPUT, NULL, ADDR dwSize, \
+	invoke bpGetRawInputData, RawHandle, RID_INPUT, NULL, ADDR dwSize, \
 	SIZEOF RAWINPUTHEADER
 	invoke bpMalloc, bpDefHeap, 0, dwSize
 	mov lpb, pax
 	
 	; Read input data
-	invoke GetRawInputData, RawHandle, RID_INPUT, lpb, ADDR dwSize, \
+	invoke bpGetRawInputData, RawHandle, RID_INPUT, lpb, ADDR dwSize, \
 	SIZEOF RAWINPUTHEADER
 	
 	.IF (eax == dwSize)	; Check for valid input read
@@ -1445,7 +1510,7 @@ bpInRaw PROC EXPORT BPFormPtr:BPPtr, RawHandle:LPARAM
 				movzx pax, [pcx].data.mouse.usButtonData
 				.IF (pax)
 					.IF (pax & RI_MOUSE_WHEEL)
-						; Idk how to read this, just pray
+						; Broken on Wine, TODO
 						mov edx, [pcx].data.mouse.ulRawButtons
 						push pcx
 						push pax
@@ -1459,7 +1524,7 @@ bpInRaw PROC EXPORT BPFormPtr:BPPtr, RawHandle:LPARAM
 						pop pax
 						push pcx
 					.ELSEIF (pax & 800h)	; RI_MOUSE_HWHEEL
-						; well idk I don't have a mouse with that
+						; TODO I don't have a mouse with that
 					.ENDIF
 					.IF (pax == RI_MOUSE_BUTTON_1_DOWN)
 						invoke bpInMouseButton,BPFormPtr, VK_LBUTTON, TRUE
@@ -1553,17 +1618,23 @@ bpInRawJoystick PROC EXPORT BPFormPtr:BPPtr, InputDataPtr:BPPtr
 	LOCAL pbCaps:BPPtr, pvCaps:BPPtr, capsLen:USHORT, usgLen:ULONG, btnCnt:DWORD
 	LOCAL usg[MAX_BUTTONS]:USAGE, btns:DWORD, usgVal:ULONG
 	
+	IFNDEF BP_STATIC_LINK_XP
+	.IF !(bpGetRawInputDeviceInfo)
+		ret
+	.ENDIF
+	ENDIF
+	
 	; Get preparsed data block
 	ASSUME pcx:PTR RAWINPUT
 	mov pcx, InputDataPtr
-	invoke GetRawInputDeviceInfo, [pcx].header.hDevice, RIDI_PREPARSEDDATA, \
+	invoke bpGetRawInputDeviceInfo, [pcx].header.hDevice, RIDI_PREPARSEDDATA, \
 	NULL, ADDR dwSize
 	.IF !(eax)
 		invoke bpMalloc, bpDefHeap, 0, dwSize
 		mov prep, pax
 		mov pcx, InputDataPtr
-		invoke GetRawInputDeviceInfo, [pcx].header.hDevice, RIDI_PREPARSEDDATA,\
-		prep, ADDR dwSize
+		invoke bpGetRawInputDeviceInfo, [pcx].header.hDevice, \
+		RIDI_PREPARSEDDATA, prep, ADDR dwSize
 		.IF (eax >= 0)
 			; Button caps
 			invoke HidP_GetCaps, prep, ADDR caps
@@ -2025,24 +2096,29 @@ bpSetInputFlags PROC EXPORT BPFormPtr:BPPtr, InputFlags:BYTE
 	ASSUME pcx:PTR BPForm
 	mov pcx, BPFormPtr
 	
-	IFNDEF BP_COMPATIBILITY_W9X
-	; Raw mouse flag (no lag raw mouse input, useless on Wine)
-	mov al, [pcx].InputFlags
-	and al, BP_IF_RAW_MOUSE
-	mov ah, InputFlags
-	and ah, BP_IF_RAW_MOUSE
-	.IF (al) != (ah)
-		mov rid.usUsagePage, 1		; Generic desktop
-		mov rid.usUsage, 2			; Mouse
-		.IF (ah)
-			mov rid.dwFlags, RIDEV_INPUTSINK
-			bpMPM rid.hwndTarget, [pcx].Handle
-		.ELSE
-			mov rid.dwFlags, RIDEV_REMOVE
-			mov rid.hwndTarget, 0
+	; Forgive me
+	IFNDEF BP_STATIC_LINK_XP
+	.IF (bpRegisterRawInputDevices)
+	ENDIF
+		; Raw mouse flag (no lag raw mouse input, useless? on Wine)
+		mov al, [pcx].InputFlags
+		and al, BP_IF_RAW_MOUSE
+		mov ah, InputFlags
+		and ah, BP_IF_RAW_MOUSE
+		.IF (al) != (ah)
+			mov rid.usUsagePage, 1		; Generic desktop
+			mov rid.usUsage, 2			; Mouse
+			.IF (ah)
+				mov rid.dwFlags, RIDEV_INPUTSINK
+				bpMPM rid.hwndTarget, [pcx].Handle
+			.ELSE
+				mov rid.dwFlags, RIDEV_REMOVE
+				mov rid.hwndTarget, 0
+			.ENDIF
+			invoke bpRegisterRawInputDevices, ADDR rid, 1, SIZEOF RAWINPUTDEVICE
+			mov pcx, BPFormPtr
 		.ENDIF
-		invoke RegisterRawInputDevices, ADDR rid, 1, SIZEOF RAWINPUTDEVICE
-		mov pcx, BPFormPtr
+	IFNDEF BP_STATIC_LINK_XP
 	.ENDIF
 	ENDIF
 	
@@ -2051,30 +2127,34 @@ bpSetInputFlags PROC EXPORT BPFormPtr:BPPtr, InputFlags:BYTE
 	and al, BP_IF_RAW_JOYSTICK
 	mov ah, InputFlags
 	and ah, BP_IF_RAW_JOYSTICK
-	.IF (al) != (ah)
-		IFNDEF BP_COMPATIBILITY_W9X
-		mov rid.usUsagePage, 1		; Generic desktop
-		mov rid.usUsage, 4			; Joystick (directinput I think)
-		.IF (ah)
-			mov rid.dwFlags, RIDEV_INPUTSINK
-			bpMPM rid.hwndTarget, [pcx].Handle
-		.ELSE
-			mov rid.dwFlags, RIDEV_REMOVE
-			mov rid.hwndTarget, 0
+	.IF ((al) != (ah))
+		IFNDEF BP_STATIC_LINK_XP
+		.IF (bpRegisterRawInputDevices)
+		ENDIF
+			mov rid.usUsagePage, 1		; Generic desktop
+			mov rid.usUsage, 4			; Joystick (directinput I think)
+			.IF (ah)
+				mov rid.dwFlags, RIDEV_INPUTSINK
+				bpMPM rid.hwndTarget, [pcx].Handle
+			.ELSE
+				mov rid.dwFlags, RIDEV_REMOVE
+				mov rid.hwndTarget, 0
+			.ENDIF
+			invoke bpRegisterRawInputDevices, ADDR rid, 1, SIZEOF RAWINPUTDEVICE
+			mov pcx, BPFormPtr
+			
+			mov rid.usUsage, 5			; Joystick (XInput)
+			mov ah, InputFlags
+			and ah, BP_IF_RAW_JOYSTICK
+			.IF (ah)
+				mov rid.dwFlags, RIDEV_INPUTSINK
+			.ELSE
+				mov rid.dwFlags, RIDEV_REMOVE
+			.ENDIF
+			invoke bpRegisterRawInputDevices, ADDR rid, 1, SIZEOF RAWINPUTDEVICE
+			mov pcx, BPFormPtr
+		IFNDEF BP_STATIC_LINK_XP
 		.ENDIF
-		invoke RegisterRawInputDevices, ADDR rid, 1, SIZEOF RAWINPUTDEVICE
-		mov pcx, BPFormPtr
-		
-		mov rid.usUsage, 5			; Joystick (XInput)
-		mov ah, InputFlags
-		and ah, BP_IF_RAW_JOYSTICK
-		.IF (ah)
-			mov rid.dwFlags, RIDEV_INPUTSINK
-		.ELSE
-			mov rid.dwFlags, RIDEV_REMOVE
-		.ENDIF
-		invoke RegisterRawInputDevices, ADDR rid, 1, SIZEOF RAWINPUTDEVICE
-		mov pcx, BPFormPtr
 		ENDIF
 	.ELSEIF !(ah)
 		mov al, [pcx].InputFlags

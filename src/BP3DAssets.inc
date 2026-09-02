@@ -107,7 +107,7 @@ BPAnimPlayer ENDS
 ;   BP animation interpolation types
 ;   No interpolation (doesn't copy vertex data and simply changes the BPMesh 
 ; pointer value if BPAnimPlayer.FrameType is BPA_FRAME_VERTEX and
-; BPL_INTERPOLATION_DYNAMIC is not defined).
+; BP_INTERPOLATION_DYNAMIC is not defined).
 BP_INTERPOLATE_CONSTANT	EQU 0
 ;   True linear interpolation. Sets value to interpolated between previous and
 ; next frame.
@@ -1079,17 +1079,20 @@ bpProcessAnimPlayer PROC EXPORT BPAnimPlrPtr:BPPtr, Delta:REAL4
 				|| ([pcx].Interpolation == BP_INTERPOLATE_LINEAR_S)
 					bpMPM intFrameSize, [pcx].FrameSize	; Time + mesh
 					
+					; frameAddr is free and will now store interpolation func
+					.IF ([pcx].Interpolation == BP_INTERPOLATE_LINEAR)
+						mov frameAddr, OFFSET bpAnimInterpolateLinear
+					.ELSE
+						mov frameAddr, OFFSET bpAnimInterpolateLinearS
+					.ENDIF
+					
 					mov timeOffset, 4
 					mov pcx, [pcx].Mesh
 					ASSUME pcx:PTR BPMesh
 					mov pcx, [pcx].Vertices
 					ASSUME pcx:PTR BPAnimPlayer
 					push bpAnimInterpolateVerticesEnd
-					.IF ([pcx].Interpolation == BP_INTERPOLATE_LINEAR)
-						jmp bpAnimInterpolateLinear
-					.ELSE
-						jmp bpAnimInterpolateLinearS
-					.ENDIF
+					jmp frameAddr
 					bpAnimInterpolateVerticesEnd:
 					
 					mov pcx, BPAnimPlrPtr
@@ -1102,11 +1105,7 @@ bpProcessAnimPlayer PROC EXPORT BPAnimPlrPtr:BPPtr, Delta:REAL4
 						mov pcx, [pcx].Normals
 						ASSUME pcx:PTR BPAnimPlayer
 						push bpAnimInterpolateEnd
-						.IF ([pcx].Interpolation == BP_INTERPOLATE_LINEAR)
-							jmp bpAnimInterpolateLinear
-						.ELSE
-							jmp bpAnimInterpolateLinearS
-						.ENDIF					
+						jmp frameAddr				
 					.ENDIF
 				.ELSEIF ([pcx].Interpolation == BP_INTERPOLATE_LOG)
 					

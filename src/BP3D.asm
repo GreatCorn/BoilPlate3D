@@ -2949,9 +2949,9 @@ bpDefWndProc PROC EXPORT hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
 			shr eax, 16
 			movsx eax, ax
 			.IF (SDWORD PTR eax > 0)
-				invoke bpInMouseButton, pcx, VK_MWHEEL_UP, TRUE
-			.ELSE
 				invoke bpInMouseButton, pcx, VK_MWHEEL_DOWN, TRUE
+			.ELSE
+				invoke bpInMouseButton, pcx, VK_MWHEEL_UP, TRUE
 			.ENDIF
 		.ENDIF
 	;.ELSEIF (uMsg == WM_ERASEBKGND)

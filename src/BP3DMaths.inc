@@ -143,7 +143,8 @@ fcmp MACRO cmp1:REQ, cmp2
 			; Second arg is an imm or reg, load from stack
 			push cmp2
 			fld REAL4 PTR [psp]
-			pop pax
+			;pop pax
+			add psp, SIZEOF BPPtr
 			
 			;oa TEXTEQU %(OPATTR (cmp2))
 			;%ECHO fcmp cmp1, cmp2	OPATTR cmp2 is oa
@@ -155,7 +156,8 @@ fcmp MACRO cmp1:REQ, cmp2
 		; First arg is an imm or reg, load from stack
 		push cmp1
 		fld REAL4 PTR [psp]
-		pop pax
+		;pop pax
+		add psp, SIZEOF BPPtr
 			
 		;oa TEXTEQU %(OPATTR (cmp1))
 		;%ECHO fcmp cmp1, cmp2	OPATTR cmp1 is oa

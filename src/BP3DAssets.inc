@@ -842,7 +842,7 @@ bpProcessAnimPlayer PROC EXPORT BPAnimPlrPtr:BPPtr, Delta:REAL4
 	
 		ASSUME pdx:PTR BPAnimTrack
 		
-		; Get animation speed
+		; Get animation speed (Speed * FPS * Delta)
 		fld [pcx].Speed
 		fmul bpAnimationFPS
 		fmul Delta
@@ -1153,7 +1153,7 @@ bpProcessAnimPlayer PROC EXPORT BPAnimPlrPtr:BPPtr, Delta:REAL4
 		pop pbx
 			
 		xor pax, pax
-		.WHILE(pax < intStructSize)
+		.WHILE (pax < intStructSize)
 			fld REAL4 PTR [pbx+pax]	; B value (current frame)
 			fsub REAL4 PTR [pdx+pax]; A value
 			
@@ -1186,23 +1186,21 @@ bpProcessAnimPlayer PROC EXPORT BPAnimPlrPtr:BPPtr, Delta:REAL4
 		.ENDIF
 		pop pdx
 		pop pbx
-		fstp floatVal
+		fstp floatVal	; Frame[i].Time - Frame[i-1].Time
 		
 		; Calculate lerp factor based on speed and distance between frames
-		fld animSpd
+		fld animSpd	; (Speed * FPS * Delta)
 		fabs
 		fdiv floatVal
 		fmul bpAnimInterpolateSpeed
 		fstp fact
 		IFNDEF BP_INTERPOLATION_UNCLAMPED
-			push pax
 			invoke flClamp, fact, 0, 1065353216	; fact, 0, 1.0
 			mov fact, eax
-			pop pax
 		ENDIF
 			
 		xor pax, pax
-		.WHILE(pax < intStructSize)
+		.WHILE (pax < intStructSize)
 			fld REAL4 PTR [pbx+pax]	; Desired value (current frame)
 			fsub REAL4 PTR [pcx]	; Current value
 			

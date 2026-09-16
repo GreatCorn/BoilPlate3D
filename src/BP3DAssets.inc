@@ -116,7 +116,6 @@ BP_INTERPOLATE_LINEAR	EQU 1
 ; frame value to next frame value in set amount of time. Allows smoothing 
 ; between animations.
 BP_INTERPOLATE_LINEAR_S	EQU 2
-BP_INTERPOLATE_LOG		EQU 3	; Logarithmic interpolation (WIP)
 
 ; BP animation frame data types
 BPA_FRAME_PRS		EQU 0	; BPAnimFramePRS
@@ -632,15 +631,27 @@ TextureType:BYTE, Buffer:BPPtr
 	LOCAL area:BPPtr, parsed:BPPtr, parsedSize:BPPtr
 	LOCAL col[4]:BYTE, hasAlpha:BPBool
 	
+	; Guaranteed types
+	.IF (TextureType == BPT_RGB8) || (TextureType == BPT_RGBA8)
+		mov pax, Buffer
+		mov parsed, pax
+		.IF (TextureType == BPT_RGB8)
+			mov hasAlpha, FALSE
+		.ELSE
+			mov hasAlpha, TRUE
+		.ENDIF
+		jmp bpTexImage2DBuild
+	.ENDIF
+	
 	mov eax, TextureWidth
 	mov ecx, TextureHeight
 	mul ecx
 	mov area, pax
-	; RGBA
+	; Alpha handling
 	.IF (TextureType == BPT_RGB5A1) || (TextureType == BPT_RGBA4)
 		shl eax, 2	; * 4
 		mov hasAlpha, TRUE
-	.ELSE
+	.ELSEIF
 		mov ecx, 3
 		mul ecx
 		mov hasAlpha, FALSE
@@ -734,6 +745,11 @@ TextureType:BYTE, Buffer:BPPtr
 			mov al, BYTE PTR [pcx]	; Blue
 			shl al, 6	; * 64
 			mov col[2], al
+		.ELSEIF (TextureType == BPT_L8)	; Should be available everywhere
+			mov al, BYTE PTR [pcx]	; Gray
+			mov col[0], al
+			mov col[1], al
+			mov col[2], al
 		.ENDIF
 		
 		mov pax, pbx
@@ -757,6 +773,7 @@ TextureType:BYTE, Buffer:BPPtr
 	.ENDW
 	pop pbx
 	
+	bpTexImage2DBuild:
 	.IF (hasAlpha)
 		mov eax, GL_RGBA
 		mov edx, 4
@@ -767,7 +784,10 @@ TextureType:BYTE, Buffer:BPPtr
 	invoke gluBuild2DMipmaps, GL_TEXTURE_2D, edx, TextureWidth, TextureHeight, \
 	eax, GL_UNSIGNED_BYTE, parsed
 	
-	invoke bpFree, bpDefHeap, 0, parsed
+	mov pax, Buffer
+	.IF (parsed != pax)
+		invoke bpFree, bpDefHeap, 0, parsed
+	.ENDIF
 	ret
 bpTexImage2D ENDP
 
@@ -959,8 +979,6 @@ bpProcessAnimPlayer PROC EXPORT BPAnimPlrPtr:BPPtr, Delta:REAL4
 					.ELSE
 						jmp bpAnimInterpolateLinearS
 					.ENDIF
-				.ELSEIF ([pcx].Interpolation == BP_INTERPOLATE_LOG)
-				
 				.ENDIF
 			.ENDIF
 			bpAnimInterpolatePositionEnd:
@@ -980,8 +998,6 @@ bpProcessAnimPlayer PROC EXPORT BPAnimPlrPtr:BPPtr, Delta:REAL4
 					.ELSE
 						jmp bpAnimInterpolateLinearS
 					.ENDIF
-				.ELSEIF ([pcx].Interpolation == BP_INTERPOLATE_LOG)
-				
 				.ENDIF
 			.ENDIF
 			bpAnimInterpolateRotationEnd:
@@ -1001,8 +1017,6 @@ bpProcessAnimPlayer PROC EXPORT BPAnimPlrPtr:BPPtr, Delta:REAL4
 					.ELSE
 						jmp bpAnimInterpolateLinearS
 					.ENDIF
-				.ELSEIF ([pcx].Interpolation == BP_INTERPOLATE_LOG)
-				
 				.ENDIF
 			.ENDIF
 		.ELSEIF ([pcx].FrameType == BPA_FRAME_MATRIX)
@@ -1035,8 +1049,6 @@ bpProcessAnimPlayer PROC EXPORT BPAnimPlrPtr:BPPtr, Delta:REAL4
 					.ELSE
 						jmp bpAnimInterpolateLinearS
 					.ENDIF
-				.ELSEIF ([pcx].Interpolation == BP_INTERPOLATE_LOG)
-					
 				.ENDIF
 			.ENDIF
 		.ELSEIF ([pcx].FrameType == BPA_FRAME_VERTEX)
@@ -1107,8 +1119,6 @@ bpProcessAnimPlayer PROC EXPORT BPAnimPlrPtr:BPPtr, Delta:REAL4
 						push bpAnimInterpolateEnd
 						jmp frameAddr				
 					.ENDIF
-				.ELSEIF ([pcx].Interpolation == BP_INTERPOLATE_LOG)
-					
 				.ENDIF
 			.ENDIF
 		.ENDIF

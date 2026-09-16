@@ -188,6 +188,28 @@ VectorCopy MACRO Cnt:REQ, To:REQ, From:REQ
 	ENDM
 ENDM
 
+VectorDistance MACRO Cnt:REQ, A:REQ, B:REQ
+	CntRep = Vector32DCheck(Cnt, 1)
+	OffSize = Vector32DCheck(Cnt, 0)
+	
+	mov pax, A
+	mov pcx, B
+	PosOff = 0
+	REPEAT CntRep
+		fld REAL4 PTR [pcx+PosOff]
+		fsub REAL4 PTR [pax+PosOff]
+		fmul st, st
+		PosOff = PosOff + OffSize
+	ENDM
+	REPEAT CntRep-1
+		fadd
+	ENDM
+	fsqrt
+	sub psp, SIZEOF BPPtr
+	fstp REAL4 PTR [psp]
+	pop pax
+ENDM
+
 VectorDistanceSqr MACRO Cnt:REQ, A:REQ, B:REQ
 	CntRep = Vector32DCheck(Cnt, 1)
 	OffSize = Vector32DCheck(Cnt, 0)
@@ -496,6 +518,11 @@ Vector2Dot PROC EXPORT A:BPPtr, B:BPPtr
 	ret
 Vector2Dot ENDP
 
+Vector2Distance PROC EXPORT A:BPPtr, B:BPPtr
+	VectorDistance 2, A, B
+	ret
+Vector2Distance ENDP
+
 Vector2DistanceSqr PROC EXPORT A:BPPtr, B:BPPtr
 	VectorDistanceSqr 2, A, B
 	ret
@@ -643,6 +670,11 @@ Vector3Cross PROC EXPORT A:BPPtr, B:BPPtr, Product:BPPtr
 	ret
 Vector3Cross ENDP
 
+Vector3Distance PROC EXPORT A:BPPtr, B:BPPtr
+	VectorDistance 3, A, B
+	ret
+Vector3Distance ENDP
+
 Vector3DistanceSqr PROC EXPORT A:BPPtr, B:BPPtr
 	VectorDistanceSqr 3, A, B
 	ret
@@ -757,6 +789,11 @@ Vector32DCopy PROC EXPORT To:BPPtr, From:BPPtr
 	ret
 Vector32DCopy ENDP
 
+Vector32DDistance PROC EXPORT A:BPPtr, B:BPPtr
+	VectorDistance 32D, A, B
+	ret
+Vector32DDistance ENDP
+
 Vector32DDistanceSqr PROC EXPORT A:BPPtr, B:BPPtr
 	VectorDistanceSqr 32D, A, B
 	ret
@@ -856,6 +893,11 @@ Vector4Copy PROC EXPORT To:BPPtr, From:BPPtr
 	VectorCopy 4, To, From
 	ret
 Vector4Copy ENDP
+
+Vector4Distance PROC EXPORT A:BPPtr, B:BPPtr
+	VectorDistance 4, A, B
+	ret
+Vector4Distance ENDP
 
 Vector4DistanceSqr PROC EXPORT A:BPPtr, B:BPPtr
 	VectorDistanceSqr 4, A, B

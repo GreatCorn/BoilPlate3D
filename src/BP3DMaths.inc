@@ -649,6 +649,7 @@ nRand PROC EXPORT Base:DWORD
 nRand ENDP
 
 nRandLocal PROC EXPORT Base:DWORD, Seed:BPPtr
+	IFDEF BP_RAND_PARKMILLER
 	mov pax, Seed
 	mov eax, DWORD PTR [pax]
 
@@ -675,6 +676,62 @@ nRandLocal PROC EXPORT Base:DWORD, Seed:BPPtr
 	div Base
 
 	mov eax, edx
+	
+	ELSEIFDEF BP_RAND_XOROSHIRO32
+	; this implementation fucking sucks
+	mov pdx, Seed
+	movzx pax, WORD PTR [pdx]
+	movzx pdx, WORD PTR [pdx+2]
+
+	xor pdx, pax
+	mov pcx, pax
+	shr pcx, 32-12
+	shl pax, 12
+	or pax, pcx
+	xor pax, pdx
+	mov pcx, pdx
+	shl pcx, 8
+	xor pax, pcx
+	; s0
+
+	mov pcx, pdx
+	shr pcx, 32-19
+	shl pdx, 19
+	or pdx, pcx
+	; s1
+	
+	mov pcx, pdx
+	shl ecx, 16
+	or ecx, eax
+	
+	add pax, pdx
+	mov pdx, Seed
+	mov DWORD PTR [pdx], pcx
+	xor pdx, pdx
+	div Base
+	mov pax, pdx
+	ELSE
+	; Mulberry32
+	mov pcx, Seed
+	add DWORD PTR [pcx], 6D2B79F5h
+	mov eax, DWORD PTR [pcx]
+	shr eax, 15
+	xor eax, DWORD PTR [pcx]
+	mov ecx, 551353C9h
+	mul ecx
+	mov ecx, eax
+	shr eax, 13
+	xor eax, ecx
+	mov ecx, 32CCD373h
+	mul ecx
+	mov ecx, eax
+	shr eax, 16
+	xor eax, ecx
+	xor edx, edx
+	div Base
+	mov eax, edx
+	
+	ENDIF
 	ret
 nRandLocal ENDP
 

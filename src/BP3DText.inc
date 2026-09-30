@@ -25,6 +25,7 @@ bpFontWidth			REAL4 8.0
 bpFontHeight		REAL4 16.0
 bpFontSpacing		REAL4 1.15
 bpFontQuad			DWORD 0
+bpTextLength		DWORD 0
 bpTextNL			BYTE 0
 
 .DATA?
@@ -168,15 +169,16 @@ HorizontalAlign:BPEnum, VerticalAlign:BPEnum
 	mov strLength, 0
 	mov lines, 1
 	mov pcx, TextString
-	.WHILE (BYTE PTR [pcx])
-		mov al, BYTE PTR [pcx]
+	xor pdx, pdx
+	.WHILE (BYTE PTR [pcx+pdx]) && (!(bpTextLength) || (pdx < bpTextLength))
+		mov al, BYTE PTR [pcx+pdx]	; could be .repeat or smth idfk meh
 		.IF (al == bpTextNL)
 			inc lines
 		.ENDIF
 		.IF (lines == 1)
 			inc strLength
 		.ENDIF
-		inc pcx
+		inc pdx
 	.ENDW
 	
 	call glPushMatrix

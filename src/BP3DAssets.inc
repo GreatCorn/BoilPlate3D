@@ -141,6 +141,7 @@ bpAnimationFPS			REAL4 30.0		; Exported FPS for speed calculation
 bpAnimInterpolateSpeed	REAL4 1.0		; Linear interpolation factor
 bpTextureClamp			BPBool FALSE	; Enable texture wrap clamp on import
 bpTextureFiltering		BPBool FALSE	; Enable texture filtering on import
+bpTextureMipmaps		BPBool FALSE	; Enable mipmap generation and usage
 
 ; ----- IMPLEMENTATION -----
 .CODE
@@ -490,10 +491,20 @@ bpLoadBPT PROC EXPORT TexturePTR:BPPtr, FilePath:BPPtr
 	invoke glGenTextures, 1, ADDR texIndex
 	invoke glBindTexture, GL_TEXTURE_2D, texIndex
 	.IF (bpTextureFiltering)
-		invoke glTexParameteri, GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR
+		.IF (bpTextureMipmaps)
+			mov eax, GL_LINEAR_MIPMAP_LINEAR
+		.ELSE
+			mov eax, GL_LINEAR
+		.ENDIF
+		invoke glTexParameteri, GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, eax
 		invoke glTexParameteri, GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR
 	.ELSE
-		invoke glTexParameteri, GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST
+		.IF (bpTextureMipmaps)
+			mov eax, GL_NEAREST_MIPMAP_LINEAR
+		.ELSE
+			mov eax, GL_NEAREST
+		.ENDIF
+		invoke glTexParameteri, GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, eax
 		invoke glTexParameteri, GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST
 	.ENDIF
 	
@@ -544,12 +555,14 @@ bpLoadBPT PROC EXPORT TexturePTR:BPPtr, FilePath:BPPtr
 		.ENDIF
 		
 		; Fuck you x64
-		invoke gluBuild2DMipmaps, GL_TEXTURE_2D, eax, texW, texH, texFormat, \
-		texDataType, buffer
-		
-		push pax
-		invoke glGetError
-		pop pcx
+		.IF (bpTextureMipmaps)
+			invoke gluBuild2DMipmaps, GL_TEXTURE_2D, eax, texW, texH, \
+			texFormat, texDataType, buffer
+			
+			push pax
+			invoke glGetError
+			pop pcx
+		.ENDIF
 		.IF (eax || ecx)
 			invoke glTexImage2D, GL_TEXTURE_2D, 0, texFormat, texW, texH, 0, \
 			texFormat, texDataType, buffer
@@ -651,7 +664,7 @@ TextureType:BYTE, Buffer:BPPtr
 	.IF (TextureType == BPT_RGB5A1) || (TextureType == BPT_RGBA4)
 		shl eax, 2	; * 4
 		mov hasAlpha, TRUE
-	.ELSEIF
+	.ELSE
 		mov ecx, 3
 		mul ecx
 		mov hasAlpha, FALSE
@@ -781,8 +794,14 @@ TextureType:BYTE, Buffer:BPPtr
 		mov eax, GL_RGB
 		mov edx, 3
 	.ENDIF
-	invoke gluBuild2DMipmaps, GL_TEXTURE_2D, edx, TextureWidth, TextureHeight, \
-	eax, GL_UNSIGNED_BYTE, parsed
+	
+	.IF (bpTextureMipmaps)
+		invoke gluBuild2DMipmaps, GL_TEXTURE_2D, edx, TextureWidth, \
+		TextureHeight, eax, GL_UNSIGNED_BYTE, parsed
+	.ELSE
+		invoke glTexImage2D, GL_TEXTURE_2D, 0, edx, TextureWidth, \
+		TextureHeight, 0, eax, GL_UNSIGNED_BYTE, parsed
+	.ENDIF
 	
 	mov pax, Buffer
 	.IF (parsed != pax)

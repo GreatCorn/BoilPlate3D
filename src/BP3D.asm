@@ -1,6 +1,6 @@
 ;
 ;   BP3D.asm
-;   Version 0.8ac1
+;   Version 0.8ac2
 ;   BP3D (short for BoilPlate3D) framework main base unit.
 ;
 ;   Copyright (c) 2025-2026 Yevhenii Ionenko (aka GreatCorn).
@@ -97,15 +97,6 @@ ENDIF
 ;   P.S. If you're aiming for Windows 98SE and ME compatibility, compiling with
 ; UASM is not advised, as it somehow makes CRTDLL unable to start.
 
-IFDEF BP_TRACEABLE_HEAP		; Malloc macros for memory tracing
-	bpFree		TEXTEQU <bpFreeProc>
-	bpMalloc	TEXTEQU <bpMallocProc>
-	bpReAlloc	TEXTEQU <bpReAllocProc>
-ELSE
-	bpFree		TEXTEQU <HeapFree>
-	bpMalloc	TEXTEQU <HeapAlloc>
-	bpReAlloc	TEXTEQU <HeapReAlloc>
-ENDIF
 
 ; ----- TYPES -----
 ;   Cross-architecture compatibility is possible but very shitty to pull off and
@@ -172,12 +163,11 @@ BPForm STRUCT			; Windows form (window) structure
 	; seconds (default 0.01666666 s = 60 times/s).
 	OnFixed			BPPtr 0
 	
-	;   OnInput		PROC STDCALL BPInType:BPEnum, BPInStruct:BPPtr
+	;   OnInput		PROC STDCALL BPInStruct:BPPtr
 	;   Gets called whenever captured input gets sent to the form (see 
 	; InputFlags).
-	;   BPInType:BPEnum - a BP_INPUT_* constant that signifies the type of input
-	; sent to the callback function.
-	;   BPInStruct:BPPtr - pointer to a BPIn* struct corresponding to BPInType.
+	;   BPInStruct:BPPtr - pointer to a BPIn* struct corresponding to InType,
+	; located at its offset 0 as a BPEnum.
 	OnInput			BPPtr 0
 	
 	;   OnRender	PROC STDCALL
@@ -211,36 +201,41 @@ BPForm STRUCT			; Windows form (window) structure
 	WindowSize		POINT <CW_USEDEFAULT, CW_USEDEFAULT>
 BPForm ENDS
 
+BPInput STRUCT
+	InType		BPEnum ?	; Input type
+BPInput ENDS
+
 BPInJoyAxis STRUCT		; Joystick axis input structure
+	BPInput		<>
 	JoyNum		DWORD ?		; Joystick index
 	Axis		DWORD ?		; Axis index (BP_JOY_AXIS_*)
 	Position	REAL4 ?		; Axis position [-1.0 - 1.0]
 BPInJoyAxis ENDS
 
 BPInJoyButton STRUCT	; Joystick button input structure
+	BPInput		<>
 	JoyNum		DWORD ?		; Joystick index
 	Button		DWORD ?		; Button index
 	Pressed		BPBool ?	; Is the button pressed or released
 BPInJoyButton ENDS
 
 BPInKey STRUCT			; Keyboard input structure
+	BPInput		<>
 	Keycode		DWORD ?		; Virtual-key code
 	Pressed		BPBool ?	; Is the key pressed or released
 BPInKey ENDS
 
 BPInMouseButton STRUCT	; Mouse button input structure
+	BPInput		<>
 	Button		DWORD ?		; Mouse button (uses virtual-key constants)
 	Pressed		BPBool ?	; Is the button pressed or released
 BPInMouseButton ENDS
 
 BPInMouseMove STRUCT	; Mouse movement input structure
+	BPInput		<>
 	Position	POINT <?, ?>	; Absolute on-screen mouse cursor position
 	Relative	POINT <?, ?>	; Relative mouse movement
 BPInMouseMove ENDS
-
-BPInTouch STRUCT		; Touch input structure
-	Position	POINT <?, ?>
-BPInTouch ENDS
 
 BPJoystick STRUCT		; Joystick info abstraction structure (for bpJoysticks)
 	Active		BPBool 		FALSE
@@ -1354,12 +1349,13 @@ Position:REAL4
 	bpMEM32 bpInStruct.Axis, Axis
 	bpMEM32 bpInStruct.Position, pos
 	
+	mov bpInStruct.InType, BP_INPUT_JOY_AXIS
+	
 	ASSUME pcx:PTR BPForm
 	mov pcx, BPFormPtr
 	
 	lea pax, bpInStruct
 	push pax
-	push BP_INPUT_JOY_AXIS
 	call [pcx].OnInput
 	
 	ASSUME pcx:nothing
@@ -1384,12 +1380,13 @@ Pressed:BOOL
 	.ENDIF
 	mov bpInStruct.Pressed, al
 	
+	mov bpInStruct.InType, BP_INPUT_JOY_BUTTON
+	
 	ASSUME pcx:PTR BPForm
 	mov pcx, BPFormPtr
 	
 	lea pax, bpInStruct
 	push pax
-	push BP_INPUT_JOY_BUTTON
 	call [pcx].OnInput
 	
 	ASSUME pcx:nothing
@@ -1408,12 +1405,13 @@ bpInKey PROC EXPORT BPFormPtr:BPPtr, Keycode:WPARAM, Pressed:BOOL
 	mov eax, Pressed
 	mov bpInStruct.Pressed, al
 	
+	mov bpInStruct.InType, BP_INPUT_KEY
+	
 	ASSUME pcx:PTR BPForm
 	mov pcx, BPFormPtr
 	
 	lea pax, bpInStruct
 	push pax
-	push BP_INPUT_KEY
 	call [pcx].OnInput
 	
 	ASSUME pcx:nothing
@@ -1432,12 +1430,13 @@ bpInMouseButton PROC EXPORT BPFormPtr:BPPtr, Button:DWORD, Pressed:BPBool
 	mov al, Pressed
 	mov bpInStruct.Pressed, al
 	
+	mov bpInStruct.InType, BP_INPUT_MOUSE_BUTTON
+	
 	ASSUME pcx:PTR BPForm
 	mov pcx, BPFormPtr
 	
 	lea pax, bpInStruct
 	push pax
-	push BP_INPUT_MOUSE_BUTTON
 	call [pcx].OnInput
 	
 	ASSUME pcx:nothing
@@ -1462,12 +1461,13 @@ bpInMouseMove PROC BPFormPtr:BPPtr
 	sub eax, bpMouseClientPrev[4]
 	mov bpInStruct.Relative.y, eax
 	
+	mov bpInStruct.InType, BP_INPUT_MOUSE_MOVE
+	
 	bpMEM32 bpMouseClientPrev[0], bpMouseClient[0]
 	bpMEM32 bpMouseClientPrev[4], bpMouseClient[4]
 	
 	lea pax, bpInStruct
 	push pax
-	push BP_INPUT_MOUSE_MOVE
 	call [pcx].OnInput
 	
 	ASSUME pcx:nothing
@@ -1583,10 +1583,11 @@ bpInRaw PROC EXPORT BPFormPtr:BPPtr, RawHandle:LPARAM
 				bpMEM32 bpInMouseMoveStruct.Position.x, bpMouseClient
 				bpMEM32 bpInMouseMoveStruct.Position.y, bpMouseClient[4]
 				
+				mov bpInMouseMoveStruct.InType, BP_INPUT_MOUSE_MOVE
+				
 				mov pdx, BPFormPtr
 				lea pax, bpInMouseMoveStruct
 				push pax
-				push BP_INPUT_MOUSE_MOVE
 				call [pdx].OnInput
 				
 				mov pdx, BPFormPtr

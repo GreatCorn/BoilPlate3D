@@ -1,7 +1,7 @@
 ;
 ;   BP3DMaths.inc
-;   Version 0.8ac1
-;   BP3D common math (REAL4 (x87 FPU) & SDWORD) functions extension.
+;   Version 0.8ac2
+;   BP3D common math (REAL4 (x87 FPU / SSE) & SDWORD) functions extension.
 ;
 ;   Copyright (c) 2025-2026 Yevhenii Ionenko (aka GreatCorn
 ;   All rights reserved.
@@ -16,6 +16,24 @@ IFNDEF BP3D_TYPEDEF_INC
 ENDIF
 
 ; -----	INTERFACE -----
+;   Available compile-time symbolic macros to define (EQU) before including 
+; BP3DMaths, for additional or alternative functionality in the build:
+;
+;   BP_LERP_UNCLAMPED - Do not clamp T value when interpolating with lerp. May
+; result in overshoot or destabilization jitter behaviour on lower FPS.
+;
+;   BP_RAND_PARKMILLER - Use the Park-Miller pseudo-random number generation
+; algorithm. Is slower than the now default Mulberry32.
+;
+;   BP_RAND_XOROSHIRO32 - Use the Xoroshiro32 pseudo-random number generation
+; algorithm. Is faster then the now default Mulberry32, but implemented poorly
+; due to backwards-compatibility and may often produce repetitive patterns.
+;
+;   BP_USE_SSE - Use SSE for floating point calculations instead of x87 FPU.
+; This feature isn't enabled by default if .xmm is specified in the main header
+; because it's still WIP and MASM doesn't like SSE very much, producing crashes
+; in seemingly random places (that's what you get when you shove a newer
+; instruction set into an ancient dumbfuck assembler).
 
 ; ----- CONSTANTS -----
 ; FPU control word interrupt mask field flags
@@ -98,7 +116,7 @@ nRandLocal 		PROTO :DWORD, :BPPtr
 nRandomize 		PROTO
 
 ;   Immediate REAL4 to reusable data field (format fl+int+n+frac(+N)).
-f MACRO val
+f MACRO val:REQ
 	LOCAL min,dot,num,frac,sym,txt
 	min INSTR <val>,<->	
 	dot INSTR <val>,<.>
@@ -134,6 +152,29 @@ ENDM
 ; empty, compare against 0. 'Inspired' by jj2007's macro.
 fcmp MACRO cmp1:REQ, cmp2
 	; Load compare arguments
+	IFDEF BP_USE_SSE
+	IF ((OPATTR (cmp1)) and 34) EQ 34
+		movss XMM0, cmp1	; First arg is a mem real
+	ELSEIF (OPATTR (cmp1)) and 16
+		movd XMM0, cmp1		; First arg is a register
+	ELSE
+		mov eax, cmp1		; First arg is an imm val
+		movd XMM0, cmp1
+	ENDIF
+	IFB <cmp2>
+		xorps XMM1, XMM1	; Second arg is 0
+	ELSE
+		IF ((OPATTR (cmp2)) and 34) EQ 34
+			movss XMM1, cmp2	; Second arg is a mem real
+		ELSEIF (OPATTR (cmp2)) and 16
+			movd XMM1, cmp2		; Second arg is a register
+		ELSE
+			mov eax, cmp2		; Second arg is an imm val
+			movd XMM1, cmp2
+		ENDIF
+	ENDIF
+	ucomiss XMM0, XMM1
+	ELSE
 	IFB <cmp2>
 		fldz	; No second arg, compare against 0
 	ELSE
@@ -169,6 +210,7 @@ fcmp MACRO cmp1:REQ, cmp2
 	ELSE
 		;ffree st(7)
 		call fcmpP
+	ENDIF
 	ENDIF
 ENDM
 
@@ -234,15 +276,27 @@ flAsin ENDP
 flAngle PROC EXPORT Val:REAL4
 	fcmp Val, PI
 	.IF (!Carry?)	; Val > PI
+		IFDEF BP_USE_SSE
+		movss XMM0, Val
+		subss XMM0, PI2
+		movss Val, XMM0
+		ELSE
 		fld Val
 		fsub PI2
 		fstp Val
+		ENDIF
 	.ENDIF
 	fcmp Val, PIN
 	.IF (Carry?)	; Val < -PI
+		IFDEF BP_USE_SSE
+		movss XMM0, Val
+		addss XMM0, PI2
+		movss Val, XMM0
+		ELSE
 		fld Val
 		fadd PI2
 		fstp Val
+		ENDIF
 	.ENDIF
 	
 	mov eax, Val
@@ -256,13 +310,11 @@ flAngle ENDP
 flClamp PROC EXPORT Val:REAL4, Min:REAL4, Max:REAL4
 	fcmp Val, Max
 	.IF (!Carry?)		; X > X1
-		fld Max
-		fstp Val
+		bpMEM32 Val, Max
 	.ELSE
 		fcmp Val, Min
 		.IF (Carry?)	; X < X1
-			fld Min
-			fstp Val
+			bpMEM32 Val, Min
 		.ENDIF
 	.ENDIF
 	
@@ -274,22 +326,36 @@ flClamp ENDP
 ;   From:REAL4 - the first point, to calculate the distance from.
 ;   To:REAL4 - the second point, to calculate the distance to.
 flDistance PROC EXPORT From:REAL4, To:REAL4
+	IFDEF BP_USE_SSE
+	movss XMM0, From
+	subss XMM0, To
+	movd eax, XMM0
+	and eax, not FLT_NEG
+	ELSE
 	fld From
 	fsub To
 	fabs
 	fstp From
 	mov eax, From
+	ENDIF
 	ret
 flDistance ENDP
 
 ;   Separate the fractional part of a value and return in eax.
 ;   Val:REAL4 - value to take the fractional part from.
 flFrac PROC EXPORT Val:REAL4
+	IFDEF BP_USE_SSE
+	movss XMM0, Val
+	cvttss2si eax, XMM0
+	cvtsi2ss XMM1, eax
+	subss XMM0, XMM1
+	movd eax, XMM0
+	ELSE
 	LOCAL cw:WORD
 	
 	fnstcw cw
 	push cw
-	or cw, FPU_ROUND_FLOOR
+	or cw, FPU_ROUND_TRUNC
 	fldcw cw
 	
 	fld Val
@@ -302,6 +368,7 @@ flFrac PROC EXPORT Val:REAL4
 	fldcw cw
 	
 	mov eax, Val
+	ENDIF
 	ret
 flFrac ENDP
 
@@ -336,6 +403,13 @@ flLerp PROC EXPORT A:REAL4, B:REAL4, T:REAL4
 		.ENDIF
 	ENDIF
 	
+	IFDEF BP_USE_SSE
+	movss XMM0, B
+	subss XMM0, A
+	mulss XMM0, T
+	addss XMM0, A
+	movd eax, XMM0	
+	ELSE
 	fld B
 	fsub A
 	fmul T
@@ -343,6 +417,7 @@ flLerp PROC EXPORT A:REAL4, B:REAL4, T:REAL4
 	fstp A
 	
 	mov eax, A
+	ENDIF
 	ret
 flLerp ENDP
 
@@ -361,6 +436,16 @@ flLerpAngle PROC EXPORT A:REAL4, B:REAL4, T:REAL4
 		.ENDIF
 	ENDIF
 	
+	IFDEF BP_USE_SSE
+	movss XMM0, B
+	subss XMM0, A
+	movd eax, XMM0
+	invoke flAngle, eax
+	movd XMM0, eax
+	mulss XMM0, T
+	addss XMM0, A
+	movd eax, XMM0
+	ELSE	
 	fld B
 	fsub A
 	fstp _Ang
@@ -372,6 +457,7 @@ flLerpAngle PROC EXPORT A:REAL4, B:REAL4, T:REAL4
 	fstp A
 	
 	mov eax, A
+	ENDIF
 	ret
 flLerpAngle ENDP
 
@@ -414,7 +500,17 @@ flMove PROC EXPORT From:REAL4, To:REAL4, T:REAL4
 		mov eax, To
 		ret
 	.ENDIF
-
+	
+	IFDEF BP_USE_SSE
+	movss XMM0, To
+	subss XMM0, From
+	movd eax, XMM0
+	invoke flSign, eax
+	movd XMM0, eax
+	mulss XMM0, T
+	addss XMM0, From
+	movd eax, XMM0
+	ELSE
 	fld To
 	fsub From
 	fstp Dist
@@ -426,11 +522,18 @@ flMove PROC EXPORT From:REAL4, To:REAL4, T:REAL4
 	fstp Dist
 	
 	mov eax, Dist
+	ENDIF
 	ret
 flMove ENDP
 
 ;   Returns a random REAL4 in range [0.0 - 1.0] (thousandth precision) in eax.
 flRand PROC EXPORT
+	IFDEF BP_USE_SSE
+	invoke nRand, 1000
+	cvtsi2ss XMM0, eax
+	mulss XMM0, f(0.001)
+	movd eax, XMM0
+	ELSE
 	LOCAL _Val:REAL4
 	
 	invoke nRand, 1000
@@ -439,6 +542,7 @@ flRand PROC EXPORT
 	fmul f(0.001)
 	fstp _Val
 	mov eax, _Val
+	ENDIF
 	ret
 flRand ENDP
 
@@ -446,6 +550,16 @@ flRand ENDP
 ;   Min:REAL4 - minimum random range value.
 ;   Max:REAL4 - maximum random range value.
 flRandRange PROC EXPORT Min:REAL4, Max:REAL4
+	IFDEF BP_USE_SSE
+	invoke nRand, 1000
+	movss XMM0, Max
+	subss XMM0, Min
+	cvtsi2ss XMM1, eax
+	mulss XMM0, f(0.001)
+	mulss XMM0, XMM1
+	addss XMM0, Min
+	movd eax, XMM0
+	ELSE
 	LOCAL _Val:REAL4
 	
 	invoke nRand, 1000
@@ -458,6 +572,7 @@ flRandRange PROC EXPORT Min:REAL4, Max:REAL4
 	fadd Min
 	fstp _Val
 	mov eax, _Val
+	ENDIF
 	ret
 flRandRange ENDP
 
@@ -465,10 +580,21 @@ flRandRange ENDP
 ;   Val:REAL4 - value to be repeated.
 ;   Max:REAL4 - maximum range value.
 flRepeat PROC EXPORT Val:REAL4, Max:REAL4
+	IFDEF BP_USE_SSE
+	movss XMM0, Val
+	divss XMM0, Max
+	cvttss2si eax, XMM0
+	cvtsi2ss XMM1, eax
+	movss XMM0, Val
+	subss XMM0, XMM1
+	mulss XMM0, Max
+	movd eax, XMM0
+	invoke flClamp, eax, 0, Max
+	ELSE
 	LOCAL cw:WORD
 	fnstcw cw
 	push cw
-	or cw, FPU_ROUND_FLOOR
+	or cw, FPU_ROUND_TRUNC
 	fldcw cw
 	
 	fld Val
@@ -482,6 +608,7 @@ flRepeat PROC EXPORT Val:REAL4, Max:REAL4
 	fldcw cw
 	
 	invoke flClamp, Val, 0, Max
+	ENDIF
 	ret
 flRepeat ENDP
 

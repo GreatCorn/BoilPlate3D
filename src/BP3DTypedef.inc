@@ -70,6 +70,16 @@ BP_FPU_8087			EQU 0001 shl 8
 BP_FPU_287			EQU 0100 shl 8	; Bit 9 is skipped
 BP_FPU_387			EQU 1000 shl 8
 
+IFDEF BP_TRACEABLE_HEAP		; Malloc macros for memory tracing
+	bpFree		TEXTEQU <bpFreeProc>
+	bpMalloc	TEXTEQU <bpMallocProc>
+	bpReAlloc	TEXTEQU <bpReAllocProc>
+ELSE
+	bpFree		TEXTEQU <HeapFree>
+	bpMalloc	TEXTEQU <HeapAlloc>
+	bpReAlloc	TEXTEQU <HeapReAlloc>
+ENDIF
+
 ELSE
 	ECHO BP3D: Duplicate include file BP3DTypedef.inc
 ENDIF

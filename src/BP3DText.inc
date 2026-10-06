@@ -23,7 +23,7 @@ bpDefaultFont	DWORD 256 dup (0)
 
 bpFontWidth			REAL4 8.0
 bpFontHeight		REAL4 16.0
-bpFontSpacing		REAL4 1.15
+bpFontSpacing		REAL4 1.15, 1.2
 bpFontQuad			DWORD 0
 bpTextLength		DWORD 0
 bpTextNL			BYTE 0
@@ -190,7 +190,7 @@ HorizontalAlign:BPEnum, VerticalAlign:BPEnum
 	invoke glScalef, bpFontWidth, bpFontHeight, 1065353216	; 1.0
 	.IF (HorizontalAlign)
 		fild strLength
-		fmul bpFontSpacing
+		fmul bpFontSpacing[0]
 		.IF (HorizontalAlign == BP_ALIGN_CENTER)
 			push 1056964608	; 0.5
 			fmul REAL4 PTR [psp]
@@ -239,7 +239,7 @@ HorizontalAlign:BPEnum, VerticalAlign:BPEnum
 	
 	.IF (lines > 1)
 		fld bpFontHeight
-		fmul bpFontSpacing
+		fmul bpFontSpacing[4]
 		fiadd Y
 		.IF (VerticalAlign)
 			fld pos[4]

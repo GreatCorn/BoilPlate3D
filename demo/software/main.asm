@@ -13,6 +13,8 @@
 .model flat, stdcall
 option casemap:none
 
+BP_PAINT_LOOP	EQU <1>
+
 include ..\..\src\BP3D.asm
 include ..\..\src\BP3DMaths.inc
 include ..\..\src\BP3DVectors.inc
@@ -132,19 +134,6 @@ OnFixed PROC EXPORT
 	ret
 OnFixed ENDP
 
-OnInput PROC EXPORT BPInType:BYTE, BPInStruct:BPPtr
-	mov pbx, BPInStruct
-	.IF (BPInType == BP_INPUT_MOUSE_MOVE)
-		ASSUME pbx:PTR BPInMouseMove
-		
-	.ELSEIF (BPInType == BP_INPUT_KEY) || (BPInType == BP_INPUT_MOUSE_BUTTON)
-		ASSUME pbx:PTR BPInKey
-		
-	.ENDIF
-	ASSUME pbx:nothing
-	ret
-OnInput ENDP
-
 OnRender PROC EXPORT
 	LOCAL ps:PAINTSTRUCT, hdc:HDC, penOld:HPEN, pen:HPEN, rect:RECT, shCol:DWORD
 	
@@ -210,7 +199,6 @@ OnRender ENDP
 start:
 	mov FMain.OnCreate, OFFSET OnCreate
 	mov FMain.OnFixed, OFFSET OnFixed
-	mov FMain.OnInput, OFFSET OnInput
 	mov FMain.OnRender, OFFSET OnRender
 	mov FMain.WindowSize.x, 800
 	mov FMain.WindowSize.y, 600

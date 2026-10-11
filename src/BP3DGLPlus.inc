@@ -1,7 +1,9 @@
 ;
 ;   BP3DGLPlus.inc
-;   Version 0.5ac1
-;   BP3D logical helper function additions to the OpenGL & GLU APIs extension.
+;   Version 0.6
+;   BP3D helper function additions to the OpenGL & GLU APIs extension.
+;   Fundamentally built around the stdcall calling convention, but contains
+; nonetheless useful data.
 ;
 ;   Copyright (c) 2025-2026 Yevhenii Ionenko (aka GreatCorn).
 ;   All rights reserved.
@@ -20,10 +22,6 @@ ELSEIFNDEF BP_CUSTOM_INCLUDES
 	include include\glu32.inc
 	includelib glu32.lib
 ENDIF
-ENDIF
-
-IFDEF rax
-	ECHO BP3D: WARNING! BP3DGLPlus.inc now only supports stdcall and is untested on x64.
 ENDIF
 
 GL_CLAMP_TO_EDGE			EQU 33071
@@ -46,43 +44,27 @@ clRed		REAL4	1.0,  0.0,  0.0,  1.0
 clYellow	REAL4	1.0,  1.0,  0.0,  1.0
 clWhite		REAL4	1.0,  1.0,  1.0,  1.0
 
-clHalf		REAL4	1.0,  1.0,  1.0,  0.5		; Alpha colors
+clHalf			REAL4	1.0,  1.0,  1.0,  0.5		; Alpha colors
+clTransparent	REAL4	1.0,  1.0,  1.0,  0.0
 
 .DATA?
-IFNDEF BP_MULTITHREADED_CONTEXT
-	bp3DDbl REAL8 ?
-ENDIF
 
 .CODE
 
 ;   Push Float as Double macro. Converts a float (single-precision/REAL4) value
-; to a double-precision floating point value (REAL8) and pushes onto the stack,
-; splitting it into two, if the stack is 32-bit.
+; to a double-precision floating point value (REAL8) and pushes onto the stack.
 pfad MACRO Single:REQ
 	fld Single
-	fstp bp3DDbl
-	
-	IFDEF rax
-		push bp3DDbl
-	ELSE
-		push DWORD PTR bp3DDbl+4
-		push DWORD PTR bp3DDbl
-	ENDIF
+	sub psp, 8
+	fstp REAL8 PTR [psp]
 ENDM
 
 ;   Push Integer as Double macro. Converts an integer (SDWORD) value to a 
-; double-precision floating point value (REAL8) and pushes onto the stack, 
-; splitting it into two, if the stack is 32-bit.
+; double-precision floating point value (REAL8) and pushes onto the stack.
 piad MACRO Integer:REQ
 	fild Integer
-	fstp bp3DDbl
-	
-	IFDEF rax
-		push bp3DDbl
-	ELSE
-		push DWORD PTR bp3DDbl+4
-		push DWORD PTR bp3DDbl
-	ENDIF
+	sub psp, 8
+	fstp REAL8 PTR [psp]
 ENDM
 
 glClearColor3fv PROC EXPORT v:BPPtr

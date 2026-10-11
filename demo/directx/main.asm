@@ -148,9 +148,10 @@ OnDestroy PROC EXPORT
 	ret
 OnDestroy ENDP
 
-OnInput PROC EXPORT BPInType:BPEnum, BPInStruct:BPPtr	
+OnInput PROC EXPORT BPInStruct:BPPtr	
+	ASSUME pbx:PTR BPInput
 	mov pbx, BPInStruct
-	.IF (BPInType == BP_INPUT_KEY)
+	.IF ([pbx].InType == BP_INPUT_KEY)
 		ASSUME pbx:PTR BPInKey
 		
 		.IF ([pbx].Pressed)

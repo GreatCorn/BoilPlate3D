@@ -1,6 +1,6 @@
 ;
 ;   BP3DTypedef.inc
-;   Version 0.8ac1
+;   Version 0.8bc1
 ;   BP3D generic types (for parity between BP3D and independently imported 
 ; modules).
 ;
@@ -41,7 +41,7 @@ BPBool	TYPEDEF BYTE		; Boolean type
 BPEnum	TYPEDEF BYTE		; Enumerator type
 BPPtr	TYPEDEF PTR			; Pointer type
 
-IFDEF BP_DOUBLE_PRECISION	; Floating-point type
+IFDEF BP_DOUBLE_PRECISION	; Floating-point type (unused)
 	BPFloat	TYPEDEF REAL8
 ELSE
 	BPFloat	TYPEDEF REAL4
@@ -70,7 +70,9 @@ BP_FPU_8087			EQU 0001 shl 8
 BP_FPU_287			EQU 0100 shl 8	; Bit 9 is skipped
 BP_FPU_387			EQU 1000 shl 8
 
-IFDEF BP_TRACEABLE_HEAP		; Malloc macros for memory tracing
+;   Malloc macros for memory tracing, requires main BP3D, here only for symbolic
+; equivalence.
+IFDEF BP_TRACEABLE_HEAP
 	bpFree		TEXTEQU <bpFreeProc>
 	bpMalloc	TEXTEQU <bpMallocProc>
 	bpReAlloc	TEXTEQU <bpReAllocProc>

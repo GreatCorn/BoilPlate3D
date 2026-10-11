@@ -353,9 +353,10 @@ OnCreate PROC EXPORT
 	ret
 OnCreate ENDP
 
-OnInput PROC EXPORT BPInType:BPEnum, BPInStruct:BPPtr	
+OnInput PROC EXPORT BPInStruct:BPPtr	
+	ASSUME pbx:PTR BPInput
 	mov pbx, BPInStruct
-	.IF (BPInType == BP_INPUT_MOUSE_BUTTON)
+	.IF ([pbx].InType == BP_INPUT_MOUSE_BUTTON)
 		ASSUME pbx:PTR BPInMouseButton
 		
 		.IF ([pbx].Pressed)
@@ -363,7 +364,7 @@ OnInput PROC EXPORT BPInType:BPEnum, BPInStruct:BPPtr
 		.ELSE
 			mov Dragging, FALSE
 		.ENDIF
-	.ELSEIF (BPInType == BP_INPUT_MOUSE_MOVE)
+	.ELSEIF ([pbx].InType == BP_INPUT_MOUSE_MOVE)
 		fild bpMouseClient
 		fild FMain.ScreenSize.x
 		fmul f(0.5)
@@ -377,7 +378,7 @@ OnInput PROC EXPORT BPInType:BPEnum, BPInStruct:BPPtr
 		fsub f(1.0)
 		fchs
 		fstp MPos.Y
-	.ELSEIF (BPInType == BP_INPUT_JOY_AXIS)
+	.ELSEIF ([pbx].InType == BP_INPUT_JOY_AXIS)
 		ASSUME pbx:PTR BPInJoyAxis
 	
 		.IF ([pbx].Axis == BP_JOY_AXIS_X)
@@ -385,7 +386,7 @@ OnInput PROC EXPORT BPInType:BPEnum, BPInStruct:BPPtr
 		.ELSEIF ([pbx].Axis == BP_JOY_AXIS_Y)
 			bpMEM32 MPos.Y, [pbx].Position
 		.ENDIF
-	.ELSEIF (BPInType == BP_INPUT_KEY)
+	.ELSEIF ([pbx].InType == BP_INPUT_KEY)
 		ASSUME pbx:PTR BPInKey
 		
 		.IF ([pbx].Pressed)

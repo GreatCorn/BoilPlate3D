@@ -1,8 +1,10 @@
 ;
 ;   BP3DAssets.inc
-;   Version 0.5ac1
+;   Version 0.5
 ;   BP3D raw asset format importers (animations, GL lists, dynamic meshes, 
 ; textures) extension.
+;   May be considered deprecated, as it exists almost solely for demos and
+; personal projects and uses its own asset types.
 ;
 ;   Copyright (c) 2025-2026 Yevhenii Ionenko (aka GreatCorn).
 ;   All rights reserved.
@@ -134,11 +136,13 @@ BPT_RGB332	EQU 5	; (R3, G3, B2)		8-bit
 BPT_L8		EQU 6	; (L8)				8-bit (monochrome, luminance)
 
 .CONST
+bpAssetNotFoundStr		DB " not found!", 0
 
 ; ----- DATA FIELDS -----
 .DATA
 bpAnimationFPS			REAL4 30.0		; Exported FPS for speed calculation
 bpAnimInterpolateSpeed	REAL4 1.0		; Linear interpolation factor
+bpErrorNotFound			BPBool FALSE	; Error out on file not found
 bpTextureClamp			BPBool FALSE	; Enable texture wrap clamp on import
 bpTextureFiltering		BPBool FALSE	; Enable texture filtering on import
 bpTextureMipmaps		BPBool FALSE	; Enable mipmap generation and usage
@@ -150,13 +154,7 @@ bpTexImage2D PROTO :DWORD, :DWORD, :BYTE, :BPPtr
 
 bpCheckFileInvalid MACRO
 	.IF (pax == INVALID_HANDLE_VALUE)
-		IFDEF BP_IMPORTERS_VERBOSE
-		IFDEF print
-			print "File "
-			print FilePath
-			print " not found!", 13, 10
-		ENDIF
-		ENDIF
+		invoke bpErrorInvalidFile, FilePath
 		xor pax, pax
 		ret
 	.ENDIF
@@ -274,6 +272,37 @@ bpDrawNormals PROC EXPORT BPMeshPtr:BPPtr
 	
 	ret
 bpDrawNormals ENDP
+
+bpErrorInvalidFile PROC EXPORT FilePath:BPPtr
+	LOCAL strL:BPPtr, strPtr:BPPtr
+	IFDEF BP_IMPORTERS_VERBOSE
+	IFDEF print
+		print "File "
+		print FilePath
+		print " not found!", 13, 10
+	ENDIF
+	ENDIF
+	
+	.IF (bpErrorNotFound)
+		mov pax, FilePath
+		.WHILE (BYTE PTR [pax])
+			inc pax
+		.ENDW
+		sub pax, FilePath
+		mov strL, pax
+		add pax, SIZEOF bpAssetNotFoundStr
+		mov strPtr, bpR(bpMalloc, bpDefHeap, 0, pax)
+		invoke RtlMoveMemory, strPtr, FilePath, strL
+		mov pax, strPtr
+		add pax, strL
+		invoke RtlMoveMemory, pax, ADDR bpAssetNotFoundStr, \
+		SIZEOF bpAssetNotFoundStr
+		
+		invoke bpError, strPtr, 0
+		invoke bpFree, bpDefHeap, 0, strPtr
+	.ENDIF
+	ret
+bpErrorInvalidFile ENDP
 
 bpFreeBPA PROC EXPORT BPAnimPTR:BPPtr
 	ASSUME pax:PTR BPAnimTrack
@@ -560,16 +589,21 @@ bpLoadBPT PROC EXPORT TexturePTR:BPPtr, FilePath:BPPtr
 			texFormat, texDataType, buffer
 			
 			push pax
-			invoke glGetError
+			call glGetError
 			pop pcx
 		.ENDIF
 		.IF (eax || ecx)
-			invoke glTexImage2D, GL_TEXTURE_2D, 0, texFormat, texW, texH, 0, \
-			texFormat, texDataType, buffer
-			call glGetError
-			.IF (eax)
-				; Fine, I'll do it myself
+			.IF (bpTextureMipmaps)
+				; Failed to generate mipmaps, do manual parsing
 				invoke bpTexImage2D, texW, texH, texType, buffer
+			.ELSE
+				invoke glTexImage2D, GL_TEXTURE_2D, 0, texFormat, texW, texH, \
+				0, texFormat, texDataType, buffer
+				call glGetError
+				
+				.IF (eax)
+					invoke bpTexImage2D, texW, texH, texType, buffer
+				.ENDIF
 			.ENDIF
 		.ENDIF
 	ENDIF

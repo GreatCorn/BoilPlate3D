@@ -2,6 +2,9 @@
 ;   BP3DVectors.inc
 ;   Version 0.8ac1
 ;   BP3D common vector (2D, 3D, 4D) functions extension.
+;   Is available for independed importing without main BP3D. Importing after
+; BP3DMaths provides extended functionality in: ClampLength, LerpAngle, Euler, 
+; Move.
 ;
 ;   Copyright (c) 2025-2026 Yevhenii Ionenko (aka GreatCorn).
 ;   All rights reserved.
@@ -622,10 +625,10 @@ Vector3Angle PROC EXPORT From:BPPtr, To:BPPtr, Angle:BPPtr
 	fpatan
 	fstp REAL4 PTR [pdx+4]
 	
-	fld REAL4 PTR [pcx+4]	; ????????
-	fsub REAL4 PTR [pax+4]
-	fchs
-	fld d2d.X
+	fld REAL4 PTR [pax+4]	; delta height
+	fsub REAL4 PTR [pcx+4]
+	;fchs
+	fld d2d.X				; distance
 	fmul st, st
 	fld d2d.Y
 	fmul st, st

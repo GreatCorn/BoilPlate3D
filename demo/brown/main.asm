@@ -245,10 +245,11 @@ OnCreate PROC EXPORT
 	ret
 OnCreate ENDP
 
-OnInput PROC EXPORT BPInType:BYTE, BPInStruct:BPPtr
-	.IF (BPInType == BP_INPUT_KEY)
+OnInput PROC EXPORT BPInStruct:BPPtr
+	ASSUME pbx:PTR BPInput
+	mov pbx, BPInStruct
+	.IF ([pbx].InType == BP_INPUT_KEY)
 		ASSUME pbx:PTR BPInKey
-		mov pbx, BPInStruct
 		.IF ([pbx].Pressed)
 			.IF ([pbx].Keycode == VK_SPACE)
 				mov Particles, TRUE

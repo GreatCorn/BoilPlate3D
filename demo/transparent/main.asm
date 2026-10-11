@@ -66,12 +66,10 @@ OnCreate PROC EXPORT
 	ret
 OnCreate ENDP
 
-OnInput PROC EXPORT BPInType:BYTE, BPInStruct:BPPtr
+OnInput PROC EXPORT BPInStruct:BPPtr
+	ASSUME pbx:PTR BPInput
 	mov pbx, BPInStruct
-	.IF (BPInType == BP_INPUT_MOUSE_MOVE)
-		ASSUME pbx:PTR BPInMouseMove
-		
-	.ELSEIF (BPInType == BP_INPUT_KEY) || (BPInType == BP_INPUT_MOUSE_BUTTON)
+	.IF ([pbx].InType == BP_INPUT_KEY)||([pbx].InType == BP_INPUT_MOUSE_BUTTON)
 		ASSUME pbx:PTR BPInKey
 		.IF ([pbx].Pressed)
 			.IF ([pbx].Keycode == VK_LBUTTON)

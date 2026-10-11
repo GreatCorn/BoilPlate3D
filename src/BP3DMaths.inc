@@ -2,6 +2,7 @@
 ;   BP3DMaths.inc
 ;   Version 0.8ac2
 ;   BP3D common math (REAL4 (x87 FPU / SSE) & SDWORD) functions extension.
+;   Is available for independed importing without main BP3D.
 ;
 ;   Copyright (c) 2025-2026 Yevhenii Ionenko (aka GreatCorn
 ;   All rights reserved.
@@ -242,6 +243,7 @@ flAbs ENDP
 ;   Calculate arccosine of Val.
 ;   Val:REAL4 - angle to find the arccosine of.
 flAcos PROC EXPORT Val:REAL4
+	;   TODO - SSE, requires implementing atan2
 	fld Val
 	fld1
 	fld st(1)
@@ -258,6 +260,7 @@ flAcos ENDP
 ;   Calculate arcsine of Val.
 ;   Val:REAL4 - angle to find the arcsine of.
 flAsin PROC EXPORT Val:REAL4
+	;   TODO - SSE, same as acos
 	fld Val
 	fld1
 	fld st(1)

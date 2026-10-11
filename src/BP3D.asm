@@ -1,6 +1,6 @@
 ;
 ;   BP3D.asm
-;   Version 0.8ac2
+;   Version 0.8bc1
 ;   BP3D (short for BoilPlate3D) framework main base unit.
 ;
 ;   Copyright (c) 2025-2026 Yevhenii Ionenko (aka GreatCorn).
@@ -66,6 +66,9 @@ ENDIF
 ;
 ;   BP_FIXED_BUSY - busy higher-precision OnFixed thread that uses 100% CPU.
 ;
+;   BP_PAINT_LOOP - restores the pre-v0.8bc1 main (render) loop position in the
+; unanswered WM_PAINT messages that the OS would keep sending to the form.
+;
 ;   BP_STATIC_LINK_XP - force static-linking of dynamically loaded procedures
 ; that start from XP by referencing them directly. Unsupported APIs that are
 ; used: GetRawInput*.
@@ -99,21 +102,21 @@ ENDIF
 
 
 ; ----- TYPES -----
-;   Cross-architecture compatibility is possible but very shitty to pull off and
-; may quickly become a terrible mess. For now I couldn't get JWlink to recognize
-; the LIB files and ML64 is unusable with any kind of headers I threw at it. The
-; attempted switch to support 64-bit Assembly made the code even more of a mess
-; without register role standardization and bloated invokes here and there. Even
-; so, there are some cases where STDCALL is used explicitly (BPForm.OnInput) and
-; I get a head-splitting headache whenever I just try to decipher how exactly
-; the x64 calling convention would work. 
+;   Cross-architecture compatibility is possible in theory but very shitty to
+; pull off in practice and will quickly become a terrible mess. I couldn't get
+; JWlink to recognize the LIB files and ML64 is unusable with any kind of
+; headers I threw at it. The attempted switch to support 64-bit Assembly made
+; the code even more of a mess without register role standardization and bloated
+; invokes here and there. Even so, there are some cases where STDCALL is used
+; explicitly (BPForm.OnInput) and I get a head-splitting headache whenever I
+; just try to decipher how exactly the x64 calling convention would work. 
 ;   P.S. FFS just use 32-bit as long as 32-bit binaries are supported on 64-bit
 ; systems.
 ;   P.P.S. The x64 calling convention was made by the devil himself.
 IFDEF rax
 	BP_64 EQU <1>
 	ECHO BP3D: Compiling in 64-bit mode.
-	ECHO BP3D: WARNING! BP3D is compileable, but untested on x64.
+	ECHO BP3D: WARNING! 64-bit support is now on hold with no definite plans to resume it.
 ELSE
 	ECHO BP3D: Compiling in 32-bit mode.
 ENDIF
@@ -124,13 +127,13 @@ IFNDEF BP3D_TYPEDEF_INC
 ENDIF
 
 BPDisplayDevice STRUCT	; Display device (monitor) structure
-	Active		BPBool FALSE
-	DPI			DWORD ?
-	Orientation	BPEnum ?
-	RefreshRate	DWORD ?
-	ScreenPos	POINT <?, ?>
-	ScreenSize	POINT <?, ?>
-	RawName		BYTE 32 dup (?)
+	Active		BPBool FALSE	; Is the device available
+	DPI			DWORD ?			; The DPI value (if available)
+	Orientation	BPEnum ?		; A value of BP_ORIENTATION_*
+	RefreshRate	DWORD ?			; Refresh rate, in Hz
+	ScreenPos	POINT <?, ?>	; Desktop-relative screen position
+	ScreenSize	POINT <?, ?>	; Screen size in pixels
+	RawName		BYTE 32 dup (?)	; Raw device name
 BPDisplayDevice ENDS
 
 BPForm STRUCT			; Windows form (window) structure
@@ -149,7 +152,8 @@ BPForm STRUCT			; Windows form (window) structure
 	
 	WndProc			BPPtr OFFSET bpDefWndProc	; WndProc procedure offset
 	
-	; Event procedures
+	;   Event procedures
+	
 	;   OnCreate	PROC STDCALL
 	;   Gets called after the form has just been created (bpCreateForm).
 	OnCreate		BPPtr 0
@@ -195,13 +199,15 @@ BPForm STRUCT			; Windows form (window) structure
 	WindowMode		BPEnum BP_WINDOW_MODE_WINDOWED	; Set with bpSetWindowMode
 	
 	ScreenCnt		POINT <0, 0>					; Global screen center
+	; Displayed content values
 	ScreenPos		POINT <CW_USEDEFAULT, CW_USEDEFAULT>
 	ScreenSize		POINT <CW_USEDEFAULT, CW_USEDEFAULT>
+	; Window values (including border)
 	WindowPos		POINT <CW_USEDEFAULT, CW_USEDEFAULT>
 	WindowSize		POINT <CW_USEDEFAULT, CW_USEDEFAULT>
 BPForm ENDS
 
-BPInput STRUCT
+BPInput STRUCT			; Base input structure for transparent inheritance
 	InType		BPEnum ?	; Input type
 BPInput ENDS
 
@@ -553,7 +559,7 @@ BP_IF_RAW_MOUSE		EQU 1	; Register and use raw mouse input instead of cursor
 BP_IF_JOYSTICK		EQU 2	; Register and use joystick input (BP_INPUT_JOY_*)
 BP_IF_RAW_JOYSTICK	EQU 4	; Register and use raw joystick input
 
-; Input type constants (BPForm.OnInput)
+;   Input type constants (BPForm.OnInput)
 BP_INPUT_JOY_AXIS		EQU 0	; Input structure is BPInJoyAxis
 BP_INPUT_JOY_BUTTON		EQU 1	; Input structure is BPInJoyButton
 BP_INPUT_KEY			EQU 2	; Input structure is BPInKey
@@ -561,7 +567,7 @@ BP_INPUT_MOUSE_BUTTON	EQU 3	; Input structure is BPInMouseButton
 BP_INPUT_MOUSE_MOVE		EQU 4	; Input structure is BPInMouseMove
 BP_INPUT_TOUCH			EQU 5	; Input structure is BPInTouch
 
-; Joystick axes (BPInJoyAxis)
+;   Joystick axes (BPInJoyAxis)
 BP_JOY_AXIS_X	EQU 0	; (left stick horizontal)
 BP_JOY_AXIS_Y	EQU 1	; (left stick vertical)
 BP_JOY_AXIS_Z	EQU 2	; (right stick horizontal or analog shoulders)
@@ -569,13 +575,13 @@ BP_JOY_AXIS_R	EQU 3	; (right stick vertical)
 BP_JOY_AXIS_U	EQU 4	; (right stick horizontal)
 BP_JOY_AXIS_V	EQU 5	; (right stick vertical raw?)
 
-; Joystick D-pad (returned in BP_INPUT_JOY_BUTTON)
+;   Joystick D-pad (returned in BP_INPUT_JOY_BUTTON)
 BP_JOY_DPAD_UP		EQU 32
 BP_JOY_DPAD_RIGHT	EQU 33
 BP_JOY_DPAD_DOWN	EQU 34
 BP_JOY_DPAD_LEFT	EQU 35
 
-; Mouse cursor mode constants (BPForm.MouseMode, bpSetMouseMode)
+;   Mouse cursor mode constants (BPForm.MouseMode, bpSetMouseMode)
 BP_MOUSE_MODE_VISIBLE	EQU 0	; Cursor is visible
 BP_MOUSE_MODE_HIDDEN	EQU 1	; Cursor is invisible while above the form
 BP_MOUSE_MODE_LOCKED	EQU 2	; Cursor is locked to the form center
@@ -585,7 +591,7 @@ BP_MOUSE_MODE_LOCKED	EQU 2	; Cursor is locked to the form center
 ; until enough mouse events have been sent.
 BP_MOUSE_TOUCH_COOLDOWN	EQU 10
 
-; Form window mode constants (BPForm.WindowMode, bpSetWindowMode)
+;   Form window mode constants (BPForm.WindowMode, bpSetWindowMode)
 BP_WINDOW_MODE_WINDOWED			EQU 0	; Form is a draggable (sizeable) window
 BP_WINDOW_MODE_MINIMIZED		EQU 1	; Form is minimized into tray
 BP_WINDOW_MODE_MAXIMIZED		EQU 2	; Form is a maximized window
@@ -594,7 +600,7 @@ BP_WINDOW_MODE_FULLSCREEN_EX	EQU 4	; Form uses exclusive fullscreen,
 										; display resolution will be set to
 										; BPForm.ScreenSize.
 
-; Mouse wheel virtual-key codes (returned in BP_INPUT_MOUSE_BUTTON)
+;   Mouse wheel virtual-key codes (returned in BP_INPUT_MOUSE_BUTTON)
 VK_MWHEEL_UP	EQU 10
 VK_MWHEEL_DOWN	EQU 11
 
@@ -633,8 +639,9 @@ BPPRegisterRawInputDevices TYPEDEF PTR BPTRegisterRawInputDevices
 bpRegisterRawInputDevices BPPRegisterRawInputDevices 0
 ENDIF
 
-
-bpDefHeap	HANDLE 0	; Default heap (to not GetProcessHeap every time)
+;   Default heap (to not GetProcessHeap every time). Gets set on first 
+; bpCreateForm call.
+bpDefHeap	HANDLE 0
 
 ;   Delta time calculation variables (QueryPerformanceCounter uses
 ; LARGE_INTEGER, but one 32-bit portion of it is enough)
@@ -651,7 +658,7 @@ ENDIF
 bpDisplayDeviceCount	DWORD 0
 bpDisplayDevices		BPDisplayDevice 16 dup (<>)
 
-; Set to TRUE after first frame, then allows OnRender execution
+;   Set to TRUE after first frame, then allows OnRender execution
 bpFirstFrameSkipped BPBool FALSE
 
 bpFixedInterval REAL4 0.01666666	; BPForm OnFixed interval (in seconds)
@@ -666,7 +673,7 @@ bpMouseClientPrev	SDWORD 0, 0	; Previous mouse cursor position (cursor input)
 bpMouseScreen		SDWORD 0, 0	; On-screen global mouse cursor position
 bpMouseScreenPrev	SDWORD 0, 0	; Previous global cursor position (cursor input)
 
-; See BP_MOUSE_TOUCH_COOLDOWN
+;   See BP_MOUSE_TOUCH_COOLDOWN
 bpMouseTouchCooldown	DWORD BP_MOUSE_TOUCH_COOLDOWN
 
 deltaTime 		REAL4	0.0	; Scaled delta time, used for frame-independence
@@ -685,7 +692,7 @@ ENDIF
 ; ----- IMPLEMENTATION -----
 .CODE
 
-; Prototype procedure declarations (for potential forward usage in unit)
+;   Prototype procedure declarations (for potential forward usage in unit)
 IFDEF BP_TRACEABLE_HEAP
 	bpFreeProc		PROTO :HANDLE, :DWORD, :LPVOID
 	bpReAllocProc	PROTO :HANDLE, :DWORD, :LPVOID, :DWORD
@@ -1204,6 +1211,84 @@ bpCreateForm PROC EXPORT BPFormPtr:BPPtr
 		.IF (quitFlag)
 			.BREAK
 		.ENDIF
+		
+		_bpFormLoop MACRO
+			IFDEF BP_PAINT_LOOP
+				_bpFormLoopPtr	TEXTEQU <dwRefData>
+			ELSE
+				_bpFormLoopPtr	TEXTEQU <BPFormPtr>
+			ENDIF
+			
+			ASSUME pcx:PTR BPForm
+			mov pcx, _bpFormLoopPtr
+			.IF !([pcx].InputFlags & BP_IF_RAW_MOUSE) && ([pcx].Focused)
+				.IF ([pcx].OnInput)
+					invoke GetCursorPos, ADDR bpMouseScreen
+					mov eax, bpMouseScreenPrev[0]
+					mov edx, bpMouseScreenPrev[4]
+					.IF (bpMouseScreen[0] != eax) || (bpMouseScreen[4] != edx)
+						bpMEM32 bpMouseClient[0], bpMouseScreen[0]
+						bpMEM32 bpMouseClient[4], bpMouseScreen[4]
+						mov pcx, _bpFormLoopPtr
+						invoke ScreenToClient, [pcx].Handle, ADDR bpMouseClient
+						
+						invoke bpInMouseMove, _bpFormLoopPtr
+					.ENDIF
+					mov pcx, _bpFormLoopPtr
+				.ENDIF
+				.IF ([pcx].MouseMode == BP_MOUSE_MODE_LOCKED)
+					invoke SetCursorPos, [pcx].ScreenCnt.x, [pcx].ScreenCnt.y
+					mov pcx, _bpFormLoopPtr
+					bpMEM32 bpMouseScreenPrev[0], [pcx].ScreenCnt.x
+					bpMEM32 bpMouseScreenPrev[4], [pcx].ScreenCnt.y
+					bpMEM32 bpMouseClientPrev[0], [pcx].ScreenCnt.x
+					bpMEM32 bpMouseClientPrev[4], [pcx].ScreenCnt.y
+					invoke ScreenToClient, [pcx].Handle, ADDR bpMouseClientPrev
+					mov pcx, _bpFormLoopPtr
+				.ELSE
+					bpMEM32 bpMouseScreenPrev[0], bpMouseScreen[0]
+					bpMEM32 bpMouseScreenPrev[4], bpMouseScreen[4]
+				.ENDIF
+			.ENDIF
+			
+			invoke bpCalculateDelta, ADDR bpLastTick, ADDR deltaUnscaled
+			fld deltaUnscaled
+			fld st
+			fmul deltaScale
+			fstp deltaTime
+
+			fadd timeStart
+			fstp timeStart
+			
+			mov pcx, _bpFormLoopPtr
+			mov [pcx].DefaultFlag, TRUE
+			.IF ([pcx].OnRender) && (bpFirstFrameSkipped)
+				call [pcx].OnRender
+				mov pcx, _bpFormLoopPtr
+			.ELSE
+				mov bpFirstFrameSkipped, TRUE
+				.IF ([pcx].OnStart)
+					call [pcx].OnStart
+					mov pcx, _bpFormLoopPtr
+				.ENDIF
+			.ENDIF
+			
+			.IF ([pcx].DefaultFlag)
+				IFDEF BP_PAINT_LOOP
+					mov [pcx].DefaultFlag, FALSE
+				ENDIF
+				invoke SwapBuffers, [pcx].DeviceContext
+				mov pcx, _bpFormLoopPtr
+				.IF ([pcx].InputFlags & BP_IF_JOYSTICK)
+					invoke bpReadJoysticks, _bpFormLoopPtr
+				.ENDIF
+			.ENDIF
+		ENDM
+		
+		IFNDEF BP_PAINT_LOOP
+			_bpFormLoop
+		ENDIF
+		ASSUME pcx:nothing
 	.ENDW
 	
 	ret
@@ -2544,6 +2629,9 @@ bpUpdateDisplayDevices PROC EXPORT
 				add bpDisplayDevices[pax].Orientation, 2
 			.ENDIF
 			
+			; TODO: Non-integer refresh rate?? Maybe QueryDisplayConfig?
+			
+			
 			mov pcx, pax
 			bpMEM32 bpDisplayDevices[pcx].RefreshRate, devMode.dmDisplayFrequency
 			bpMEM32 bpDisplayDevices[pcx].ScreenPos.x, devMode.dmPosition.x
@@ -2788,70 +2876,10 @@ bpDefWndProc PROC EXPORT hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
 		.IF ([pcx].DefaultFlag)
 			invoke bpSetScreenCenter, dwRefData
 		.ENDIF
-		
-	.ELSEIF (uMsg == WM_PAINT)		
-		.IF !([pcx].InputFlags & BP_IF_RAW_MOUSE) && ([pcx].Focused)
-			.IF ([pcx].OnInput)
-				invoke GetCursorPos, ADDR bpMouseScreen
-				mov eax, bpMouseScreenPrev[0]
-				mov edx, bpMouseScreenPrev[4]
-				.IF (bpMouseScreen[0] != eax) || (bpMouseScreen[4] != edx)
-					bpMEM32 bpMouseClient[0], bpMouseScreen[0]
-					bpMEM32 bpMouseClient[4], bpMouseScreen[4]
-					mov pcx, dwRefData
-					invoke ScreenToClient, [pcx].Handle, ADDR bpMouseClient
-					
-					invoke bpInMouseMove, dwRefData
-				.ENDIF
-				mov pcx, dwRefData
-			.ENDIF
-			.IF ([pcx].MouseMode == BP_MOUSE_MODE_LOCKED)
-				mov pax, pcx
-				invoke SetCursorPos, [pax].ScreenCnt.x, [pax].ScreenCnt.y
-				mov pcx, dwRefData
-				bpMEM32 bpMouseScreenPrev[0], [pcx].ScreenCnt.x
-				bpMEM32 bpMouseScreenPrev[4], [pcx].ScreenCnt.y
-				bpMEM32 bpMouseClientPrev[0], [pcx].ScreenCnt.x
-				bpMEM32 bpMouseClientPrev[4], [pcx].ScreenCnt.y
-				invoke ScreenToClient, [pcx].Handle, ADDR bpMouseClientPrev
-				mov pcx, dwRefData
-			.ELSE
-				bpMEM32 bpMouseScreenPrev[0], bpMouseScreen[0]
-				bpMEM32 bpMouseScreenPrev[4], bpMouseScreen[4]
-			.ENDIF
-		.ENDIF
-		
-		invoke bpCalculateDelta, ADDR bpLastTick, ADDR deltaUnscaled
-		fld deltaUnscaled
-		fld st
-		fmul deltaScale
-		fstp deltaTime
-
-		fadd timeStart
-		fstp timeStart
-		
-		mov pcx, dwRefData
-		mov [pcx].DefaultFlag, TRUE
-		.IF ([pcx].OnRender) && (bpFirstFrameSkipped)
-			call [pcx].OnRender
-			mov pcx, dwRefData
-		.ELSE
-			mov bpFirstFrameSkipped, TRUE
-			.IF ([pcx].OnStart)
-				call [pcx].OnStart
-				mov pcx, dwRefData
-			.ENDIF
-		.ENDIF
-		
-		.IF ([pcx].DefaultFlag)
-			mov [pcx].DefaultFlag, FALSE
-			invoke SwapBuffers, [pcx].DeviceContext
-			mov pcx, dwRefData
-			.IF ([pcx].InputFlags & BP_IF_JOYSTICK)
-				invoke bpReadJoysticks, dwRefData
-			.ENDIF
-		.ENDIF
-		
+	IFDEF BP_PAINT_LOOP
+	.ELSEIF (uMsg == WM_PAINT)
+		_bpFormLoop
+	ENDIF
 	.ELSEIF (uMsg == WM_SIZE)
 		.IF ([pcx].WindowMode != BP_WINDOW_MODE_FULLSCREEN) && \
 		([pcx].WindowMode != BP_WINDOW_MODE_FULLSCREEN_EX)

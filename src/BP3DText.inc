@@ -1,7 +1,10 @@
 ;
 ;   BP3DText.inc
-;   Version 0.5ac1
+;   Version 0.5
 ;   BP3D bitmap text rendering API extension.
+;   May be considered deprecated, as it is fundamentally built around the fixed-
+; function OpenGL pipeline and uses BP3DAssets for font loading. Also only
+; supports separate texture glyph loading instead of atlases because of that.
 ;
 ;   Copyright (c) 2025-2026 Yevhenii Ionenko (aka GreatCorn).
 ;   All rights reserved.
@@ -103,6 +106,13 @@ bpLoadFont PROC EXPORT DirPath:BPPtr, FontPTR:BPPtr
 	mov BYTE PTR [pax+pbx+5], "p"
 	mov BYTE PTR [pax+pbx+6], "t"
 	
+	mov al, bpErrorNotFound
+	push pax
+	mov al, bpTextureClamp
+	push pax
+	mov bpErrorNotFound, FALSE
+	mov bpTextureClamp, TRUE
+	
 	xor pbx, pbx
 	.WHILE (pbx < 256)
 		; Convert pbx to string
@@ -144,13 +154,15 @@ bpLoadFont PROC EXPORT DirPath:BPPtr, FontPTR:BPPtr
 		mul pcx
 		add pax, FontPTR
 		invoke bpLoadBPT, pax, stringBuf
-		.IF (pax)
-			invoke glTexParameteri, GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP 
-			invoke glTexParameteri, GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP
-		.ENDIF
 		
 		inc pbx
 	.ENDW
+	
+	pop pax
+	mov bpTextureClamp, al
+	pop pax
+	mov bpErrorNotFound, al
+	
 	pop pbx
 	
 	invoke bpFree, bpDefHeap, 0, stringBuf

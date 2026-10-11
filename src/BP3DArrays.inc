@@ -1,6 +1,6 @@
 ;
 ;   BP3DArrays.inc
-;   Version 0.7ac1
+;   Version 0.7
 ;   BP3D array helper functions extension.
 ;
 ;   Copyright (c) 2025-2026 Yevhenii Ionenko (aka GreatCorn).

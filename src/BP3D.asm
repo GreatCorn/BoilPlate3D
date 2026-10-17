@@ -1,6 +1,6 @@
 ;
 ;   BP3D.asm
-;   Version 0.8bc1
+;   Version 0.8bc2
 ;   BP3D (short for BoilPlate3D) framework main base unit.
 ;
 ;   Copyright (c) 2025-2026 Yevhenii Ionenko (aka GreatCorn).
@@ -143,6 +143,7 @@ BPForm STRUCT			; Windows form (window) structure
 	DeviceContext	HDC 0		; Form device context (DC)
 	GraphicsContext	BPPtr 0		; Form graphics context (GL)
 	Handle			HWND 0		; Form window handle
+	MessageTimeout	DWORD 0		; Timeout for MsgWaitForMultipleObjectsEx (ms)
 	
 	;   Input flags bitmask. See possible input flags at BP_IF_*. Set with
 	; bpSetInputFlags or before calling bpCreateForm.
@@ -673,7 +674,7 @@ bpMouseClientPrev	SDWORD 0, 0	; Previous mouse cursor position (cursor input)
 bpMouseScreen		SDWORD 0, 0	; On-screen global mouse cursor position
 bpMouseScreenPrev	SDWORD 0, 0	; Previous global cursor position (cursor input)
 
-;   See BP_MOUSE_TOUCH_COOLDOWN
+;   Deprecated. See BP_MOUSE_TOUCH_COOLDOWN
 bpMouseTouchCooldown	DWORD BP_MOUSE_TOUCH_COOLDOWN
 
 deltaTime 		REAL4	0.0	; Scaled delta time, used for frame-independence
@@ -1192,7 +1193,10 @@ bpCreateForm PROC EXPORT BPFormPtr:BPPtr
 	
 	mov quitFlag, 0
 	.WHILE (!quitFlag)
-		invoke MsgWaitForMultipleObjectsEx, 0, NULL, 12, QS_ALLINPUT, 0
+		ASSUME pcx:PTR BPForm
+		mov pcx, BPFormPtr
+		invoke MsgWaitForMultipleObjectsEx, 0, NULL, [pcx].MessageTimeout, \
+		QS_ALLINPUT, 0
 		.IF (eax == WAIT_OBJECT_0)
 			.WHILE TRUE
 				invoke PeekMessage, ADDR msg, NULL, 0, 0, PM_REMOVE
@@ -1207,6 +1211,7 @@ bpCreateForm PROC EXPORT BPFormPtr:BPPtr
 				invoke DispatchMessage, ADDR msg
 			.ENDW
 		.ENDIF
+		ASSUME pcx:nothing
 		;.BREAK .IF (quitFlag)
 		.IF (quitFlag)
 			.BREAK

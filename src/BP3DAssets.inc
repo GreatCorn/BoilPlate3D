@@ -1,6 +1,6 @@
 ;
 ;   BP3DAssets.inc
-;   Version 0.5
+;   Version 0.5ac1
 ;   BP3D raw asset format importers (animations, GL lists, dynamic meshes, 
 ; textures) extension.
 ;   May be considered deprecated, as it exists almost solely for demos and
@@ -753,9 +753,11 @@ TextureType:BYTE, Buffer:BPPtr
 			shl al, 3	; * 8
 			mov col[2], al
 			
-			mov al, BYTE PTR [pcx]	; Alpha
-			shl al, 7
-			mov col[3], al
+			.IF (BYTE PTR [pcx] & 00000001b)	; Alpha
+				mov col[3], 255
+			.ELSE
+				mov col[3], 0
+			.ENDIF
 		.ELSEIF (TextureType == BPT_RGBA4)
 			mov al, BYTE PTR [pcx+1]	; Red
 			shr al, 4

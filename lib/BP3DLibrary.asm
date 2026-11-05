@@ -19,7 +19,6 @@ ENDIF
 option casemap:none
 
 include ..\src\BP3D.asm
-include ..\src\BP3DVectors.inc
 
 ENUML MACRO
 	enumlval_ = 0

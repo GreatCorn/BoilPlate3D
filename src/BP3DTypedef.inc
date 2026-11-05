@@ -1,6 +1,6 @@
 ;
 ;   BP3DTypedef.inc
-;   Version 0.8bc1
+;   Version 0.9bc1
 ;   BP3D generic types (for parity between BP3D and independently imported 
 ; modules).
 ;
@@ -9,10 +9,20 @@
 ;   Licensed under the terms of the MIT license (see ..\LICENSE.txt).
 ;
 
+; -----	INTERFACE -----
+;   Available compile-time symbolic macros to define (EQU) before including 
+; BP3D, for additional or alternative functionality in the build:
+;
+;   BP_DOUBLE_PRECISION - export BPFloat as REAL8, instead of REAL4 (currently
+; BPFloat remains unused).
+;
+;   BP_EXPORT_NAMES - export PROC names to executable via BPPROC TEXTEQU.
+;
+
 IFNDEF BP3D_TYPEDEF_INC
 BP3D_TYPEDEF_INC EQU <1>
 
-IFDEF BP_64	; Cross-architecture compatibility (WIP)
+IFDEF BP_64	; Cross-architecture compatibility (deprecated)
 	BPSPtr		TYPEDEF SQWORD	; Signed pointer type
 	BPPtrShift	EQU 3			; Byte shift amount (to use instead of mul/div)
 	
@@ -41,10 +51,19 @@ BPBool	TYPEDEF BYTE		; Boolean type
 BPEnum	TYPEDEF BYTE		; Enumerator type
 BPPtr	TYPEDEF PTR			; Pointer type
 
-IFDEF BP_DOUBLE_PRECISION	; Floating-point type (unused)
+IFDEF BP_DOUBLE_PRECISION	; Floating-point type (currently unused)
 	BPFloat	TYPEDEF REAL8
 ELSE
 	BPFloat	TYPEDEF REAL4
+ENDIF
+
+; Export BP3D PROC names
+IFDEF BP_EXPORT_NAMES
+	BPPROC	TEXTEQU <PROC EXPORT>
+	COMMENT * ENDP ENDP *	; Notepad++ you wonderful idiot
+ELSE
+	BPPROC	TEXTEQU <PROC>
+	COMMENT * ENDP ENDP *
 ENDIF
 
 IFNDEF FALSE
@@ -66,12 +85,12 @@ BP_CPU_686			EQU 1000000b
 ;   Higher privilege level instructions (like .286P, .386P, etc)
 BP_CPU_PRIVILEGE	EQU 1 shl 7
 ;   Math coprocessor instruction sets
-BP_FPU_8087			EQU 0001 shl 8
-BP_FPU_287			EQU 0100 shl 8	; Bit 9 is skipped
-BP_FPU_387			EQU 1000 shl 8
+BP_FPU_8087			EQU 0001b shl 8
+BP_FPU_287			EQU 0100b shl 8	; Bit 9 is skipped
+BP_FPU_387			EQU 1000b shl 8
 
 ;   Malloc macros for memory tracing, requires main BP3D, here only for symbolic
-; equivalence.
+; equivalence. See BP3D.asm for documentation
 IFDEF BP_TRACEABLE_HEAP
 	bpFree		TEXTEQU <bpFreeProc>
 	bpMalloc	TEXTEQU <bpMallocProc>

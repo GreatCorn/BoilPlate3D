@@ -1,10 +1,11 @@
 ;
 ;   BP3DText.inc
-;   Version 0.5
+;   Version 0.5ac1
 ;   BP3D bitmap text rendering API extension.
-;   May be considered deprecated, as it is fundamentally built around the fixed-
-; function OpenGL pipeline and uses BP3DAssets for font loading. Also only
-; supports separate texture glyph loading instead of atlases because of that.
+;   May be considered deprecated or moved to a separate project as it is
+; fundamentally built around the fixed-function OpenGL pipeline and uses
+; BP3DAssets.inc for font loading. Also only supports separate texture glyph
+; loading instead of atlases because of that (for now).
 ;
 ;   Copyright (c) 2025-2026 Yevhenii Ionenko (aka GreatCorn).
 ;   All rights reserved.
@@ -62,7 +63,7 @@ ENDM
 ENDIF
 
 
-bpBuildFontQuad PROC EXPORT
+bpBuildFontQuad BPPROC
 	invoke glGenLists, 1
 	mov bpFontQuad, eax
 	invoke glNewList, bpFontQuad, GL_COMPILE
@@ -81,7 +82,7 @@ bpBuildFontQuad PROC EXPORT
 bpBuildFontQuad ENDP
 
 IFDEF BP3D_ASSETS_INC
-bpLoadFont PROC EXPORT DirPath:BPPtr, FontPTR:BPPtr
+bpLoadFont BPPROC DirPath:BPPtr, FontPTR:BPPtr
 	LOCAL dirLen:BPPtr, stringBuf:BPPtr
 	
 	mov pax, DirPath
@@ -174,7 +175,7 @@ bpLoadFont PROC EXPORT DirPath:BPPtr, FontPTR:BPPtr
 bpLoadFont ENDP
 ENDIF
 
-bpRenderText PROC EXPORT TextString:BPPtr, X:SDWORD, Y:SDWORD, \
+bpRenderText BPPROC TextString:BPPtr, X:SDWORD, Y:SDWORD, \
 HorizontalAlign:BPEnum, VerticalAlign:BPEnum
 	LOCAL pos[2]:REAL4, strLength:BPPtr, lines:DWORD
 	

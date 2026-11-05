@@ -68,7 +68,7 @@ bpRemoveChild PROTO :BPPtr, :BPPtr
 bpPrintTreeIndent	DWORD -1
 
 .CODE
-bpAddChild PROC EXPORT USES pbx BPNodePtr:BPPtr, ChildPtr:BPPtr
+bpAddChild BPPROC USES pbx BPNodePtr:BPPtr, ChildPtr:BPPtr
 	ASSUME pbx:PTR BPNode
 	; Make the child an orphan and reparent
 	mov pbx, ChildPtr
@@ -100,7 +100,7 @@ bpAddChild PROC EXPORT USES pbx BPNodePtr:BPPtr, ChildPtr:BPPtr
 bpAddChild ENDP
 
 IFDEF print
-bpPrintTree PROC EXPORT USES pbx BPNodePtr:BPPtr
+bpPrintTree BPPROC USES pbx BPNodePtr:BPPtr
 	LOCAL EndAddr:DWORD
 	inc bpPrintTreeIndent
 	xor pbx, pbx
@@ -131,7 +131,7 @@ bpPrintTree PROC EXPORT USES pbx BPNodePtr:BPPtr
 bpPrintTree ENDP
 ENDIF
 
-bpPropagateSignal PROC EXPORT USES pbx BPNodePtr:BPPtr, EventOffset:BPPtr, \
+bpPropagateSignal BPPROC USES pbx BPNodePtr:BPPtr, EventOffset:BPPtr, \
 EventArg:BPPtr
 	LOCAL EndAddr:DWORD
 	
@@ -162,7 +162,7 @@ EventArg:BPPtr
 	ret
 bpPropagateSignal ENDP
 
-bpRemoveChild PROC EXPORT USES pbx BPNodePtr:BPPtr, ChildPtr:BPPtr
+bpRemoveChild BPPROC USES pbx BPNodePtr:BPPtr, ChildPtr:BPPtr
 	ASSUME pbx:PTR BPNode
 	
 	; Search for address in children

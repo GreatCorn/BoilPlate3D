@@ -1,6 +1,6 @@
 ;
 ;   BP3DMaths.inc
-;   Version 0.8ac2
+;   Version 0.9bc1
 ;   BP3D common math (REAL4 (x87 FPU / SSE) & SDWORD) functions extension.
 ;   Is available for independed importing without main BP3D.
 ;
@@ -24,11 +24,12 @@ ENDIF
 ; result in overshoot or destabilization jitter behaviour on lower FPS.
 ;
 ;   BP_RAND_PARKMILLER - Use the Park-Miller pseudo-random number generation
-; algorithm. Is slower than the now default Mulberry32.
+; algorithm. Is slower than the now default Mulberry32-based one.
 ;
 ;   BP_RAND_XOROSHIRO32 - Use the Xoroshiro32 pseudo-random number generation
-; algorithm. Is faster then the now default Mulberry32, but implemented poorly
-; due to backwards-compatibility and may often produce repetitive patterns.
+; algorithm. Is faster than the now default Mulberry32-based one, but
+; implemented poorly due to backwards-compatibility and may often produce
+; repetitive patterns.
 ;
 ;   BP_USE_SSE - Use SSE for floating point calculations instead of x87 FPU.
 ; This feature isn't enabled by default if .xmm is specified in the main header
@@ -62,18 +63,19 @@ FLT_INFN	EQU 0FF800000h	; -Infinity
 FLT_NEG		EQU 80000000h	; -0 (negative flag, useful for cmp without FPU)
 
 .CONST
-D2R			REAL4	0.0174532		; Degrees to radians multiplier
+D2R			REAL4	0.017453292		; Degrees to radians multiplier
 R2D			REAL4	57.29578		; Radians to degrees multiplier
-R2I			REAL4	0.6366197		; Radians to integer
+R2I			REAL4	0.6366197		; Radians to integer (2/Pi)
 PI			REAL4	3.141592653		; Pi	(180 deg)
 PIN			REAL4	-3.141592653	; -Pi	(-180 deg)
 PIHalf		REAL4	1.570796326		; Pi/2	(90 deg)
 PIHalfN		REAL4	-1.570796326	; -Pi/2	(-90 deg)
-PIQuarter	REAL4	0.765398163		; Pi/4	(45 deg)
-PIQuarterN	REAL4	-0.765398163	; -Pi/4	(-45 deg)
+PIQuarter	REAL4	0.785398163		; Pi/4	(45 deg)
+PIQuarterN	REAL4	-0.785398163	; -Pi/4	(-45 deg)
 PI2			REAL4	6.283185307		; Pi*2	(360 deg)
 flInf		DWORD	FLT_INF			; Data field of FLT_INF
 flInfN		DWORD	FLT_INFN		; Data field of FLT_INFN
+flRandMul	DWORD	33800000h		; 2^-24
 
 ; ----- DATA FIELDS -----
 .DATA?
@@ -138,6 +140,7 @@ f MACRO val:REQ
 	%IFNDEF sym
 		;%ECHO Declaring REAL4 variable with name sym
 		.DATA
+		ALIGN 4
 		IF dot
 			sym REAL4 val
 		ELSE
@@ -160,7 +163,7 @@ fcmp MACRO cmp1:REQ, cmp2
 		movd XMM0, cmp1		; First arg is a register
 	ELSE
 		mov eax, cmp1		; First arg is an imm val
-		movd XMM0, cmp1
+		movd XMM0, eax
 	ENDIF
 	IFB <cmp2>
 		xorps XMM1, XMM1	; Second arg is 0
@@ -171,7 +174,7 @@ fcmp MACRO cmp1:REQ, cmp2
 			movd XMM1, cmp2		; Second arg is a register
 		ELSE
 			mov eax, cmp2		; Second arg is an imm val
-			movd XMM1, cmp2
+			movd XMM1, eax
 		ENDIF
 	ENDIF
 	ucomiss XMM0, XMM1
@@ -217,7 +220,7 @@ ENDM
 
 ;   Compares FPU st(0) with st(1) by fcom. Is called if CPU is < 686 by fcmp.
 ; See fcmp for flag results.
-fcmpP PROC EXPORT
+fcmpP BPPROC
 	fcompp
 	fnstsw ax
 	
@@ -234,15 +237,15 @@ fcmpP ENDP
 
 ;   Return the absolute of Val in eax.
 ;   Val:REAL4 - value to get the absolute of.
-flAbs PROC EXPORT Val:REAL4
+flAbs BPPROC Val:REAL4
 	mov eax, Val
-	and eax, not FLT_NEG
+	and eax, 7FFFFFFFh
 	ret
 flAbs ENDP
 
 ;   Calculate arccosine of Val.
 ;   Val:REAL4 - angle to find the arccosine of.
-flAcos PROC EXPORT Val:REAL4
+flAcos BPPROC Val:REAL4
 	;   TODO - SSE, requires implementing atan2
 	fld Val
 	fld1
@@ -259,7 +262,7 @@ flAcos ENDP
 
 ;   Calculate arcsine of Val.
 ;   Val:REAL4 - angle to find the arcsine of.
-flAsin PROC EXPORT Val:REAL4
+flAsin BPPROC Val:REAL4
 	;   TODO - SSE, same as acos
 	fld Val
 	fld1
@@ -276,7 +279,7 @@ flAsin ENDP
 ;   Wrap an angle (-PI - PI, in radians) and return in eax. Useful for angle 
 ; interpolation.
 ;   Val:REAL4 - angle (in radians) to wrap.
-flAngle PROC EXPORT Val:REAL4
+flAngle BPPROC Val:REAL4
 	fcmp Val, PI
 	.IF (!Carry?)	; Val > PI
 		IFDEF BP_USE_SSE
@@ -310,17 +313,18 @@ flAngle ENDP
 ;   Val:REAL4 - value to clamp.
 ;   Min:REAL4 - minimum clamp range value.
 ;   Max:REAL4 - maximum clamp range value.
-flClamp PROC EXPORT Val:REAL4, Min:REAL4, Max:REAL4
+flClamp BPPROC Val:REAL4, Min:REAL4, Max:REAL4
 	fcmp Val, Max
 	.IF (!Carry?)		; X > X1
-		bpMEM32 Val, Max
+		mov eax, Max
+		ret
 	.ELSE
 		fcmp Val, Min
 		.IF (Carry?)	; X < X1
-			bpMEM32 Val, Min
+			mov eax, Min
+			ret
 		.ENDIF
 	.ENDIF
-	
 	mov eax, Val
 	ret
 flClamp ENDP
@@ -328,12 +332,12 @@ flClamp ENDP
 ;   Calculate scalar distance between From and To and return result in eax.
 ;   From:REAL4 - the first point, to calculate the distance from.
 ;   To:REAL4 - the second point, to calculate the distance to.
-flDistance PROC EXPORT From:REAL4, To:REAL4
+flDistance BPPROC From:REAL4, To:REAL4
 	IFDEF BP_USE_SSE
 	movss XMM0, From
 	subss XMM0, To
 	movd eax, XMM0
-	and eax, not FLT_NEG
+	and eax, 7FFFFFFFh
 	ELSE
 	fld From
 	fsub To
@@ -344,9 +348,9 @@ flDistance PROC EXPORT From:REAL4, To:REAL4
 	ret
 flDistance ENDP
 
-;   Separate the fractional part of a value and return in eax.
+;   Separate the fractional part of a value and return in eax (trunc-based).
 ;   Val:REAL4 - value to take the fractional part from.
-flFrac PROC EXPORT Val:REAL4
+flFrac BPPROC Val:REAL4
 	IFDEF BP_USE_SSE
 	movss XMM0, Val
 	cvttss2si eax, XMM0
@@ -380,7 +384,7 @@ flFrac ENDP
 ;   Val:REAL4 - value to check.
 ;   Min:REAL4 - minimum range value.
 ;   Max:REAL4 - maximum range value.
-flInRange PROC EXPORT Val:REAL4, Min:REAL4, Max:REAL4
+flInRange BPPROC Val:REAL4, Min:REAL4, Max:REAL4
 	fcmp Val, Min
 	.IF (!Carry?) || (Zero?)
 		fcmp Val, Max
@@ -397,11 +401,16 @@ flInRange ENDP
 ;   A:REAL4 - starting value.
 ;   B:REAL4 - destination value.
 ;   T:REAL4 - interpolation value between the two.
-flLerp PROC EXPORT A:REAL4, B:REAL4, T:REAL4
+flLerp BPPROC A:REAL4, B:REAL4, T:REAL4
 	IFNDEF BP_LERP_UNCLAMPED
 		fcmp T, f(1)
 		.IF (!Carry?) || (Zero?)
 			mov eax, B
+			ret
+		.ENDIF
+		fcmp T
+		.IF (Carry?) || (Zero?)
+			mov eax, A
 			ret
 		.ENDIF
 	ENDIF
@@ -429,12 +438,17 @@ flLerp ENDP
 ;   A:REAL4 - starting value.
 ;   B:REAL4 - destination value.
 ;   T:REAL4 - interpolation value between the two.
-flLerpAngle PROC EXPORT A:REAL4, B:REAL4, T:REAL4
+flLerpAngle BPPROC A:REAL4, B:REAL4, T:REAL4
 	LOCAL _Ang:REAL4
 	IFNDEF BP_LERP_UNCLAMPED
 		fcmp T, f(1)
 		.IF (!Carry?) || (Zero?)
 			mov eax, B
+			ret
+		.ENDIF
+		fcmp T
+		.IF (Carry?) || (Zero?)
+			mov eax, A
 			ret
 		.ENDIF
 	ENDIF
@@ -467,7 +481,7 @@ flLerpAngle ENDP
 ;   Return the maximum of the A and B values in eax.
 ;   A:REAL4 - first value.
 ;   B:REAL4 - second value.
-flMax PROC EXPORT A:REAL4, B:REAL4
+flMax BPPROC A:REAL4, B:REAL4
 	fcmp A, B
 	.IF (Carry?)
 		mov eax, B
@@ -480,7 +494,7 @@ flMax ENDP
 ;   Return the minimum of the A and B values in eax.
 ;   A:REAL4 - first value.
 ;   B:REAL4 - second value.
-flMin PROC EXPORT A:REAL4, B:REAL4
+flMin BPPROC A:REAL4, B:REAL4
 	fcmp A, B
 	.IF (Carry?)
 		mov eax, A
@@ -494,7 +508,7 @@ flMin ENDP
 ;   From:REAL4 - starting value.
 ;   To:REAL4 - destination value.
 ;   T:REAL4 - the amount to move by.
-flMove PROC EXPORT From:REAL4, To:REAL4, T:REAL4
+flMove BPPROC From:REAL4, To:REAL4, T:REAL4
 	LOCAL Dist:REAL4	
 	invoke flDistance, From, To
 	mov Dist, eax
@@ -529,48 +543,48 @@ flMove PROC EXPORT From:REAL4, To:REAL4, T:REAL4
 	ret
 flMove ENDP
 
-;   Returns a random REAL4 in range [0.0 - 1.0] (thousandth precision) in eax.
-flRand PROC EXPORT
+;   Returns a random REAL4 in range [0.0 - 1.0) in eax.
+flRand BPPROC
 	IFDEF BP_USE_SSE
-	invoke nRand, 1000
+	invoke nRand, 1 shl 24
 	cvtsi2ss XMM0, eax
-	mulss XMM0, f(0.001)
+	mulss XMM0, flRandMul
 	movd eax, XMM0
 	ELSE
 	LOCAL _Val:REAL4
 	
-	invoke nRand, 1000
+	invoke nRand, 1 shl 24
 	mov _Val, eax
 	fild _Val
-	fmul f(0.001)
+	fmul flRandMul
 	fstp _Val
 	mov eax, _Val
 	ENDIF
 	ret
 flRand ENDP
 
-;   Returns a random REAL4 in range [Min - Max] in eax.
+;   Returns a random REAL4 in range [Min - Max) in eax.
 ;   Min:REAL4 - minimum random range value.
 ;   Max:REAL4 - maximum random range value.
-flRandRange PROC EXPORT Min:REAL4, Max:REAL4
+flRandRange BPPROC Min:REAL4, Max:REAL4
 	IFDEF BP_USE_SSE
-	invoke nRand, 1000
+	invoke nRand, 1 shl 24
 	movss XMM0, Max
 	subss XMM0, Min
 	cvtsi2ss XMM1, eax
-	mulss XMM0, f(0.001)
+	mulss XMM0, flRandMul
 	mulss XMM0, XMM1
 	addss XMM0, Min
 	movd eax, XMM0
 	ELSE
 	LOCAL _Val:REAL4
 	
-	invoke nRand, 1000
+	invoke nRand, 1 shl 24
 	mov _Val, eax	; Val * (Max - Min) + Min
 	fld Max
 	fsub Min
 	fild _Val
-	fmul f(0.001)
+	fmul flRandMul
 	fmul
 	fadd Min
 	fstp _Val
@@ -582,7 +596,7 @@ flRandRange ENDP
 ;   Repeat Val through the range of [0.0 - Max] and return result in eax.
 ;   Val:REAL4 - value to be repeated.
 ;   Max:REAL4 - maximum range value.
-flRepeat PROC EXPORT Val:REAL4, Max:REAL4
+flRepeat BPPROC Val:REAL4, Max:REAL4
 	IFDEF BP_USE_SSE
 	movss XMM0, Val
 	divss XMM0, Max
@@ -597,14 +611,14 @@ flRepeat PROC EXPORT Val:REAL4, Max:REAL4
 	LOCAL cw:WORD
 	fnstcw cw
 	push cw
-	or cw, FPU_ROUND_TRUNC
+	or cw, FPU_ROUND_FLOOR
 	fldcw cw
 	
 	fld Val
 	fdiv Max
 	frndint
-	fsubr Val
 	fmul Max
+	fsubr Val
 	fstp Val
 	
 	pop cw
@@ -617,7 +631,7 @@ flRepeat ENDP
 
 ;   Return the sign (-1.0 | 0.0 | 1.0) of Val in eax.
 ;   Val:REAL4 - value to get the sign of.
-flSign PROC EXPORT Val:REAL4
+flSign BPPROC Val:REAL4
 	.IF (Val == FLT_NEG) || !(Val)
 		xor eax, eax
 		ret
@@ -631,7 +645,7 @@ flSign PROC EXPORT Val:REAL4
 flSign ENDP
 
 ;   Return the FPU exceptions status (FPU_EXCEPTION_* flags bitmask) in eax.
-fpuGetException PROC EXPORT
+fpuGetException BPPROC
 	xor eax, eax
 	fnstsw ax
 	and ax, 0000000000111111b
@@ -639,7 +653,7 @@ fpuGetException PROC EXPORT
 fpuGetException ENDP
 
 ;   Return the FPU stack top register (st) index in eax.
-fpuGetStackTop PROC EXPORT
+fpuGetStackTop BPPROC
 	xor eax, eax
 	fnstsw ax
 	and ax, 0011100000000000b
@@ -649,7 +663,7 @@ fpuGetStackTop ENDP
 
 ;   Set the FPU interrupt masks (from FPU_EXCEPTION_*).
 ;   IM:WORD - bitmask of ORed FPU_EXCEPTION_* flags, gets inverted before FLDCW.
-fpuSetInterrupt PROC EXPORT IM:WORD
+fpuSetInterrupt BPPROC IM:WORD
 	LOCAL cw:WORD
 	fnstcw cw
 	and cw, 1111111111100000b
@@ -663,7 +677,7 @@ fpuSetInterrupt ENDP
 
 ;   Set the FPU precision mode (from FPU_PRECISION_*).
 ;   PC:WORD - the FPU precision mode.
-fpuSetPrecision PROC EXPORT PC:WORD
+fpuSetPrecision BPPROC PC:WORD
 	LOCAL cw:WORD
 	fnstcw cw
 	and cw, 1111110011111111b
@@ -675,7 +689,7 @@ fpuSetPrecision ENDP
 
 ;   Set the FPU rounding mode (from FPU_ROUND_*).
 ;   RC:WORD - the FPU rounding mode.
-fpuSetRounding PROC EXPORT RC:WORD
+fpuSetRounding BPPROC RC:WORD
 	LOCAL cw:WORD
 	fnstcw cw
 	and cw, 1111001111111111b
@@ -687,7 +701,7 @@ fpuSetRounding ENDP
 
 ;   Return the absolute of Val in eax.
 ;   Val:SDWORD - value to get the absolute of.
-intAbs PROC EXPORT Val:SDWORD
+intAbs BPPROC Val:SDWORD
 	mov eax, Val
 	cmp eax, 0
 	jge intAbsNeg
@@ -700,7 +714,7 @@ intAbs ENDP
 ;   Val:SDWORD - value to clamp.
 ;   Min:SDWORD - minimum clamp range value.
 ;   Max:SDWORD - maximum clamp range value.
-intClamp PROC EXPORT Val:SDWORD, Min:SDWORD, Max:SDWORD
+intClamp BPPROC Val:SDWORD, Min:SDWORD, Max:SDWORD
 	mov eax, Val
 	cmp eax, Min
 	jge intClampSetMin
@@ -716,7 +730,7 @@ intClamp ENDP
 ;   Calculate distance between From and To and return result in eax.
 ;   From:SDWORD - the first point, to calculate the distance from.
 ;   To:SDWORD - the second point, to calculate the distance to.
-intDistance PROC EXPORT From:SDWORD, To:SDWORD
+intDistance BPPROC From:SDWORD, To:SDWORD
 	mov eax, From
 	sub eax, To
 	invoke intAbs, eax
@@ -728,7 +742,7 @@ intDistance ENDP
 ;   Val:SDWORD - value to check.
 ;   Min:SDWORD - minimum range value.
 ;   Max:SDWORD - maximum range value.
-intInRange PROC EXPORT Val:SDWORD, Min:SDWORD, Max:SDWORD
+intInRange BPPROC Val:SDWORD, Min:SDWORD, Max:SDWORD
 	mov eax, Val
 	cmp eax, Min
 	jl intInRangeFalse
@@ -741,10 +755,10 @@ intInRange PROC EXPORT Val:SDWORD, Min:SDWORD, Max:SDWORD
 	ret
 intInRange ENDP
 
-;   Returns a random SDWORD in range [Min - Max] in eax.
+;   Returns a random SDWORD in range [Min - Max) in eax.
 ;   Min:SDWORD - minimum random range value.
 ;   Max:SDWORD - maximum random range value.
-intRandRange PROC EXPORT Min:SDWORD, Max:SDWORD
+intRandRange BPPROC Min:SDWORD, Max:SDWORD
 	mov eax, Max
 	sub eax, Min
 	invoke nRand, eax
@@ -754,14 +768,14 @@ intRandRange ENDP
 
 ;   Return the sign (-1 | 0 | 1) of Val in eax.
 ;   Val:SDWORD - value to get the sign of.
-intSign PROC EXPORT Val:SDWORD
+intSign BPPROC Val:SDWORD
 	mov eax, Val
 	cmp eax, 0
-	jg intSignG
+	jl intSignG
 		mov eax, 1
 		ret
 	intSignG:
-	jl intSignS
+	jg intSignS
 		mov eax, -1
 		ret
 	intSignS:
@@ -769,17 +783,22 @@ intSign PROC EXPORT Val:SDWORD
 	ret
 intSign ENDP
 
-;   MASM32 Park Miller random number algorithm implementation (nrandom), written
-; by Jaymeson Trudgen (NaN), optimized by Rickey Bowers Jr. (bitRAKE). Returns
-; a random number in the range of [0 - Base). Uses nRandSeed value as seed.
+;   Returns a random number in the range of [0 - Base). Uses nRandSeed value as
+; seed.
 ;   Base:DWORD - random algorithm base, the maximum exclusive range.
-nRand PROC EXPORT Base:DWORD
+nRand BPPROC Base:DWORD
 	invoke nRandLocal, Base, OFFSET nRandSeed
 	ret
 nRand ENDP
 
-nRandLocal PROC EXPORT Base:DWORD, Seed:BPPtr
+;   Returns a random number in the range of [0 - Base). Uses Seed as a pointer
+; to the seed value.
+;   Base:DWORD - random algorithm base, the maximum exclusive range.
+;   Seed:BPPtr - pointer to seed value (32-bit) to use and set.
+nRandLocal BPPROC Base:DWORD, Seed:BPPtr
 	IFDEF BP_RAND_PARKMILLER
+	;   MASM32 Park Miller random number algorithm implementation, written by
+	; Jaymeson Trudgen (NaN), optimized by Rickey Bowers Jr. (bitRAKE). 
 	mov pax, Seed
 	mov eax, DWORD PTR [pax]
 
@@ -841,7 +860,7 @@ nRandLocal PROC EXPORT Base:DWORD, Seed:BPPtr
 	div Base
 	mov pax, pdx
 	ELSE
-	; Mulberry32
+	; Mulberry32-based bijective hash of a Weyl counter
 	mov pcx, Seed
 	add DWORD PTR [pcx], 6D2B79F5h
 	mov eax, DWORD PTR [pcx]
@@ -866,10 +885,10 @@ nRandLocal PROC EXPORT Base:DWORD, Seed:BPPtr
 nRandLocal ENDP
 
 ;   Randomize the nRandSeed for nRand (set nRandSeed to current tick count).
-nRandomize PROC EXPORT
+nRandomize BPPROC
 	IFDEF GetTickCount
 		call GetTickCount
-	ELSEIF @Cpu and BP_CPU_486	; >= .486
+	ELSEIF (@Cpu and (BP_CPU_586 or BP_CPU_686))	; >= .586
 		rdtsc
 	ENDIF
 	mov nRandSeed, eax

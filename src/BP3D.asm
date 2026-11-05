@@ -1,6 +1,6 @@
 ;
 ;   BP3D.asm
-;   Version 0.8bc2
+;   Version 0.9bc1
 ;   BP3D (short for BoilPlate3D) framework main base unit.
 ;
 ;   Copyright (c) 2025-2026 Yevhenii Ionenko (aka GreatCorn).
@@ -56,15 +56,19 @@ ENDIF
 ;   Available compile-time symbolic macros to define (EQU) before including 
 ; BP3D, for additional or alternative functionality in the build:
 ;
-;   BP_COMPATIBILITY_W9X - Strict Windows 2000, ME, 98SE compatibility mode.
+;   BP_COMPATIBILITY_W9X - strict Windows 2000, ME, 98SE compatibility mode.
 ; Removes all calls of the APIs not supported on aforementioned systems to avoid
 ; static linking errors. Unsupported APIs that are used: GetRawInput*.
 ;
-;   BP_CUSTOM_INCLUDES - Do not include MASM32 or WinInc headers and LIB files.
+;   BP_CUSTOM_INCLUDES - do not include MASM32 or WinInc headers and LIB files.
+;
+;   BP_DPI_UNAWARE - do not set the process as DPI-aware.
 ;
 ;   BP_ERROR_PASS - pass through errors and don't terminate the program.
 ;
 ;   BP_FIXED_BUSY - busy higher-precision OnFixed thread that uses 100% CPU.
+;
+;   BP_ONRESIZE_MOVE - call BPForm.OnResize on WM_MOVE messages.
 ;
 ;   BP_PAINT_LOOP - restores the pre-v0.8bc1 main (render) loop position in the
 ; unanswered WM_PAINT messages that the OS would keep sending to the form.
@@ -143,7 +147,7 @@ BPForm STRUCT			; Windows form (window) structure
 	DeviceContext	HDC 0		; Form device context (DC)
 	GraphicsContext	BPPtr 0		; Form graphics context (GL)
 	Handle			HWND 0		; Form window handle
-	MessageTimeout	DWORD 0		; Timeout for MsgWaitForMultipleObjectsEx (ms)
+	MessageTimeout	DWORD 0		; Timeout for MsgWaitForMultipleObjectsEx (ms)
 	
 	;   Input flags bitmask. See possible input flags at BP_IF_*. Set with
 	; bpSetInputFlags or before calling bpCreateForm.
@@ -196,7 +200,9 @@ BPForm STRUCT			; Windows form (window) structure
 	Aspect			REAL4 0.0	; Form width divided by height (for GL viewport)
 	DisplayDevice	DWORD 0		; Display device, set with bpSetDisplayDevice
 	Focused			BPBool TRUE	; Is the form in focus
+	FixedThread		BPPtr 0		; Pointer to the OnFixed thread
 	MouseMode		BPEnum BP_MOUSE_MODE_VISIBLE	; Set with bpSetMouseMode
+	StartCalled		BPBool FALSE	; If FALSE, skips 1st frame, calls OnStart
 	WindowMode		BPEnum BP_WINDOW_MODE_WINDOWED	; Set with bpSetWindowMode
 	
 	ScreenCnt		POINT <0, 0>					; Global screen center
@@ -308,6 +314,33 @@ DEVMODEAFIX STRUCT
 	dmPanningWidth		DWORD	?
 	dmPanningHeight		DWORD	?
 DEVMODEAFIX ENDS
+
+RAWMOUSEFIX STRUCT 			; Doesn't exist at all in windows.inc
+	usFlags WORD    ?
+	usPad	WORD	?	; C you fucking donkey
+	; (WinInc doesn't have this padding so it's broken too or relies on align)
+	union
+		ulButtons       DWORD   ?
+		struct
+			usButtonFlags   WORD    ?
+			usButtonData    WORD    ?
+		ends
+	ends
+	ulRawButtons        DWORD   ?
+	lLastX              SDWORD  ?
+	lLastY              SDWORD  ?
+	ulExtraInformation  DWORD   ?
+RAWMOUSEFIX ENDS
+
+RAWINPUTFIX STRUCT 
+	header  RAWINPUTHEADER <>
+	union data
+		mouse			RAWMOUSEFIX	<>
+		keyboard		RAWKEYBOARD	<>
+		hid				RAWHID		<>
+	ends
+RAWINPUTFIX ENDS
+
 IFNDEF BP_WININC
 ;   Fixes for WinMM joystick structs
 JOYCAPSAFIX STRUCT	; This redefinition isn't the same size, so another name
@@ -352,21 +385,6 @@ RAWINPUTHEADER  STRUCT 		; Just redefine all RAWINPUT while we're at it
 	wParam      WPARAM  ?
 RAWINPUTHEADER  ENDS
 
-RAWMOUSE STRUCT 			; Doesn't exist at all in windows.inc
-	usFlags WORD    ?
-	union
-		ulButtons       DWORD   ?
-		struct
-			usButtonFlags   WORD    ?
-			usButtonData    WORD    ?
-		ends
-	ends
-	ulRawButtons        DWORD   ?
-	lLastX              SDWORD  ?
-	lLastY              SDWORD  ?
-	ulExtraInformation  DWORD   ?
-RAWMOUSE ENDS
-
 RAWKEYBOARD STRUCT 
 	MakeCode            WORD    ?
 	Flags               WORD    ?
@@ -381,15 +399,6 @@ RAWHID STRUCT
 	dwCount             DWORD ?
 	bRawData            BYTE 1 dup (?)
 RAWHID ENDS
-
-RAWINPUT STRUCT 
-	header  RAWINPUTHEADER <>
-	union data
-		mouse           RAWMOUSE    <>
-		keyboard        RAWKEYBOARD <>
-		hid             RAWHID      <>
-	ends
-RAWINPUT ENDS
 ENDIF
 
 ;   HidP definitions (no structs defined in any headers, WinInc doesn't have HID
@@ -525,9 +534,6 @@ ENDIF
 IFNDEF HidP_GetCaps
 HidP_GetCaps PROTO STDCALL :BPPtr, :BPPtr
 ENDIF
-IFNDEF HidP_GetCaps
-HidP_GetCaps PROTO STDCALL :BPPtr, :BPPtr
-ENDIF
 IFNDEF HidP_GetUsages
 HidP_GetUsages PROTO STDCALL :DWORD, :USAGE, :USHORT, :BPPtr, :BPPtr, :BPPtr, \
 :BPPtr, :ULONG
@@ -551,8 +557,6 @@ BP_ORIENTATION_PORTRAIT			EQU 1
 BP_ORIENTATION_LANDSCAPE_REV	EQU 2
 BP_ORIENTATION_PORTRAIT_REV		EQU 3
 
-BP_FIXED_INTERVAL		EQU 1000 / 60	; OnFixed signal interval (ms)
-
 ;   BPForm.InputFlags bits for configuring input. Can be set before form
 ; creation. To correctly set them after the form has been created, call 
 ; bpSetInputFlags.
@@ -566,7 +570,6 @@ BP_INPUT_JOY_BUTTON		EQU 1	; Input structure is BPInJoyButton
 BP_INPUT_KEY			EQU 2	; Input structure is BPInKey
 BP_INPUT_MOUSE_BUTTON	EQU 3	; Input structure is BPInMouseButton
 BP_INPUT_MOUSE_MOVE		EQU 4	; Input structure is BPInMouseMove
-BP_INPUT_TOUCH			EQU 5	; Input structure is BPInTouch
 
 ;   Joystick axes (BPInJoyAxis)
 BP_JOY_AXIS_X	EQU 0	; (left stick horizontal)
@@ -620,13 +623,14 @@ bpRawJoyFM128	REAL4 0.0078125
 ; is implemented with the GetRawInput* functionality here, related to RAWINPUT.
 ; A major refactor is possible to implement old-fashioned raw input by SetupAPI
 ; (maybe CfgMgr32?), but needs more consideration and research.
-bpRawInput	BPBool FALSE
 BP_RAWINPUT_MAX EQU 3
 IFDEF BP_STATIC_LINK_XP
+bpRawInput	BPBool TRUE
 bpGetRawInputData			TEXTEQU <GetRawInputData>
 bpGetRawInputDeviceInfo		TEXTEQU <GetRawInputDeviceInfo>
 bpRegisterRawInputDevices	TEXTEQU <RegisterRawInputDevices>
 ELSE
+bpRawInput	BPBool FALSE
 BPTGetRawInputData TYPEDEF PROTO :DWORD, :DWORD, :LPVOID, :LPDWORD, :DWORD
 BPPGetRawInputData TYPEDEF PTR BPTGetRawInputData
 bpGetRawInputData BPPGetRawInputData 0
@@ -659,9 +663,6 @@ ENDIF
 bpDisplayDeviceCount	DWORD 0
 bpDisplayDevices		BPDisplayDevice 16 dup (<>)
 
-;   Set to TRUE after first frame, then allows OnRender execution
-bpFirstFrameSkipped BPBool FALSE
-
 bpFixedInterval REAL4 0.01666666	; BPForm OnFixed interval (in seconds)
 
 bpJoyCount		DWORD 0					; Total amount of joysticks available
@@ -675,8 +676,12 @@ bpMouseScreen		SDWORD 0, 0	; On-screen global mouse cursor position
 bpMouseScreenPrev	SDWORD 0, 0	; Previous global cursor position (cursor input)
 
 ;   Deprecated. See BP_MOUSE_TOUCH_COOLDOWN
-bpMouseTouchCooldown	DWORD BP_MOUSE_TOUCH_COOLDOWN
+bpMouseTouchCooldown	DWORD 0
 
+;   Set to TRUE after loading all the procedures after creating the first form
+bpProceduresLoaded	BPBool FALSE
+
+;   For now deltaTime and related are global and calculated in the render loop.
 deltaTime 		REAL4	0.0	; Scaled delta time, used for frame-independence
 deltaScale 		REAL4	1.0	; Delta time scale mutiplier
 deltaUnscaled 	REAL4	0.0	; Unscaled delta time
@@ -777,14 +782,17 @@ bpR MACRO ProcName:REQ, Args:VARARG
 	EXITM <pax>
 ENDM
 
+
 IFDEF BP_TRACEABLE_HEAP
 ;   Traceable memory free macro (maps to Win32 HeapFree).
-bpFreeProc PROC EXPORT hHeap:HANDLE, dwFlags:DWORD, lpMem:LPVOID
+bpFreeProc BPPROC hHeap:HANDLE, dwFlags:DWORD, lpMem:LPVOID
 	invoke HeapSize, hHeap, dwFlags, lpMem
 	sub heapAllocated, eax
 	invoke HeapFree, hHeap, dwFlags, lpMem
 	
 	IFDEF BP_TRACEABLE_HEAP_LIST
+		push pax
+		
 		push pbx
 		xor pbx, pbx
 		.WHILE (pbx < heapListSize)
@@ -815,11 +823,15 @@ bpFreeProc PROC EXPORT hHeap:HANDLE, dwFlags:DWORD, lpMem:LPVOID
 		print uhex$(lpMem), 13, 10
 	ENDIF
 	ENDIF
+	
+	IFDEF BP_TRACEABLE_HEAP_LIST
+		pop pax
+	ENDIF
 	ret
 bpFreeProc ENDP
 
 ;   Traceable memory reallocation macro (maps to Win32 HeapReAlloc).
-bpReAllocProc PROC EXPORT hHeap:HANDLE, dwFlags:DWORD, lpMem:LPVOID, \
+bpReAllocProc BPPROC hHeap:HANDLE, dwFlags:DWORD, lpMem:LPVOID, \
 dwBytes:DWORD
 	invoke HeapSize, hHeap, dwFlags, lpMem
 	sub heapAllocated, eax
@@ -867,7 +879,7 @@ dwBytes:DWORD
 bpReAllocProc ENDP
 
 ;   Traceable memory allocation macro (maps to Win32 HeapAlloc).
-bpMallocProc PROC EXPORT hHeap:HANDLE, dwFlags:DWORD, dwBytes:DWORD
+bpMallocProc BPPROC hHeap:HANDLE, dwFlags:DWORD, dwBytes:DWORD
 	mov eax, dwBytes
 	add heapAllocated, eax
 	
@@ -909,7 +921,7 @@ bpMallocProc ENDP
 
 IFDEF BP_TRACEABLE_HEAP_LIST
 ;   Print the list of allocated memory blocks.
-bpPrintHeapList PROC EXPORT
+bpPrintHeapList BPPROC
 	IFDEF print
 	print "Allocated heap block count: "
 	mov eax, heapListSize
@@ -941,7 +953,7 @@ ENDIF
 
 ;   Calculate deltaTime. Done automatically in the message loop in bpCreateForm,
 ; if BPForm.DefaultFlag is TRUE (after OnRender callback).
-bpCalculateDelta PROC EXPORT LastTick:BPPtr, DeltaPtr:BPPtr
+bpCalculateDelta BPPROC LastTick:BPPtr, DeltaPtr:BPPtr
 	LOCAL tick:LARGE_INTEGER
 	IFDEF BP_USE_LARGE_INTEGER
 		LOCAL diff:LARGE_INTEGER
@@ -1008,8 +1020,7 @@ bpCalculateDelta PROC EXPORT LastTick:BPPtr, DeltaPtr:BPPtr
 	ELSE
 		fild diff
 	ENDIF
-	fild bpPerfFreq
-	fdiv
+	fidiv bpPerfFreq
 	mov pax, DeltaPtr
 	fstp REAL4 PTR [pax]
 	
@@ -1023,11 +1034,15 @@ bpCalculateDelta PROC EXPORT LastTick:BPPtr, DeltaPtr:BPPtr
 	ret
 bpCalculateDelta ENDP
 
-;   Initialize form and create a window based on its parameters.
+;   Initialize form and create a window based on its parameters. Will block
+; subsequent code execution until the form is destroyed. Returns WM_QUIT exit
+; code.
 ;   BPFormPtr:BPPtr - pointer to a form structure.
-bpCreateForm PROC EXPORT BPFormPtr:BPPtr
+bpCreateForm BPPROC BPFormPtr:BPPtr
 	LOCAL wc:WNDCLASSEX, msg:MSG, testFreq:LARGE_INTEGER, quitFlag:BPBool
-	LOCAL ridMouse:RAWINPUTDEVICE, rect:RECT, pUser32:BPPtr
+	LOCAL ridMouse:RAWINPUTDEVICE, rect:RECT, pUser32:BPPtr, fixThreadID:DWORD
+	LOCAL exitCode:BPPtr
+	
 	push pbx
 	ASSUME pbx:PTR BPForm
 	mov pbx, BPFormPtr
@@ -1035,69 +1050,74 @@ bpCreateForm PROC EXPORT BPFormPtr:BPPtr
 	; BoilPlate3D system initialization
 	
 	; Get process heap as default heap to not call GetProcessHeap all the time.
-	.IF (!bpDefHeap)
+	.IF !(bpDefHeap)
 		call GetProcessHeap
 		mov bpDefHeap, pax
 	.ENDIF
 	
-	; LoadLibrary works on Windows 2000 after all, I guess. Needs more testing.
-	.CONST
-		bpUser32DLL				DB "user32.dll", 0
-	.CODE
-	mov pUser32, bpR(GetModuleHandle, OFFSET bpUser32DLL)
-	.IF !(pax)
-		mov pUser32, bpR(LoadLibrary, OFFSET bpUser32DLL)
-	.ENDIF
-	; Load stuff unsupported on Windows 2000 dynamically
-	.IF (pax)
-		IFNDEF BP_STATIC_LINK_XP
-			.CONST
-				bpGetRawInputDataS			DB "GetRawInputData", 0
-				bpGetRawInputDeviceInfoS	DB "GetRawInputDeviceInfo", 0
-				bpRegisterRawInputDevicesS	DB "RegisterRawInputDevices", 0
-			.CODE
-			mov bpGetRawInputData, \
-			bpR(GetProcAddress, pUser32, OFFSET bpGetRawInputDataS)
-			.IF (pax)
-				inc bpRawInput
-			.ENDIF
-			mov bpGetRawInputDeviceInfo, \
-			bpR(GetProcAddress, pUser32, OFFSET bpGetRawInputDeviceInfoS)
-			.IF (pax)
-				inc bpRawInput
-			.ENDIF
-			mov bpRegisterRawInputDevices, \
-			bpR(GetProcAddress, pUser32, OFFSET bpRegisterRawInputDevicesS)
-			.IF (pax)
-				inc bpRawInput
-			.ENDIF
-		ENDIF
-	.ENDIF
-	
-	; Disable DPI scaling if possible
-	IFNDEF BP_DPI_UNAWARE
-		IFNDEF SetProcessDPIAware
-			.CONST
-				bpSetProcessDPIAwareS	DB "SetProcessDPIAware", 0
-			.CODE
-			.IF (pUser32)
-				invoke GetProcAddress, pUser32, OFFSET bpSetProcessDPIAwareS
+	.IF !(bpProceduresLoaded)
+		mov bpProceduresLoaded, TRUE
+		; LoadLibrary works on Windows 2000 after all, I guess
+		.CONST
+			bpUser32DLL				DB "user32.dll", 0
+		.CODE
+		; Get already loaded user32
+		mov pUser32, bpR(GetModuleHandle, OFFSET bpUser32DLL)
+		.IF !(pax)
+			; Somehow, user32 wasn't loaded already, load
+			mov pUser32, bpR(LoadLibrary, OFFSET bpUser32DLL)
+		.ENDIF
+		; Load stuff unsupported on Windows 2000 dynamically
+		.IF (pax)
+			IFNDEF BP_STATIC_LINK_XP
+				.CONST
+					bpGetRawInputDataS			DB "GetRawInputData", 0
+					bpGetRawInputDeviceInfoS	DB "GetRawInputDeviceInfo", 0
+					bpRegisterRawInputDevicesS	DB "RegisterRawInputDevices", 0
+				.CODE
+				mov bpGetRawInputData, \
+				bpR(GetProcAddress, pUser32, OFFSET bpGetRawInputDataS)
 				.IF (pax)
-					call pax
+					inc bpRawInput
 				.ENDIF
-			.ENDIF
-		ELSE
-			call SetProcessDPIAware
+				mov bpGetRawInputDeviceInfo, \
+				bpR(GetProcAddress, pUser32, OFFSET bpGetRawInputDeviceInfoS)
+				.IF (pax)
+					inc bpRawInput
+				.ENDIF
+				mov bpRegisterRawInputDevices, \
+				bpR(GetProcAddress, pUser32, OFFSET bpRegisterRawInputDevicesS)
+				.IF (pax)
+					inc bpRawInput
+				.ENDIF
+			ENDIF
+		.ENDIF
+		
+		; Disable DPI scaling if possible
+		IFNDEF BP_DPI_UNAWARE
+			IFNDEF SetProcessDPIAware
+				.CONST
+					bpSetProcessDPIAwareS	DB "SetProcessDPIAware", 0
+				.CODE
+				.IF (pUser32)
+					invoke GetProcAddress, pUser32, OFFSET bpSetProcessDPIAwareS
+					.IF (pax)
+						call pax
+					.ENDIF
+				.ENDIF
+			ELSE
+				call SetProcessDPIAware
+			ENDIF
 		ENDIF
-	ENDIF
-	
-	invoke FreeLibrary, pUser32
+		
+		invoke FreeLibrary, pUser32
+	.ENDIF
 	
 	mov wc.cbSize, SIZEOF WNDCLASSEX
-	mov wc.style, CS_HREDRAW or CS_VREDRAW
+	mov wc.style, CS_HREDRAW or CS_VREDRAW or CS_OWNDC
 	mov wc.cbClsExtra, NULL
 	mov wc.cbWndExtra, NULL
-	mov	wc.hbrBackground, COLOR_WINDOW
+	mov	wc.hbrBackground, COLOR_WINDOW+1
 	mov wc.lpszMenuName, NULL
 	
 	
@@ -1115,16 +1135,12 @@ bpCreateForm PROC EXPORT BPFormPtr:BPPtr
 	
 	invoke RegisterClassEx, ADDR wc
 	
+	
 	invoke CreateWindowEx, 0, [pbx].ClassName, [pbx].Caption, \
 	[pbx].WindowStyle, [pbx].WindowPos.x, [pbx].WindowPos.y, \
-	[pbx].WindowSize.x, [pbx].WindowSize.y, NULL, NULL, wc.hInstance, NULL
-	
-	mov [pbx].Handle, pax
-	IFDEF SetWindowLongPtrA
-		invoke SetWindowLongPtrA, pax, GWLP_USERDATA, BPFormPtr
-	ELSE
-		invoke SetWindowLongA, pax, GWLP_USERDATA, BPFormPtr
-	ENDIF
+	[pbx].WindowSize.x, [pbx].WindowSize.y, NULL, NULL, wc.hInstance, \
+	BPFormPtr
+	; GWLP_USERDATA and Handle are set in WM_NCCREATE
 	
 	; Get some system info
 	IFDEF BP_USE_LARGE_INTEGER
@@ -1180,10 +1196,12 @@ bpCreateForm PROC EXPORT BPFormPtr:BPPtr
 	
 	; OnFixed
 	.IF ([pbx].OnFixed)
-		; BSD's Wine port doesn't like WinMM (Linux's does, skill issue).
+		;   BSD's Wine port doesn't like WinMM (Linux's does, skill issue).
 		;invoke timeSetEvent, BP_FIXED_INTERVAL, 0, OFFSET bpDefFixedProc, \
 		;BPFormPtr, TIME_PERIODIC
-		invoke CreateThread, NULL, 0, OFFSET bpDefFixedProc, BPFormPtr, 0, NULL 
+		invoke CreateThread, NULL, 0, OFFSET bpDefFixedProc, BPFormPtr, 0, \
+		ADDR fixThreadID
+		mov [pbx].FixedThread, pax
 	.ENDIF
 	
 	invoke ShowWindow, [pbx].Handle, SW_SHOWDEFAULT
@@ -1200,12 +1218,12 @@ bpCreateForm PROC EXPORT BPFormPtr:BPPtr
 		.IF (eax == WAIT_OBJECT_0)
 			.WHILE TRUE
 				invoke PeekMessage, ADDR msg, NULL, 0, 0, PM_REMOVE
-				.IF (msg.message == WM_QUIT)
-					mov quitFlag, 1
-				.ENDIF
-				;.BREAK .IF (!eax) Notepad++'s UDL freaks out because of this but I want to define .IF as blocks
 				.IF (!eax)
 					.BREAK
+				.ENDIF
+				.IF (msg.message == WM_QUIT)
+					mov quitFlag, 1
+					bpMPM exitCode, msg.wParam
 				.ENDIF
 				invoke TranslateMessage, ADDR msg
 				invoke DispatchMessage, ADDR msg
@@ -1267,11 +1285,13 @@ bpCreateForm PROC EXPORT BPFormPtr:BPPtr
 			
 			mov pcx, _bpFormLoopPtr
 			mov [pcx].DefaultFlag, TRUE
-			.IF ([pcx].OnRender) && (bpFirstFrameSkipped)
-				call [pcx].OnRender
-				mov pcx, _bpFormLoopPtr
+			.IF ([pcx].StartCalled)
+				.IF ([pcx].OnRender)
+					call [pcx].OnRender
+					mov pcx, _bpFormLoopPtr
+				.ENDIF
 			.ELSE
-				mov bpFirstFrameSkipped, TRUE
+				mov [pcx].StartCalled, TRUE
 				.IF ([pcx].OnStart)
 					call [pcx].OnStart
 					mov pcx, _bpFormLoopPtr
@@ -1295,13 +1315,13 @@ bpCreateForm PROC EXPORT BPFormPtr:BPPtr
 		ENDIF
 		ASSUME pcx:nothing
 	.ENDW
-	
+	mov pax, exitCode
 	ret
 bpCreateForm ENDP
 
 ;   Destroy the window associated with a form.
 ;   BPFormPtr:BPPtr - pointer to a form structure.
-bpDestroyForm PROC EXPORT BPFormPtr:BPPtr
+bpDestroyForm BPPROC BPFormPtr:BPPtr
 	ASSUME pcx:PTR BPForm
 	
 	mov pcx, BPFormPtr
@@ -1315,7 +1335,7 @@ bpDestroyForm ENDP
 ;   StringPtr:BPPtr - pointer to the error text string.
 ;   CaptionPtr:BPPtr - pointer to the error message caption (bpErrorCaption if 
 ; NULL).
-bpError PROC EXPORT StringPtr:BPPtr, CaptionPtr:BPPtr
+bpError BPPROC StringPtr:BPPtr, CaptionPtr:BPPtr
 	LOCAL stdError:HANDLE
 	
 	; Get string length
@@ -1327,7 +1347,7 @@ bpError PROC EXPORT StringPtr:BPPtr, CaptionPtr:BPPtr
 	sub pbx, StringPtr
 	invoke GetStdHandle, STD_ERROR_HANDLE
 	mov stdError, pax
-	invoke WriteConsole, stdError, StringPtr, ebx, NULL, NULL
+	invoke WriteFile, stdError, StringPtr, ebx, NULL, NULL
 	pop pbx
 	.IF !(CaptionPtr)
 		lea pax, bpErrorCaption
@@ -1337,14 +1357,14 @@ bpError PROC EXPORT StringPtr:BPPtr, CaptionPtr:BPPtr
 	
 	IFNDEF BP_ERROR_PASS
 		invoke GetCurrentProcess
-		invoke TerminateProcess, pax, 0
+		invoke TerminateProcess, pax, 1
 	ENDIF
 	ret
 bpError ENDP
 
 ;   Initialize OpenGL context in an existing form.
 ;   BPFormPtr:BPPtr - pointer to a form structure.
-bpInitGLContext PROC EXPORT BPFormPtr:BPPtr
+bpInitGLContext BPPROC BPFormPtr:BPPtr
 	LOCAL pfd:PIXELFORMATDESCRIPTOR, pixelFormat:DWORD
 	push pbx
 	ASSUME pbx:PTR BPForm
@@ -1353,12 +1373,15 @@ bpInitGLContext PROC EXPORT BPFormPtr:BPPtr
 	invoke GetDC, [pbx].Handle
 	mov [pbx].DeviceContext, pax
 	
+	invoke RtlZeroMemory, ADDR pfd, SIZEOF PIXELFORMATDESCRIPTOR
+	
 	mov pfd.nSize, SIZEOF PIXELFORMATDESCRIPTOR
 	mov pfd.nVersion, 1
 	mov pfd.dwFlags, \
 	PFD_DRAW_TO_WINDOW or PFD_SUPPORT_OPENGL or PFD_DOUBLEBUFFER
 	mov pfd.iPixelType, PFD_TYPE_RGBA
 	mov pfd.cColorBits, 24
+	mov pfd.cDepthBits, 24
 	mov pfd.cAccumBits, 0
 	mov pfd.cStencilBits, 1
 	mov pfd.iLayerType, PFD_MAIN_PLANE
@@ -1395,58 +1418,61 @@ bpInitGLContext ENDP
 ;   JoyNum:DWORD - number of the joystick sending input.
 ;   Axis:DWORD - axis number (correspondent to BP_JOY_AXIS_* constants).
 ;   Position:REAL4 - axis position.
-bpInJoyAxis PROC EXPORT BPFormPtr:BPPtr, JoyNum:DWORD, Axis:DWORD, \
+bpInJoyAxis BPPROC BPFormPtr:BPPtr, JoyNum:DWORD, Axis:DWORD, \
 Position:REAL4
 	LOCAL bpInStruct:BPInJoyAxis, pos:REAL4
-	
-	fld Position
-	fabs
-	fld bpJoyThreshold[0]
-	IF @Cpu AND BP_CPU_686	; TODO test properly 
-		fcomip st, st(1)
-	ELSE
-		fcomp
-		fstsw ax
-		bt ax, 8
-	ENDIF
-	
-	.IF (!Carry?)
-		fstp st
-		mov pos, 0
-	.ELSE
-		fld bpJoyThreshold[4]
-		IF @Cpu AND BP_CPU_686
-			fcomip st, st(1)
-			fstp st
-		ELSE
-			fcompp
-			fstsw ax
-			bt ax, 8
-		ENDIF
-		
-		.IF (Carry?)
-			.IF (Position & 80000000h)
-				mov pos, 3212836864	; -1.0f
-			.ELSE
-				mov pos, 1065353216	; 1.0f
-			.ENDIF
-		.ELSE
-			bpMEM32 pos, Position
-		.ENDIF
-	.ENDIF
-	
-	bpMEM32 bpInStruct.JoyNum, JoyNum
-	bpMEM32 bpInStruct.Axis, Axis
-	bpMEM32 bpInStruct.Position, pos
-	
-	mov bpInStruct.InType, BP_INPUT_JOY_AXIS
 	
 	ASSUME pcx:PTR BPForm
 	mov pcx, BPFormPtr
 	
-	lea pax, bpInStruct
-	push pax
-	call [pcx].OnInput
+	.IF ([pcx].OnInput)
+		
+		fld Position
+		fabs
+		fld bpJoyThreshold[0]
+		IF @Cpu AND BP_CPU_686	; TODO test properly 
+			fcomip st, st(1)
+		ELSE
+			fcomp
+			fstsw ax
+			bt ax, 8
+		ENDIF
+		
+		.IF (!Carry?)
+			fstp st
+			mov pos, 0
+		.ELSE
+			fld bpJoyThreshold[4]
+			IF @Cpu AND BP_CPU_686
+				fcomip st, st(1)
+				fstp st
+			ELSE
+				fcompp
+				fstsw ax
+				bt ax, 8
+			ENDIF
+			
+			.IF (Carry?)
+				.IF (Position & 80000000h)
+					mov pos, 3212836864	; -1.0f
+				.ELSE
+					mov pos, 1065353216	; 1.0f
+				.ENDIF
+			.ELSE
+				bpMEM32 pos, Position
+			.ENDIF
+		.ENDIF
+		
+		bpMEM32 bpInStruct.JoyNum, JoyNum
+		bpMEM32 bpInStruct.Axis, Axis
+		bpMEM32 bpInStruct.Position, pos
+		
+		mov bpInStruct.InType, BP_INPUT_JOY_AXIS
+		
+		lea pax, bpInStruct
+		push pax
+		call [pcx].OnInput
+	.ENDIF
 	
 	ASSUME pcx:nothing
 	ret
@@ -1457,27 +1483,29 @@ bpInJoyAxis ENDP
 ;   JoyNum:DWORD - number of the joystick sending input.
 ;   Button:BPPtr - number of the joystick button.
 ;   Pressed:BOOL - if the button has been pressed or released.
-bpInJoyButton PROC EXPORT BPFormPtr:BPPtr, JoyNum:DWORD, Button:DWORD, \
+bpInJoyButton BPPROC BPFormPtr:BPPtr, JoyNum:DWORD, Button:DWORD, \
 Pressed:BOOL
 	LOCAL bpInStruct:BPInJoyButton
-	
-	bpMEM32 bpInStruct.JoyNum, JoyNum
-	bpMEM32 bpInStruct.Button, Button
-	.IF (Pressed)
-		mov al, 1
-	.ELSE
-		xor al, al
-	.ENDIF
-	mov bpInStruct.Pressed, al
-	
-	mov bpInStruct.InType, BP_INPUT_JOY_BUTTON
 	
 	ASSUME pcx:PTR BPForm
 	mov pcx, BPFormPtr
 	
-	lea pax, bpInStruct
-	push pax
-	call [pcx].OnInput
+	.IF ([pcx].OnInput)
+		bpMEM32 bpInStruct.JoyNum, JoyNum
+		bpMEM32 bpInStruct.Button, Button
+		.IF (Pressed)
+			mov al, 1
+		.ELSE
+			xor al, al
+		.ENDIF
+		mov bpInStruct.Pressed, al
+		
+		mov bpInStruct.InType, BP_INPUT_JOY_BUTTON
+		
+		lea pax, bpInStruct
+		push pax
+		call [pcx].OnInput
+	.ENDIF
 	
 	ASSUME pcx:nothing
 	ret
@@ -1487,7 +1515,7 @@ bpInJoyButton ENDP
 ;   BPFormPtr:BPPtr - pointer to a form structure.
 ;   Keycode:WPARAM - virtual-key code of the keyboard button.
 ;   Pressed:BOOL - if the key has been pressed or released.
-bpInKey PROC EXPORT BPFormPtr:BPPtr, Keycode:WPARAM, Pressed:BOOL
+bpInKey BPPROC BPFormPtr:BPPtr, Keycode:WPARAM, Pressed:BOOL
 	LOCAL bpInStruct:BPInKey
 	
 	mov pax, Keycode
@@ -1513,7 +1541,7 @@ bpInKey ENDP
 ;   BPFormPtr:BPPtr - pointer to a form structure.
 ;   Button:BPPtr - virtual-key code of the mouse button.
 ;   Pressed:BOOL - if the button has been pressed or released.
-bpInMouseButton PROC EXPORT BPFormPtr:BPPtr, Button:DWORD, Pressed:BPBool
+bpInMouseButton BPPROC BPFormPtr:BPPtr, Button:DWORD, Pressed:BPBool
 	LOCAL bpInStruct:BPInMouseButton
 	
 	bpMEM32 bpInStruct.Button, Button
@@ -1535,7 +1563,7 @@ bpInMouseButton ENDP
 
 ;   Send mouse movement input to form OnInput event as a struct.
 ;   BPFormPtr:BPPtr - pointer to a form structure.
-bpInMouseMove PROC BPFormPtr:BPPtr
+bpInMouseMove BPPROC BPFormPtr:BPPtr
 	LOCAL bpInStruct:BPInMouseMove
 	
 	bpMEM32 bpInStruct.Position.x, bpMouseClient[0]
@@ -1567,7 +1595,7 @@ bpInMouseMove ENDP
 ;   Process raw input and send to form OnInput event as a struct.
 ;   BPFormPtr:BPPtr - pointer to a form structure.
 ;   RawHandle:LPARAM - handle to RAWINPUT structure (lParam in WM_INPUT).
-bpInRaw PROC EXPORT BPFormPtr:BPPtr, RawHandle:LPARAM
+bpInRaw BPPROC BPFormPtr:BPPtr, RawHandle:LPARAM
 	IFNDEF BP_COMPATIBILITY_W9X
 	LOCAL bpInMouseMoveStruct:BPInMouseMove
 	LOCAL dwSize:DWORD, lpb:BPPtr
@@ -1590,68 +1618,70 @@ bpInRaw PROC EXPORT BPFormPtr:BPPtr, RawHandle:LPARAM
 	
 	.IF (eax == dwSize)	; Check for valid input read
 		mov pcx, lpb
-		ASSUME pcx:PTR RAWINPUT
+		ASSUME pcx:PTR RAWINPUTFIX
 		
 		.IF ([pcx].header.dwType == RIM_TYPEMOUSE)
 			.IF (bpMouseTouchCooldown)
 				dec bpMouseTouchCooldown
 			.ELSE				
 				mov pcx, lpb
-				movzx pax, [pcx].data.mouse.usButtonData
+				movzx pax, [pcx].data.mouse.usButtonFlags
 				.IF (pax)
 					.IF (pax & RI_MOUSE_WHEEL)
-						; Broken on Wine, TODO
-						mov edx, [pcx].data.mouse.ulRawButtons
+						mov dx, [pcx].data.mouse.usButtonData
 						push pcx
 						push pax
-						.IF (pdx == 78h)
+						; Maybe TODO accumulate
+						.IF (SWORD PTR dx < 0)
 							invoke bpInMouseButton, BPFormPtr, VK_MWHEEL_DOWN, \
 							TRUE
-						.ELSEIF (pdx == 0FF88h)
+						.ELSEIF (SWORD PTR dx > 0)
 							invoke bpInMouseButton, BPFormPtr, VK_MWHEEL_UP, \
 							TRUE
 						.ENDIF
 						pop pax
-						push pcx
+						pop pcx
 					.ELSEIF (pax & 800h)	; RI_MOUSE_HWHEEL
 						; TODO I don't have a mouse with that
 					.ENDIF
-					.IF (pax == RI_MOUSE_BUTTON_1_DOWN)
-						invoke bpInMouseButton,BPFormPtr, VK_LBUTTON, TRUE
-					.ELSEIF (pax == RI_MOUSE_BUTTON_1_UP)
-						invoke bpInMouseButton,BPFormPtr, VK_LBUTTON, FALSE
-					.ELSEIF (pax == RI_MOUSE_BUTTON_2_DOWN)
-						invoke bpInMouseButton,BPFormPtr, VK_RBUTTON, TRUE
-					.ELSEIF (pax == RI_MOUSE_BUTTON_2_UP)
-						invoke bpInMouseButton,BPFormPtr, VK_RBUTTON, FALSE
-					.ELSEIF (pax == RI_MOUSE_BUTTON_3_DOWN)
-						invoke bpInMouseButton,BPFormPtr, VK_MBUTTON, TRUE
-					.ELSEIF (pax == RI_MOUSE_BUTTON_3_UP)
-						invoke bpInMouseButton,BPFormPtr, VK_MBUTTON, FALSE
-					.ELSEIF (pax == RI_MOUSE_BUTTON_4_DOWN)
-						invoke bpInMouseButton,BPFormPtr, VK_XBUTTON1, TRUE
-					.ELSEIF (pax == RI_MOUSE_BUTTON_4_UP)
-						invoke bpInMouseButton,BPFormPtr, VK_XBUTTON1, FALSE
-					.ELSEIF (pax == RI_MOUSE_BUTTON_5_DOWN)
-						invoke bpInMouseButton,BPFormPtr, VK_XBUTTON2, TRUE
-					.ELSEIF (pax == RI_MOUSE_BUTTON_5_UP)
-						invoke bpInMouseButton,BPFormPtr, VK_XBUTTON2, FALSE
+					.IF (pax & RI_MOUSE_BUTTON_1_DOWN)
+						invoke bpInMouseButton, BPFormPtr, VK_LBUTTON, TRUE
+					.ELSEIF (pax & RI_MOUSE_BUTTON_1_UP)
+						invoke bpInMouseButton, BPFormPtr, VK_LBUTTON, FALSE
+					.ELSEIF (pax & RI_MOUSE_BUTTON_2_DOWN)
+						invoke bpInMouseButton, BPFormPtr, VK_RBUTTON, TRUE
+					.ELSEIF (pax & RI_MOUSE_BUTTON_2_UP)
+						invoke bpInMouseButton, BPFormPtr, VK_RBUTTON, FALSE
+					.ELSEIF (pax & RI_MOUSE_BUTTON_3_DOWN)
+						invoke bpInMouseButton, BPFormPtr, VK_MBUTTON, TRUE
+					.ELSEIF (pax & RI_MOUSE_BUTTON_3_UP)
+						invoke bpInMouseButton, BPFormPtr, VK_MBUTTON, FALSE
+					.ELSEIF (pax & RI_MOUSE_BUTTON_4_DOWN)
+						invoke bpInMouseButton, BPFormPtr, VK_XBUTTON1, TRUE
+					.ELSEIF (pax & RI_MOUSE_BUTTON_4_UP)
+						invoke bpInMouseButton, BPFormPtr, VK_XBUTTON1, FALSE
+					.ELSEIF (pax & RI_MOUSE_BUTTON_5_DOWN)
+						invoke bpInMouseButton, BPFormPtr, VK_XBUTTON2, TRUE
+					.ELSEIF (pax & RI_MOUSE_BUTTON_5_UP)
+						invoke bpInMouseButton, BPFormPtr, VK_XBUTTON2, FALSE
 					.ENDIF
 				.ENDIF
 				
 				mov pcx, lpb
 				.IF ([pcx].data.mouse.usFlags & MOUSE_MOVE_ABSOLUTE)
 					;TODO?
+					mov bpInMouseMoveStruct.Relative.x, 0
+					mov bpInMouseMoveStruct.Relative.y, 0
 				.ELSE
 					.IF !([pcx].data.mouse.lLastX) && !([pcx].data.mouse.lLastY)
 						invoke bpFree, bpDefHeap, 0, lpb
 						ret
 					.ENDIF
 					mov eax, [pcx].data.mouse.lLastX
-					sar eax, 16
+					;sar eax, 16
 					mov bpInMouseMoveStruct.Relative.x, eax
 					mov eax, [pcx].data.mouse.lLastY
-					sar eax, 16
+					;sar eax, 16
 					mov bpInMouseMoveStruct.Relative.y, eax
 				.ENDIF
 				
@@ -1701,7 +1731,7 @@ bpInRaw ENDP
 ; himself endorsed this procedure and gave me only one gamepad to test with.
 ;   BPFormPtr:BPPtr - pointer to a form structure.
 ;   InputDataPtr:BPPtr - handle to pre-read RAWINPUT structure.
-bpInRawJoystick PROC EXPORT BPFormPtr:BPPtr, InputDataPtr:BPPtr
+bpInRawJoystick BPPROC BPFormPtr:BPPtr, InputDataPtr:BPPtr
 	IFNDEF BP_COMPATIBILITY_W9X
 	MAX_BUTTONS EQU 32
 	
@@ -1716,7 +1746,7 @@ bpInRawJoystick PROC EXPORT BPFormPtr:BPPtr, InputDataPtr:BPPtr
 	ENDIF
 	
 	; Get preparsed data block
-	ASSUME pcx:PTR RAWINPUT
+	ASSUME pcx:PTR RAWINPUTFIX
 	mov pcx, InputDataPtr
 	invoke bpGetRawInputDeviceInfo, [pcx].header.hDevice, RIDI_PREPARSEDDATA, \
 	NULL, ADDR dwSize
@@ -1726,7 +1756,7 @@ bpInRawJoystick PROC EXPORT BPFormPtr:BPPtr, InputDataPtr:BPPtr
 		mov pcx, InputDataPtr
 		invoke bpGetRawInputDeviceInfo, [pcx].header.hDevice, \
 		RIDI_PREPARSEDDATA, prep, ADDR dwSize
-		.IF (eax >= 0)
+		.IF (SDWORD PTR eax >= 0)
 			; Button caps
 			invoke HidP_GetCaps, prep, ADDR caps
 			
@@ -1891,7 +1921,8 @@ bpInRawJoystick PROC EXPORT BPFormPtr:BPPtr, InputDataPtr:BPPtr
 						.ENDW
 						bpMEM32 bpJoyInfoEx[0].dwReserved1, usgVal
 					.ENDIF
-				.ELSE
+				.ELSEIF ([pdx].UsagePage == 1) && ([pdx].Range.UsageMin >= 30h)\
+				&& ([pdx].Range.UsageMin <= 35h)
 					movzx pcx, [pdx].Range.UsageMin
 					sub pcx, 30h
 					mov pdx, pcx
@@ -1935,7 +1966,7 @@ bpInRawJoystick ENDP
 
 ;   Read and process all available joysticks for input.
 ;   BPFormPtr:BPPtr - pointer to a form structure to which input will be sent.
-bpReadJoysticks PROC EXPORT BPFormPtr:BPPtr
+bpReadJoysticks BPPROC BPFormPtr:BPPtr
 	LOCAL joyInfoEx:JOYINFOEX, joyNum:DWORD, axisPos:REAL4, buttons:DWORD
 	
 	bpJoyAxisCheck MACRO Axis:REQ, AxisNum:REQ
@@ -2086,7 +2117,7 @@ bpReadJoysticks ENDP
 ;   BPFormPtr:BPPtr - pointer to a form structure.
 ;   PosPtr:BPPtr - pointer to the DWORD screen X and Y stored consecutively. 
 ; The resulting window position will be returned into this pointer.
-bpScreenToWindowPos PROC EXPORT BPFormPtr:BPPtr, PosPtr:BPPtr
+bpScreenToWindowPos BPPROC BPFormPtr:BPPtr, PosPtr:BPPtr
 	LOCAL rect:RECT
 	
 	mov pcx, PosPtr
@@ -2111,7 +2142,7 @@ bpScreenToWindowPos ENDP
 ;   BPFormPtr:BPPtr - pointer to a form structure.
 ;   SizePtr:BPPtr - pointer to the DWORD screen width and height stored 
 ; consecutively. The resulting window size will be returned into this pointer.
-bpScreenToWindowSize PROC EXPORT BPFormPtr:BPPtr, SizePtr:BPPtr
+bpScreenToWindowSize BPPROC BPFormPtr:BPPtr, SizePtr:BPPtr
 	LOCAL rect:RECT
 	
 	mov pcx, SizePtr
@@ -2140,7 +2171,7 @@ bpScreenToWindowSize ENDP
 ; Updates the form by setting its WindowMode with bpSetWindowMode.
 ;   BPFormPtr:BPPtr - pointer to a form structure.
 ;   DisplayDevice:DWORD - display device index (from bpDisplayDevices).
-bpSetDisplayDevice PROC EXPORT BPFormPtr:BPPtr, DisplayDevice:DWORD
+bpSetDisplayDevice BPPROC BPFormPtr:BPPtr, DisplayDevice:DWORD
 	LOCAL winMode:BPEnum
 	
 	push pbx
@@ -2153,6 +2184,7 @@ bpSetDisplayDevice PROC EXPORT BPFormPtr:BPPtr, DisplayDevice:DWORD
 	mov edx, eax
 	
 	.IF !(bpDisplayDevices[pdx].Active)
+		pop pbx
 		ret
 	.ENDIF
 	
@@ -2182,7 +2214,7 @@ bpSetDisplayDevice ENDP
 ; set the form's InputFlags to that. See possible input flags at BP_IF_*.
 ;   BPFormPtr:BPPtr - pointer to a form structure.
 ;   InputFlags:BYTE - bitmask of input flags of BP_IF_*.
-bpSetInputFlags PROC EXPORT BPFormPtr:BPPtr, InputFlags:BYTE
+bpSetInputFlags BPPROC BPFormPtr:BPPtr, InputFlags:BYTE
 	LOCAL rid:RAWINPUTDEVICE
 	ASSUME pcx:PTR BPForm
 	mov pcx, BPFormPtr
@@ -2210,6 +2242,8 @@ bpSetInputFlags PROC EXPORT BPFormPtr:BPPtr, InputFlags:BYTE
 			mov pcx, BPFormPtr
 		.ENDIF
 	IFNDEF BP_STATIC_LINK_XP
+	.ELSE
+		and InputFlags, not BP_IF_RAW_MOUSE
 	.ENDIF
 	ENDIF
 	
@@ -2245,9 +2279,13 @@ bpSetInputFlags PROC EXPORT BPFormPtr:BPPtr, InputFlags:BYTE
 			invoke bpRegisterRawInputDevices, ADDR rid, 1, SIZEOF RAWINPUTDEVICE
 			mov pcx, BPFormPtr
 		IFNDEF BP_STATIC_LINK_XP
+		.ELSE
+			and InputFlags, not BP_IF_RAW_JOYSTICK
+			jmp bpSetInputFlagsJoystick
 		.ENDIF
 		ENDIF
 	.ELSEIF !(ah)
+		bpSetInputFlagsJoystick:
 		mov al, [pcx].InputFlags
 		and al, BP_IF_JOYSTICK
 		mov ah, InputFlags
@@ -2269,7 +2307,7 @@ bpSetInputFlags ENDP
 ;   Sets form's mouse mode.
 ;   BPFormPtr:BPPtr - pointer to a form structure.
 ;   MouseMode:BPEnum - mouse mode, represented as a BPMSMODE constant.
-bpSetMouseMode PROC EXPORT BPFormPtr:BPPtr, MouseMode:BPEnum
+bpSetMouseMode BPPROC BPFormPtr:BPPtr, MouseMode:BPEnum
 	LOCAL curInfo:CURSORINFO
 	
 	push pbx
@@ -2308,7 +2346,7 @@ bpSetMouseMode ENDP
 ; resolution will be picked and the width and height will be returned into this
 ; pointer.
 ;   CmpAspect:BPBool - compare aspect when picking best available resolution.
-bpSetResolution PROC EXPORT BPFormPtr:BPPtr, ResPtr:BPPtr, CmpAspect:BPBool
+bpSetResolution BPPROC BPFormPtr:BPPtr, ResPtr:BPPtr, CmpAspect:BPBool
 	IFDEF DEVMODEAFIX
 		LOCAL devMode:DEVMODEAFIX, best:DEVMODEAFIX
 	ELSE
@@ -2332,6 +2370,7 @@ bpSetResolution PROC EXPORT BPFormPtr:BPPtr, ResPtr:BPPtr, CmpAspect:BPBool
 	ELSE
 		mov devMode.dmSize, SIZEOF DEVMODEA
 	ENDIF
+	mov devMode.dmDriverExtra, 0
 	invoke EnumDisplaySettingsA, namePtr, ENUM_CURRENT_SETTINGS, ADDR devMode
 	mov pcx, ResPtr
 	bpMEM32 devMode.dmPelsWidth, DWORD PTR [pcx]
@@ -2388,7 +2427,9 @@ bpSetResolution PROC EXPORT BPFormPtr:BPPtr, ResPtr:BPPtr, CmpAspect:BPBool
 			.ENDIF
 			add eax, sizeDiff[4]
 			
-			.IF (!found || eax < bestScore)
+			add eax, devMode.dmBitsPerPel
+			
+			.IF !(found) || (eax < bestScore)
 				mov bestScore, eax
 				IFDEF DEVMODEAFIX
 					invoke RtlMoveMemory, ADDR best, ADDR devMode, \
@@ -2405,11 +2446,13 @@ bpSetResolution PROC EXPORT BPFormPtr:BPPtr, ResPtr:BPPtr, CmpAspect:BPBool
 		.ENDIF
 		pop pbx
 		
-		mov pcx, ResPtr
-		bpMEM32 DWORD PTR [pcx], best.dmPelsWidth
-		bpMEM32 DWORD PTR [pcx+4], best.dmPelsHeight
-		invoke ChangeDisplaySettingsExA, namePtr, ADDR best, NULL, \
-		CDS_FULLSCREEN, NULL
+		.IF !(found)
+			mov pcx, ResPtr
+			bpMEM32 DWORD PTR [pcx], best.dmPelsWidth
+			bpMEM32 DWORD PTR [pcx+4], best.dmPelsHeight
+			invoke ChangeDisplaySettingsExA, namePtr, ADDR best, NULL, \
+			CDS_FULLSCREEN, NULL
+		.ENDIF
 		
 		;print namePtr, 13, 10
 		mov pax, FALSE
@@ -2424,7 +2467,7 @@ bpSetResolution ENDP
 ; Done automatically in bpDefSubclassProc - WM_MOVE & WM_SIZE, if 
 ; BPForm.DefaultFlag is TRUE.
 ;   BPFormPtr:BPPtr - pointer to a form structure.
-bpSetScreenCenter PROC EXPORT BPFormPtr:BPPtr
+bpSetScreenCenter BPPROC BPFormPtr:BPPtr
 	LOCAL winW, winH:DWORD
 	ASSUME pcx:PTR BPForm
 	mov pcx, BPFormPtr
@@ -2459,7 +2502,7 @@ bpSetScreenCenter ENDP
 ;   BPFormPtr:BPPtr - pointer to a form structure.
 ;   X:DWORD - new screen width.
 ;   Y:DWORD - new screen height.
-bpSetScreenSize PROC EXPORT BPFormPtr:BPPtr, X:DWORD, Y:DWORD	
+bpSetScreenSize BPPROC BPFormPtr:BPPtr, X:DWORD, Y:DWORD	
 	ASSUME pcx:PTR BPForm
 	mov pcx, BPFormPtr
 	.IF ([pcx].WindowMode != BP_WINDOW_MODE_FULLSCREEN) && \
@@ -2478,8 +2521,8 @@ bpSetScreenSize ENDP
 ;   Set form size and mode to fullscreen or windowed.
 ;   BPFormPtr:BPPtr - pointer to a form structure.
 ;   WindowMode:BPEnum - window mode, represented as a BPWINMODE constant.
-bpSetWindowMode PROC EXPORT BPFormPtr:BPPtr, WindowMode:BPEnum
-	LOCAL scrSize:POINT
+bpSetWindowMode BPPROC BPFormPtr:BPPtr, WindowMode:BPEnum
+	LOCAL scrSize:POINT, pWinMode:BPEnum
 	push pbx
 	ASSUME pbx:PTR BPForm
 	mov pbx, BPFormPtr
@@ -2502,6 +2545,8 @@ bpSetWindowMode PROC EXPORT BPFormPtr:BPPtr, WindowMode:BPEnum
 		;invoke bpSetResolution, BPFormPtr, pax, FALSE
 	.ENDIF
 	
+	mov ah, [pbx].WindowMode
+	mov pWinMode, ah
 	mov al, WindowMode
 	mov [pbx].WindowMode, al
 	
@@ -2519,7 +2564,7 @@ bpSetWindowMode PROC EXPORT BPFormPtr:BPPtr, WindowMode:BPEnum
 		invoke ShowWindow, [pbx].Handle, SW_MAXIMIZE
 	.ELSEIF (WindowMode == BP_WINDOW_MODE_FULLSCREEN) || \
 	(WindowMode == BP_WINDOW_MODE_FULLSCREEN_EX)
-		.IF ([pbx].WindowMode != BP_WINDOW_MODE_MAXIMIZED)
+		.IF (pWinMode != BP_WINDOW_MODE_MAXIMIZED)
 			invoke bpUpdateWindowPos, BPFormPtr
 		.ENDIF
 		
@@ -2558,7 +2603,7 @@ bpSetWindowMode ENDP
 ;   BPFormPtr:BPPtr - pointer to a form structure.
 ;   X:DWORD - new window X (left) position.
 ;   Y:DWORD - new window Y (top) position.
-bpSetWindowPos PROC EXPORT BPFormPtr:BPPtr, X:SDWORD, Y:SDWORD
+bpSetWindowPos BPPROC BPFormPtr:BPPtr, X:SDWORD, Y:SDWORD
 	ASSUME pcx:PTR BPForm
 	mov pcx, BPFormPtr
 	bpMEM32 [pcx].WindowPos.x, X
@@ -2576,7 +2621,7 @@ bpSetWindowPos ENDP
 ;   BPFormPtr:BPPtr - pointer to a form structure.
 ;   X:DWORD - new window width.
 ;   Y:DWORD - new window height.
-bpSetWindowSize PROC EXPORT BPFormPtr:BPPtr, X:DWORD, Y:DWORD
+bpSetWindowSize BPPROC BPFormPtr:BPPtr, X:DWORD, Y:DWORD
 	ASSUME pcx:PTR BPForm
 	mov pcx, BPFormPtr
 	bpMEM32 [pcx].WindowSize.x, X
@@ -2592,10 +2637,10 @@ bpSetWindowSize PROC EXPORT BPFormPtr:BPPtr, X:DWORD, Y:DWORD
 bpSetWindowSize ENDP
 
 ;   Update bpDisplayDevices.
-bpUpdateDisplayDevices PROC EXPORT
+bpUpdateDisplayDevices BPPROC
 	IFDEF DEVMODEAFIX
 		LOCAL devMode:DEVMODEAFIX
-	ELSE
+	ELSE
 		LOCAL devMode:DEVMODEA
 	ENDIF
 	LOCAL dispDev:DISPLAY_DEVICEA
@@ -2606,6 +2651,7 @@ bpUpdateDisplayDevices PROC EXPORT
 	ELSE
 		mov devMode.dmSize, SIZEOF DEVMODEA
 	ENDIF
+	mov devMode.dmDriverExtra, 0
 	mov dispDev.cb, SIZEOF DISPLAY_DEVICEA
 	
 	bpUpdateDisplayDevicesEnum:
@@ -2651,14 +2697,16 @@ bpUpdateDisplayDevices PROC EXPORT
 			mul ecx
 			mov bpDisplayDevices[pax].Active, FALSE
 		.ENDIF
-		inc bpDisplayDeviceCount
-		jmp bpUpdateDisplayDevicesEnum
+		.IF (bpDisplayDeviceCount < 16)
+			inc bpDisplayDeviceCount
+			jmp bpUpdateDisplayDevicesEnum
+		.ENDIF
 	.ENDIF
 	ret
 bpUpdateDisplayDevices ENDP
 
 ;   Update bpJoysticks to then capture their input.
-bpUpdateJoysticks PROC EXPORT
+bpUpdateJoysticks BPPROC
 	IFDEF JOYINFOFIX
 		LOCAL joyInfo:JOYINFOFIX
 	ELSE
@@ -2713,7 +2761,7 @@ bpUpdateJoysticks ENDP
 
 ;   Updates the BPForm window size and position parameters.
 ;   BPFormPtr:BPPtr - pointer to a form structure.
-bpUpdateWindowPos PROC EXPORT BPFormPtr:BPPtr
+bpUpdateWindowPos BPPROC BPFormPtr:BPPtr
 	LOCAL winRect:RECT
 	ASSUME pcx:PTR BPForm
 	mov pcx, BPFormPtr
@@ -2738,11 +2786,12 @@ bpUpdateWindowPos PROC EXPORT BPFormPtr:BPPtr
 bpUpdateWindowPos ENDP
 
 ;   The default fixed timer callback procedure (TimeProc).
-bpDefFixedProc PROC EXPORT lpParameter:LPVOID
+bpDefFixedProc BPPROC lpParameter:LPVOID
 	IFDEF BP_FIXED_BUSY
 		LOCAL threadTimer:REAL4, lastTick:BPDelta, deltaFixed:REAL4
 		LOCAL tick:LARGE_INTEGER
 		mov threadTimer, 0
+		invoke RtlZeroMemory, ADDR lastTick, SIZEOF BPDelta
 	ENDIF
 	
 	ASSUME pcx:PTR BPForm
@@ -2755,7 +2804,7 @@ bpDefFixedProc PROC EXPORT lpParameter:LPVOID
 			fld bpFixedInterval
 			
 			IF @Cpu and BP_CPU_686
-				fcomip st, st(1)
+				fcomi st, st(1)
 			ELSE
 				fcom
 				fnstsw ax
@@ -2785,15 +2834,31 @@ bpDefFixedProc PROC EXPORT lpParameter:LPVOID
 bpDefFixedProc ENDP
 
 ;   The default callback subclass procedure for processing form messages.
-bpDefWndProc PROC EXPORT hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
+bpDefWndProc BPPROC hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
 	LOCAL dwRefData:BPPtr
 	
-	invoke GetWindowLong, hWnd, GWLP_USERDATA
-	.IF (!pax)
+	.IF (uMsg == WM_NCCREATE)
+		ASSUME pax:PTR CREATESTRUCT
+		mov pax, lParam
+		mov pax, [pax].lpCreateParams
+		ASSUME pax:PTR BPForm
+		bpMPM [pax].Handle, hWnd
+		IFDEF SetWindowLongPtrA
+			invoke SetWindowLongPtrA, hWnd, GWLP_USERDATA, pax
+		ELSE
+			invoke SetWindowLongA, hWnd, GWLP_USERDATA, pax
+		ENDIF
+		ASSUME pax:nothing
 		invoke DefWindowProc, hWnd, uMsg, wParam, lParam
 		ret
+	.ELSE
+		invoke GetWindowLong, hWnd, GWLP_USERDATA
+		.IF (!pax)
+			invoke DefWindowProc, hWnd, uMsg, wParam, lParam
+			ret
+		.ENDIF
+		mov dwRefData, pax
 	.ENDIF
-	mov dwRefData, pax
 	
 	;   pbx needs to be preserved and as such bloats the code on bound procedure
 	; calls. pax is, well, pax. pcx and pdx are used in the dreaded x64 calling
@@ -2809,6 +2874,11 @@ bpDefWndProc PROC EXPORT hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
 			mov pcx, dwRefData
 		.ENDIF
 		.IF ([pcx].DefaultFlag)
+			.IF ([pcx].FixedThread)
+				invoke TerminateThread, [pcx].FixedThread, 0
+				mov pcx, dwRefData
+				mov [pcx].FixedThread, 0
+			.ENDIF
 			.IF ([pcx].WindowMode == BP_WINDOW_MODE_FULLSCREEN_EX)
 				invoke bpSetWindowMode, dwRefData, BP_WINDOW_MODE_WINDOWED
 				mov pcx, dwRefData
@@ -2846,7 +2916,8 @@ bpDefWndProc PROC EXPORT hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
 		.ENDIF
 	
 	.ELSEIF (uMsg == WM_KEYDOWN)
-		.IF ([pcx].OnInput)
+		; Also check if key is repeating
+		.IF ([pcx].OnInput) && !(lParam & 1 shl 30)
 			invoke bpInKey, dwRefData, wParam, TRUE
 		.ENDIF
 	.ELSEIF (uMsg == WM_KEYUP)
@@ -2856,6 +2927,7 @@ bpDefWndProc PROC EXPORT hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
 		
 	.ELSEIF (uMsg == WM_KILLFOCUS)
 		mov [pcx].Focused, FALSE
+		
 	.ELSEIF (uMsg == WM_SETFOCUS)
 		mov [pcx].Focused, TRUE
 		
@@ -2890,13 +2962,15 @@ bpDefWndProc PROC EXPORT hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
 		([pcx].WindowMode != BP_WINDOW_MODE_FULLSCREEN_EX)
 			.IF (wParam == SIZE_RESTORED)
 				mov [pcx].WindowMode, BP_WINDOW_MODE_WINDOWED
+				;   bpUpdateWindowPos was placed in .ELSEIF ([pcx].WindowMode ==
+				; BP_WINDOW_MODE_WINDOWED), which is deadcode. Idk what I wanted
+				; to do with it, let's just leave it here, I guess
+				invoke bpUpdateWindowPos, dwRefData	; will have dwRefData in pcx
 			.ELSEIF (wParam == SIZE_MINIMIZED)
 				mov [pcx].WindowMode, BP_WINDOW_MODE_MINIMIZED
 			.ELSEIF (wParam == SIZE_MAXIMIZED)
 				mov [pcx].WindowMode, BP_WINDOW_MODE_MAXIMIZED
 			.ENDIF
-		.ELSEIF ([pcx].WindowMode == BP_WINDOW_MODE_WINDOWED)
-			invoke bpUpdateWindowPos, dwRefData	; will have dwRefData in pcx
 		.ENDIF
 		
 		mov pax, lParam
@@ -2982,9 +3056,9 @@ bpDefWndProc PROC EXPORT hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
 			mov pax, wParam
 			shr eax, 16
 			movsx eax, ax
-			.IF (SDWORD PTR eax > 0)
+			.IF (SDWORD PTR eax < 0)
 				invoke bpInMouseButton, pcx, VK_MWHEEL_DOWN, TRUE
-			.ELSE
+			.ELSEIF (SDWORD PTR eax > 0)
 				invoke bpInMouseButton, pcx, VK_MWHEEL_UP, TRUE
 			.ENDIF
 		.ENDIF

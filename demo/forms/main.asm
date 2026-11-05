@@ -13,6 +13,7 @@
 option casemap:none
 
 BP_ONRESIZE_MOVE		EQU <1>	; Call OnResize on WM_MOVE
+BP_PAINT_LOOP			EQU <1>	; Keep the render loop in WM_PAINT
 
 ; BP3D includes
 include ..\..\src\BP3D.asm
